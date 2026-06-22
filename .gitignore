@@ -148,3 +148,9 @@ cython_debug/
 oryx-build-commands.txt
 .DS_Store
 docs/cli.md
+
+# Project data & results (keep dirs, ignore contents)
+data/raw/
+data/processed/
+results/
+!**/.gitkeep

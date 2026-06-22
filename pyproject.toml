@@ -72,10 +72,18 @@ dependencies = [
     "pandas",
     "scikit-learn",
     "numpy",
+    "xgboost",
+    "typer",
 ]
 readme = "README.md"
 
 [project.optional-dependencies]
+molecules = [
+    "rdkit",
+]
+baseball = [
+    "pybaseball",
+]
 tests = [
     "pytest"
 ]
