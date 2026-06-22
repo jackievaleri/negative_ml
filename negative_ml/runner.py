@@ -21,6 +21,14 @@ DOMAIN_LOADERS = {
     "sandwiches": (sandwiches.load, "regression"),
 }
 
+#: Default majority-class budgets / sizes swept per domain (plan.md 4.1/4.2).
+#: Values above a domain's available majority count are clamped at run time.
+DEFAULT_BUDGETS = {
+    "molecules": [250, 500, 1000, 2000, 4000, 8000],
+    "baseball": [250, 500, 1000, 2000, 4000, 8000, 16000],
+    "sandwiches": [50, 100, 200, 400, 800],
+}
+
 
 def load_domain(name: str) -> tuple[Dataset, str]:
     """Load a domain ``Dataset`` and return ``(dataset, task)``.
