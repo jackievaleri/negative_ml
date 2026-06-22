@@ -31,7 +31,7 @@ jobs:
 
       - name: Build docs
         run: |
-          conda activate negative_ml
+          micromamba activate negative_ml
           python -m ipykernel install --user --name negative_ml
           pip install -e .
           mkdocs build --site-dir /tmp/docs

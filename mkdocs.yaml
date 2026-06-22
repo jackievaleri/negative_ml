@@ -9,8 +9,8 @@ theme:
   icon:
     logo: "fontawesome/solid/book"
   features:
-    - instant
-    - tabs
+    - navigation.instant
+    - navigation.tabs
   language: en
 
 # We customize the navigation by hand to control the order
@@ -31,14 +31,9 @@ plugins:
       default_handler: python
       handlers:
         python:
-          rendering:
+          options:
             show_source: true
-          # https://github.com/mkdocstrings/mkdocstrings/issues/278#issuecomment-831411193
-          selection:
-            docstring_style: restructured-text
-      # custom_templates: templates
-      watch:
-        - negative_ml
+            docstring_style: sphinx
 # Taken from here: https://squidfunk.github.io/mkdocs-material/extensions/codehilite/
 markdown_extensions:
   - codehilite

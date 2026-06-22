@@ -40,7 +40,13 @@ dependencies:
 - interrogate
 - pre-commit
 - pylint
+# Documentation
+- mkdocs
+- mkdocs-material
+- mkdocstrings
+- mkdocstrings-python
 # pip dependencies
 - pip:
   # Place packages that cannot be installed by conda in this section.
   - pybaseball
+  - mknotebooks

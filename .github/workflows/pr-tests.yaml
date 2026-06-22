@@ -28,7 +28,7 @@ jobs:
 
       - name: Run tests
         run: |
-          conda activate negative_ml
+          micromamba activate negative_ml
           pip install -e .
           pytest
 
