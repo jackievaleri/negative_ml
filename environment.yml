@@ -36,13 +36,11 @@ dependencies:
 - pytest
 - pytest-cov
 - coverage
-# Code Style Tools
-- black
-- darglint
-- flake8
+# Code Style Tools (ruff = linter + formatter + import sorter)
+- ruff
 - interrogate
 - pre-commit
-- pylint
+- pydoclint
 # Documentation
 - mkdocs
 - mkdocs-material

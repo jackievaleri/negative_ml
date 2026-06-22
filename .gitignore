@@ -148,6 +148,8 @@ cython_debug/
 oryx-build-commands.txt
 .DS_Store
 docs/cli.md
+# Vendored micromamba bootstrap binary — install locally, never commit
+bin/
 
 # Project data & results (keep dirs, ignore contents)
 data/raw/

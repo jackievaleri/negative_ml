@@ -1,1 +1,1 @@
-"""Tests for the experiment runners (saturation, selection, curriculum)."""
+"""Tests for the experiment runners (saturation, selection)."""

@@ -2,8 +2,7 @@
 
 Experiments should depend on this thin surface (``make_model`` returning an
 sklearn-compatible estimator) rather than on a concrete library, so that the
-saturation / selection / curriculum runners never change when the underlying
-model does.
+saturation / selection runners never change when the underlying model does.
 """
 
 from __future__ import annotations
@@ -14,9 +13,13 @@ from typing import Any, Protocol
 class Estimator(Protocol):
     """Minimal sklearn-style estimator contract used by the experiments."""
 
-    def fit(self, X: Any, y: Any, **kwargs: Any) -> "Estimator": ...
+    def fit(self, X: Any, y: Any, **kwargs: Any) -> "Estimator":
+        """Fit the estimator to features ``X`` and targets ``y``."""
+        ...
 
-    def predict(self, X: Any) -> Any: ...
+    def predict(self, X: Any) -> Any:
+        """Return predictions for features ``X``."""
+        ...
 
 
 def make_model(

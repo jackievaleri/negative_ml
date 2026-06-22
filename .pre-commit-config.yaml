@@ -14,6 +14,9 @@ repos:
     hooks:
       - id: interrogate
         args: [-c, pyproject.toml]
+        # interrogate 1.5.0 imports pkg_resources, which setuptools removed in
+        # v81. Pin setuptools below that so the hook env keeps pkg_resources.
+        additional_dependencies: ["setuptools<81"]
   - repo: https://github.com/jsh9/pydoclint
     rev: 0.3.8
     hooks:
@@ -21,8 +24,11 @@ repos:
         args:
           - "--config=pyproject.toml"
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    # Ruff version.
-    rev: v0.0.287
+    # Ruff is the sole linter + formatter (replaces black/isort/flake8/pylint).
+    # >=0.1.9 for the `[tool.ruff.lint]` table and the `ruff-format` hook.
+    rev: v0.1.9
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix, --exclude, nbconvert_config.py]
+      - id: ruff-format
+        args: [--exclude, nbconvert_config.py]

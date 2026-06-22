@@ -7,6 +7,6 @@ Local data store — **not committed** (see `.gitignore`).
   - baseball: Statcast batted-ball events (via `pybaseball`)
   - sandwiches: exported Roll-for-Sandwich ratings sheet
 - `processed/` — featurized `Dataset` caches written by
-  `scripts/prepare_data.py`.
+  `negative_ml prepare`.
 
 Source links are listed in `docs/plan.md` section 7.
