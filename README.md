@@ -1,6 +1,6 @@
 # negative_ml
 
-Negative results in machine learning
+Negative data in machine learning
 
 Made with ❤️ by Jackie Valeri (@jackievaleri).
 
