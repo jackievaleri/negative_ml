@@ -4,6 +4,9 @@ channels:
 dependencies:
 # Core stack
 - python>=3.11
+# Pin <81: setuptools 81+ removes the legacy pkg_resources module that
+# some dependencies still import (ModuleNotFoundError otherwise).
+- setuptools<81
 - python-build
 - bump2version
 - ipykernel
@@ -33,13 +36,11 @@ dependencies:
 - pytest
 - pytest-cov
 - coverage
-# Code Style Tools
-- black
-- darglint
-- flake8
+# Code Style Tools (ruff = linter + formatter + import sorter)
+- ruff
 - interrogate
 - pre-commit
-- pylint
+- pydoclint
 # Documentation
 - mkdocs
 - mkdocs-material
