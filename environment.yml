@@ -3,8 +3,8 @@ channels:
 - conda-forge
 dependencies:
 # Core stack
-- python=3.10
-- build
+- python>=3.11
+- python-build
 - bump2version
 - ipykernel
 - ipywidgets
@@ -16,11 +16,12 @@ dependencies:
 - matplotlib
 - numpy
 - pandas
-- pymc
+- pyarrow
+- rdkit
 - scikit-learn
 - scipy
 - seaborn
-- statsmodels
+- xgboost
 # Utilities
 - pyprojroot
 - python-dotenv
@@ -39,11 +40,7 @@ dependencies:
 - interrogate
 - pre-commit
 - pylint
-# Documentation
-- mkdocs
-- mkdocs-material
-- mkdocstrings
 # pip dependencies
 - pip:
   # Place packages that cannot be installed by conda in this section.
-  - mknotebooks
+  - pybaseball
