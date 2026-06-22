@@ -16,6 +16,7 @@ DATA_DIR = REPO_ROOT / "data"
 RAW_DATA_DIR = DATA_DIR / "raw"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
 RESULTS_DIR = REPO_ROOT / "results"
+FIGURES_DIR = RESULTS_DIR / "figures"
 
 # --- Reproducibility ------------------------------------------------------
 RANDOM_SEED = 1234

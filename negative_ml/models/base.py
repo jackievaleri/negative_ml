@@ -40,4 +40,22 @@ def make_model(
     Returns:
         An unfitted sklearn-compatible estimator.
     """
-    raise NotImplementedError
+    if kind != "xgboost":
+        raise ValueError(
+            f"Unsupported model kind {kind!r}; only 'xgboost' is wired up."
+        )
+
+    from negative_ml.models.xgboost import xgb_classifier, xgb_regressor
+
+    if task == "classification":
+        # "balanced" weighting is resolved against the data later (it needs the
+        # class ratio); accept it here as an explicit scale_pos_weight instead.
+        scale_pos_weight = (
+            class_weight if isinstance(class_weight, (int, float)) else None
+        )
+        return xgb_classifier(scale_pos_weight=scale_pos_weight, **params)
+    if task == "regression":
+        return xgb_regressor(**params)
+    raise ValueError(
+        f"Unknown task {task!r}; expected 'classification' or 'regression'."
+    )

@@ -67,12 +67,30 @@ class Dataset:
         Returns:
             Boolean array of length ``n_samples``.
         """
-        raise NotImplementedError
+        if self.task == "classification":
+            return self.y == 1
+        if threshold is None:
+            raise ValueError("A threshold is required for the regression minority.")
+        return self.y <= threshold
 
     def majority_mask(self, threshold: float | None = None) -> np.ndarray:
         """Boolean mask selecting the majority examples (complement of minority)."""
-        raise NotImplementedError
+        return ~self.minority_mask(threshold)
 
     def subset(self, indices: np.ndarray) -> "Dataset":
         """Return a new ``Dataset`` containing only the given row indices."""
-        raise NotImplementedError
+        indices = np.asarray(indices)
+        meta = (
+            None
+            if self.meta is None
+            else self.meta.iloc[indices].reset_index(drop=True)
+        )
+        groups = None if self.groups is None else np.asarray(self.groups)[indices]
+        return Dataset(
+            X=self.X[indices],
+            y=self.y[indices],
+            task=self.task,
+            feature_names=self.feature_names,
+            groups=groups,
+            meta=meta,
+        )
