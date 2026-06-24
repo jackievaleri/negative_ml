@@ -16,6 +16,7 @@ into the *full* dataset (a subset of the majority rows).
 from __future__ import annotations
 
 import numpy as np
+from loguru import logger
 
 from negative_ml.config import RANDOM_SEED
 from negative_ml.domains.base import Dataset
@@ -131,7 +132,7 @@ def diversity_selection(
     pool = majority
     if len(pool) > DIVERSITY_POOL_CAP and k < DIVERSITY_POOL_CAP:
         pool = np.sort(rng.choice(majority, size=DIVERSITY_POOL_CAP, replace=False))
-        print(
+        logger.info(
             f"  [diversity] majority {len(majority):,} > cap "
             f"{DIVERSITY_POOL_CAP:,}; sampling candidate pool to the cap."
         )

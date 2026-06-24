@@ -25,6 +25,7 @@ import matplotlib
 
 matplotlib.use("Agg")  # headless: write PNGs without a display
 import matplotlib.pyplot as plt
+from loguru import logger
 
 from negative_ml.config import FIGURES_DIR
 from negative_ml.domains import baseball
@@ -33,6 +34,7 @@ from negative_ml.experiments import selection as sel
 from negative_ml.models import make_model
 from negative_ml.runner import results_path
 from negative_ml.viz import results as viz
+from negative_ml.viz.style import FIGURE_DPI
 
 OUT_DIR = FIGURES_DIR / "baseball"
 
@@ -44,22 +46,27 @@ N_SEEDS = 3
 METRICS = ["auroc", "auprc", "precision_at_k", "enrichment_factor"]
 
 
-def _save(fig, name: str) -> None:
-    """Save and close a figure under the baseball figures directory."""
+def _save(fig: plt.Figure, name: str) -> None:
+    """Save and close a figure under the baseball figures directory.
+
+    Args:
+        fig: The figure to write.
+        name: File name (with extension) under ``OUT_DIR``.
+    """
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     path = OUT_DIR / name
-    fig.savefig(path, dpi=130, bbox_inches="tight")
+    fig.savefig(path, dpi=FIGURE_DPI, bbox_inches="tight")
     plt.close(fig)
-    print(f"  wrote {path.relative_to(FIGURES_DIR.parent.parent)}")
+    logger.info(f"  wrote {path.relative_to(FIGURES_DIR.parent.parent)}")
 
 
 def main() -> None:
     """Load data, run the selection + saturation sweeps, and save results."""
-    print("Loading 2024 batted-ball data (first run pulls Statcast)...")
+    logger.info("Loading 2024 batted-ball data (first run pulls Statcast)...")
     dataset = baseball.load()
     n_pos = int(dataset.y.sum())
     n_majority = dataset.n_samples - n_pos
-    print(
+    logger.info(
         f"  {dataset.n_samples:,} batted balls; {n_pos:,} home runs "
         f"({dataset.y.mean():.2%} minority); {n_majority:,} majority"
     )
@@ -68,7 +75,7 @@ def main() -> None:
     budgets = [b for b in BUDGETS if b < n_majority]
 
     # --- Fixed-budget selection comparison (4.2, H2/H3/H4) ---------------
-    print(f"\nBudget sweep over {budgets} (n_seeds={N_SEEDS})...")
+    logger.info(f"Budget sweep over {budgets} (n_seeds={N_SEEDS})...")
     selection_df = sel.budget_sweep(
         dataset,
         model_factory,
@@ -78,9 +85,9 @@ def main() -> None:
     )
     sel_path = results_path("selection", "baseball")
     selection_df.to_csv(sel_path, index=False)
-    print(f"  wrote {sel_path}")
+    logger.info(f"  wrote {sel_path}")
 
-    print("\nSelection figures:")
+    logger.info("Selection figures:")
     fig = viz.plot_selection_grid(selection_df, metrics=METRICS)
     _save(fig, "downselection_grid.png")
 
@@ -90,7 +97,7 @@ def main() -> None:
     _save(fig, "downselection_auprc.png")
 
     # --- Saturation sweeps (4.1, H1) ------------------------------------
-    print("\nSaturation sweeps...")
+    logger.info("Saturation sweeps...")
     sat_majority = sat.fix_minority_vary_majority(
         dataset, model_factory, majority_sizes=budgets, n_seeds=N_SEEDS
     )
@@ -101,8 +108,8 @@ def main() -> None:
     sat_proportional.to_csv(
         results_path("saturation_proportional", "baseball"), index=False
     )
-    print(f"  wrote {results_path('saturation', 'baseball')}")
-    print(f"  wrote {results_path('saturation_proportional', 'baseball')}")
+    logger.info(f"  wrote {results_path('saturation', 'baseball')}")
+    logger.info(f"  wrote {results_path('saturation_proportional', 'baseball')}")
 
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     viz.plot_saturation_curve(
@@ -120,9 +127,9 @@ def main() -> None:
     _save(fig, "saturation_curve.png")
 
     # --- Summary --------------------------------------------------------
-    print("\nMean metrics by strategy (averaged over budgets & seeds):")
+    logger.info("Mean metrics by strategy (averaged over budgets & seeds):")
     summary = selection_df.groupby("strategy")[METRICS].mean()
-    print(summary.to_string(float_format=lambda v: f"{v:.4f}"))
+    logger.info("\n" + summary.to_string(float_format=lambda v: f"{v:.4f}"))
 
 
 if __name__ == "__main__":

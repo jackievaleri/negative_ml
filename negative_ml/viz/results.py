@@ -8,6 +8,7 @@ The headline figure realizes the talk's main result axes:
 
 As with the rest of :mod:`negative_ml.viz`, every function draws onto a
 caller-supplied ``Axes`` so the same code backs both scripts and notebooks.
+Colors and axis styling come from :mod:`negative_ml.viz.style`.
 """
 
 from __future__ import annotations
@@ -15,6 +16,8 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+from negative_ml.viz.style import PALETTE, style_axes
 
 #: Human-readable metric labels for axis titles.
 METRIC_LABELS = {
@@ -27,24 +30,37 @@ METRIC_LABELS = {
 
 #: Stable color + marker per strategy so a method looks the same across panels.
 STRATEGY_STYLE = {
-    "random": {"color": "#7f7f7f", "marker": "o", "label": "random"},
-    "hard": {"color": "#d62728", "marker": "s", "label": "hard (near-miss)"},
-    "diversity": {"color": "#2ca02c", "marker": "^", "label": "diversity"},
+    "random": {"color": PALETTE["gray"], "marker": "o", "label": "random"},
+    "hard": {"color": PALETTE["red"], "marker": "s", "label": "hard (near-miss)"},
+    "diversity": {"color": PALETTE["green"], "marker": "^", "label": "diversity"},
     "density_diversity": {
-        "color": "#1f77b4",
+        "color": PALETTE["blue"],
         "marker": "D",
         "label": "density-diversity",
     },
 }
 #: Full-data references drawn as horizontal lines, not size-varying curves.
 REFERENCE_STYLE = {
-    "as_is": {"color": "#000000", "linestyle": "--", "label": "as-is (full)"},
-    "weighted": {"color": "#9467bd", "linestyle": ":", "label": "weighted (full)"},
+    "as_is": {"color": PALETTE["ink"], "linestyle": "--", "label": "as-is (full)"},
+    "weighted": {
+        "color": PALETTE["purple"],
+        "linestyle": ":",
+        "label": "weighted (full)",
+    },
 }
 
 
 def _agg(df: pd.DataFrame, x: str, metric: str) -> pd.DataFrame:
-    """Mean + std of ``metric`` over seeds, grouped by ``x``, sorted by ``x``."""
+    """Mean + std of ``metric`` over seeds, grouped by ``x``, sorted by ``x``.
+
+    Args:
+        df: Long-format results frame.
+        x: Column to group by (the x-axis quantity).
+        metric: Column to aggregate.
+
+    Returns:
+        Frame with one row per ``x`` value and ``mean`` / ``std`` columns.
+    """
     g = df.groupby(x)[metric].agg(["mean", "std"]).reset_index()
     g["std"] = g["std"].fillna(0.0)
     return g.sort_values(x)
@@ -115,8 +131,7 @@ def plot_strategy_curves(
     ax.set_xlabel(f"training set size ({x})")
     ax.set_ylabel(METRIC_LABELS.get(metric, metric))
     ax.set_title(METRIC_LABELS.get(metric, metric))
-    ax.grid(True, alpha=0.25)
-    return ax
+    return style_axes(ax)
 
 
 def plot_selection_grid(
@@ -128,7 +143,16 @@ def plot_selection_grid(
 ) -> plt.Figure:
     """Multi-panel headline figure: one subplot per metric, shared legend.
 
-    Returns the created ``Figure`` (caller saves / displays it).
+    Args:
+        df: Long-format results frame (see :func:`plot_strategy_curves`).
+        metrics: Metric columns to panel, one subplot each. Defaults to AUROC,
+            AUPRC, precision@k, and enrichment factor.
+        x: Column for the shared x-axis.
+        logx: Log-scale the x-axis on every panel.
+        figsize: Figure size; defaults to a 2-column grid sized to the panels.
+
+    Returns:
+        The created ``Figure`` (caller saves / displays it).
     """
     metrics = metrics or ["auroc", "auprc", "precision_at_k", "enrichment_factor"]
     n = len(metrics)
@@ -162,9 +186,21 @@ def plot_saturation_curve(
     ax: plt.Axes,
     x: str = "n_train",
     label: str | None = None,
-    color: str = "#7f7f7f",
+    color: str = PALETTE["gray"],
 ) -> plt.Axes:
-    """Single saturation curve (mean +/-1 std over seeds) for one frame."""
+    """Single saturation curve (mean +/-1 std over seeds) for one frame.
+
+    Args:
+        df: Long-format results frame with ``seed``, ``x``, and ``metric``.
+        metric: Column to put on the y-axis.
+        ax: Target matplotlib axes.
+        x: Column for the x-axis (training set size by default).
+        label: Legend label for the curve, if any.
+        color: Line and band color for the curve.
+
+    Returns:
+        The styled ``ax``.
+    """
     g = _agg(df, x, metric)
     ax.plot(
         g[x],
@@ -179,5 +215,4 @@ def plot_saturation_curve(
     )
     ax.set_xlabel(f"training set size ({x})")
     ax.set_ylabel(METRIC_LABELS.get(metric, metric))
-    ax.grid(True, alpha=0.25)
-    return ax
+    return style_axes(ax)
