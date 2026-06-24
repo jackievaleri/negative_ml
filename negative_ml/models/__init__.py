@@ -7,5 +7,6 @@ without importing a specific estimator.
 """
 
 from negative_ml.models.base import make_model
+from negative_ml.models.baseline import CorrelationModel
 
-__all__ = ["make_model"]
+__all__ = ["make_model", "CorrelationModel"]

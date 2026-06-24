@@ -13,6 +13,15 @@ def test_make_model_rejects_unknown_kind():
         make_model("classification", kind="randomforest")
 
 
+def test_correlation_kind_builds_baseline():
+    """kind='correlation' returns the single-feature negative-control estimator."""
+    from negative_ml.models.baseline import CorrelationModel
+
+    model = make_model("classification", kind="correlation", feature_index=2)
+    assert isinstance(model, CorrelationModel)
+    assert model.feature_index == 2
+
+
 def test_classifier_trains_on_separable_data():
     """make_model returns an XGBClassifier that learns a separable pattern."""
     rng = np.random.default_rng(0)

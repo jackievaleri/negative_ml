@@ -83,3 +83,42 @@ def test_featurize_multiclass_target():
     ds = baseball._featurize(_synthetic_statcast(), binary=False)
     # classes = [out, single, double, triple, home_run]; HR -> 4, single -> 1.
     assert ds.y.tolist() == [4, 1, 4]
+
+
+def test_featurize_respects_target():
+    """The binary positive class follows ``target`` (home_run by default)."""
+    df = pd.DataFrame(
+        {
+            "launch_speed": [100.0, 95.0, 88.0],
+            "launch_angle": [10.0, 12.0, 8.0],
+            "hc_x": [60.0, 190.0, 100.0],
+            "hc_y": [120.0, 120.0, 120.0],
+            "stand": ["R", "L", "R"],
+            "events": ["triple", "home_run", "single"],
+        }
+    )
+    assert baseball._featurize(df, binary=True, target="triple").y.tolist() == [1, 0, 0]
+    assert baseball._featurize(df, binary=True, target="home_run").y.tolist() == [
+        0,
+        1,
+        0,
+    ]
+
+
+def test_featurize_unknown_target_raises():
+    """An unknown binary target fails loudly rather than labeling everything 0."""
+    import pytest
+
+    with pytest.raises(ValueError):
+        baseball._featurize(_synthetic_statcast(), binary=True, target="grand_slam")
+
+
+def test_seasons_registry_and_load_season_dates():
+    """``SEASONS`` covers 2023/2024 and 2024 reuses the default (cached) dates."""
+    assert set(baseball.SEASONS) >= {2023, 2024}
+    assert baseball.SEASONS[2024] == (baseball.DEFAULT_START, baseball.DEFAULT_END)
+
+    import pytest
+
+    with pytest.raises(ValueError):
+        baseball.load_season(1999)

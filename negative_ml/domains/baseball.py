@@ -1,16 +1,20 @@
 """MLB batted-ball outcomes domain — intuitive geometry (plan.md 3.2).
 
 Features are exit velocity, launch angle, and an adjusted (pull-positive) spray
-angle; the task is to predict whether a batted ball is a home run. Home runs are
-the rare, desirable minority class and occupy a small, well-defined region of the
+angle; the task is to predict a rare batted-ball outcome. The default minority
+``target`` is the home run — it occupies a small, well-defined region of the
 exit-velocity / launch-angle plane (high exit velocity, ~12-50 deg launch angle),
 which makes "near-miss" majority examples (balls that just miss being home runs) a
-natural selection target.
+natural selection target. The ``target`` can instead be any hit type; ``triple``
+is a deliberately harder, more imbalanced minority (rarer than home runs, and
+geometrically diffuse rather than a tight high-exit-velocity cluster).
 
-Data is pulled with ``pybaseball`` (imported lazily). For the binary framing used
-throughout the imbalance study, ``home_run`` is the minority class (``y == 1``)
-and every other batted ball is the majority class; the full multiclass outcome
-(out / single / double / triple / home_run) is retained in ``meta``.
+Data is pulled with ``pybaseball`` (imported lazily) one MLB season at a time —
+see :data:`SEASONS` and :func:`load_season`. For the binary framing used
+throughout the imbalance study, the chosen ``target`` is the minority class
+(``y == 1``) and every other batted ball is the majority class; the full
+multiclass outcome (out / single / double / triple / home_run) is retained in
+``meta``.
 """
 
 from __future__ import annotations
@@ -26,6 +30,15 @@ from negative_ml.domains.base import Dataset
 # Default Statcast pull: the full 2024 MLB regular season.
 DEFAULT_START = "2024-03-20"
 DEFAULT_END = "2024-09-30"
+
+#: MLB regular-season date ranges by year, ``year -> (start, end)``. 2024 keeps
+#: the exact :data:`DEFAULT_START`/:data:`DEFAULT_END` so its cached parquet is
+#: reused. 2023 is the primary training season; 2024 is the held-out future year
+#: used for the cross-season ("hard") split.
+SEASONS = {
+    2023: ("2023-03-30", "2023-10-01"),
+    2024: (DEFAULT_START, DEFAULT_END),
+}
 
 # Statcast hit-coordinate origin (home plate) and the conventional pull-positive
 # spray-angle convention used across the public batted-ball literature.
@@ -49,6 +62,7 @@ def load(
     binary: bool = True,
     start: str = DEFAULT_START,
     end: str = DEFAULT_END,
+    target: str = "home_run",
 ) -> Dataset:
     """Load batted-ball outcomes as a ``Dataset``.
 
@@ -56,11 +70,14 @@ def load(
         path: Optional cached CSV/parquet of Statcast batted-ball events. If
             ``None``, data is fetched/cached via :func:`fetch_statcast` for the
             ``start``/``end`` range.
-        binary: If ``True``, frame as home run (minority, ``y == 1``) vs. every
+        binary: If ``True``, frame as ``target`` (minority, ``y == 1``) vs. every
             other batted ball (majority). If ``False``, put the integer-encoded
-            5-class outcome in ``y`` instead.
+            5-class outcome in ``y`` instead (``target`` is then ignored).
         start: Statcast start date (``YYYY-MM-DD``) when fetching.
         end: Statcast end date (``YYYY-MM-DD``) when fetching.
+        target: Which hit type is the positive/minority class in the binary
+            framing — one of :data:`_HIT_EVENTS` (``home_run`` by default,
+            ``triple`` for the harder problem).
 
     Returns:
         A classification ``Dataset`` with the geometric features in ``X`` and the
@@ -70,7 +87,30 @@ def load(
         events = _read_cached(Path(path))
     else:
         events = fetch_statcast(start, end)
-    return _featurize(events, binary=binary)
+    return _featurize(events, binary=binary, target=target)
+
+
+def load_season(year: int, target: str = "home_run", binary: bool = True) -> Dataset:
+    """Load a full MLB season by year (see :data:`SEASONS`).
+
+    Convenience wrapper over :func:`load` that resolves a season's date range, so
+    callers say ``load_season(2023, target="triple")`` rather than repeating the
+    Statcast start/end dates.
+
+    Args:
+        year: Season year present in :data:`SEASONS` (2023 or 2024).
+        target: Positive/minority hit type (see :func:`load`).
+        binary: Binary ``target``-vs-rest framing if ``True``, else 5-class.
+
+    Returns:
+        The featurized ``Dataset`` for that season.
+    """
+    if year not in SEASONS:
+        raise ValueError(
+            f"No date range for season {year!r}; known: {sorted(SEASONS)}."
+        )
+    start, end = SEASONS[year]
+    return load(binary=binary, start=start, end=end, target=target)
 
 
 def fetch_statcast(start: str, end: str) -> pd.DataFrame:
@@ -127,7 +167,9 @@ def _outcome_label(events: pd.Series) -> pd.Series:
     return events.map(_HIT_EVENTS).fillna("out")
 
 
-def _featurize(events: pd.DataFrame, binary: bool = True) -> Dataset:
+def _featurize(
+    events: pd.DataFrame, binary: bool = True, target: str = "home_run"
+) -> Dataset:
     """Turn a raw Statcast events frame into a featurized ``Dataset``.
 
     Pure and offline-testable: keeps only batted balls with valid kinematics and
@@ -136,11 +178,17 @@ def _featurize(events: pd.DataFrame, binary: bool = True) -> Dataset:
 
     Args:
         events: Raw Statcast events frame (e.g. from :func:`fetch_statcast`).
-        binary: Home-run-vs-rest target if ``True``, else 5-class integer target.
+        binary: ``target``-vs-rest label if ``True``, else 5-class integer target.
+        target: Positive/minority hit type for the binary framing — one of
+            :data:`_HIT_EVENTS`.
 
     Returns:
         A classification ``Dataset``.
     """
+    if binary and target not in _HIT_EVENTS:
+        raise ValueError(
+            f"Unknown target {target!r}; choose from {sorted(_HIT_EVENTS)}."
+        )
     needed = ["launch_speed", "launch_angle", "hc_x", "hc_y", "stand", "events"]
     df = events.loc[:, needed].copy()
     # Keep batted balls only: valid kinematics and a landing location.
@@ -162,7 +210,7 @@ def _featurize(events: pd.DataFrame, binary: bool = True) -> Dataset:
 
     outcome = _outcome_label(df["events"])
     if binary:
-        y = (df["events"] == "home_run").astype(int).to_numpy()
+        y = (df["events"] == target).astype(int).to_numpy()
     else:
         classes = ["out", "single", "double", "triple", "home_run"]
         codes = pd.Categorical(outcome, categories=classes).codes

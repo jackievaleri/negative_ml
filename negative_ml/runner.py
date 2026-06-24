@@ -55,5 +55,24 @@ def results_path(experiment: str, domain: str) -> Path:
     Returns:
         Path under ``results/`` (the directory is created if needed).
     """
+    return artifact_path(experiment, domain, ".csv")
+
+
+def artifact_path(name: str, domain: str, suffix: str = ".csv") -> Path:
+    """Standard output path for any saved plotting artifact.
+
+    The single naming convention (``<name>_<domain><suffix>`` under
+    ``results/``) for every file a figure is rebuilt from — results frames
+    (``.csv``), prediction tables, and saved arrays (``.npz``) alike — so the
+    generation and plotting steps agree on where things live.
+
+    Args:
+        name: Artifact name (e.g. ``"predictions"``, ``"probability_grid"``).
+        domain: Domain name (e.g. ``"baseball"``).
+        suffix: File extension, including the dot (``".csv"`` by default).
+
+    Returns:
+        Path under ``results/`` (the directory is created if needed).
+    """
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    return RESULTS_DIR / f"{experiment}_{domain}.csv"
+    return RESULTS_DIR / f"{name}_{domain}{suffix}"

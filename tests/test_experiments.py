@@ -4,6 +4,10 @@ import numpy as np
 
 from negative_ml.domains.base import Dataset
 from negative_ml.experiments import saturation, selection
+from negative_ml.experiments._common import (
+    cross_dataset_split,
+    split_from_dataset,
+)
 from negative_ml.models import make_model
 
 METRIC_COLS = {"auroc", "auprc", "f1", "precision_at_k", "enrichment_factor"}
@@ -84,3 +88,45 @@ def test_scale_total_proportional_columns():
     # Larger fractions should use more training rows.
     means = df.groupby("fraction")["n_train"].mean()
     assert means.loc[0.5] > means.loc[0.25]
+
+
+def test_cross_dataset_split_uses_test_dataset():
+    """The hard split trains on one dataset and tests on the entirety of another."""
+    train = _dataset()
+    test = _dataset(n=120)
+    sp = cross_dataset_split(train, test, name="hard")
+    assert sp.train_ds is train
+    assert np.array_equal(sp.X_test, test.X)
+    assert np.array_equal(sp.y_test, test.y)
+    assert sp.name == "hard"
+
+
+def test_runners_accept_injected_split():
+    """Runners take a pre-built split; they do not stamp a ``split`` column."""
+    train = _dataset()
+    test = _dataset(n=160)
+    sp = cross_dataset_split(train, test)
+
+    sel_df = selection.compare_strategies(
+        train, _factory(), budget=40, strategies=("random",), n_seeds=1, split=sp
+    )
+    assert len(sel_df) == 1
+    assert "split" not in sel_df.columns  # the scripts add target/split, not runners
+
+    sat_df = saturation.scale_total_proportional(
+        train, _factory(), fractions=[0.5], n_seeds=1, split=sp
+    )
+    assert len(sat_df) == 1
+
+
+def test_injected_split_default_matches_internal_split():
+    """Passing an explicit random split reproduces the default-split result."""
+    ds = _dataset()
+    explicit = split_from_dataset(ds)
+    a = selection.compare_strategies(
+        ds, _factory(), budget=40, strategies=("random",), n_seeds=1
+    )
+    b = selection.compare_strategies(
+        ds, _factory(), budget=40, strategies=("random",), n_seeds=1, split=explicit
+    )
+    assert np.allclose(a["auprc"].to_numpy(), b["auprc"].to_numpy())

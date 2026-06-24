@@ -15,7 +15,12 @@ import pandas as pd
 
 from negative_ml.config import RANDOM_SEED
 from negative_ml.domains.base import Dataset
-from negative_ml.experiments._common import ModelFactory, fit_score, make_split
+from negative_ml.experiments._common import (
+    EvalSplit,
+    ModelFactory,
+    fit_score,
+    resolve_split,
+)
 from negative_ml.selection import BUDGET_VARYING, STRATEGIES
 
 #: Pseudo-strategy: keep ALL majority data but up-weight the minority via
@@ -32,12 +37,13 @@ def compare_strategies(
     n_seeds: int = 3,
     scaffold_split: bool = False,
     include_weighted: bool = False,
+    split: EvalSplit | None = None,
     seed: int = RANDOM_SEED,
 ) -> pd.DataFrame:
     """Compare majority-selection strategies at a single budget.
 
     Args:
-        dataset: Full training domain.
+        dataset: Full training domain (ignored when ``split`` is supplied).
         model_factory: Builds a fresh model for each fit (accepts kwargs such as
             ``class_weight``).
         budget: Number of majority examples each strategy may keep.
@@ -45,15 +51,17 @@ def compare_strategies(
         n_seeds: Repeats per strategy (drives error bars).
         scaffold_split: Use scaffold/grouped instead of random eval split.
         include_weighted: Also evaluate the class-weighting baseline (H4).
+        split: Pre-built :class:`EvalSplit` (e.g. cross-season) to evaluate on;
+            when ``None`` a stratified split of ``dataset`` is used.
         seed: Base seed for the (fixed) train/test split and per-repeat seeds.
 
     Returns:
         Long-format DataFrame: ``[strategy, seed, budget, n_train, <metrics>]``.
     """
     # One fixed split so the test set is identical across every strategy.
-    train_idx, test_idx = make_split(dataset, scaffold=scaffold_split, seed=seed)
-    train_ds = dataset.subset(train_idx)
-    X_test, y_test = dataset.X[test_idx], dataset.y[test_idx]
+    sp = resolve_split(dataset, split, scaffold=scaffold_split, seed=seed)
+    train_ds = sp.train_ds
+    X_test, y_test = sp.X_test, sp.y_test
 
     minority_idx = np.where(train_ds.minority_mask())[0]
     n_majority = int(train_ds.majority_mask().sum())
@@ -110,6 +118,7 @@ def budget_sweep(
     n_seeds: int = 3,
     scaffold_split: bool = False,
     include_weighted: bool = True,
+    split: EvalSplit | None = None,
     seed: int = RANDOM_SEED,
 ) -> pd.DataFrame:
     """Run :func:`compare_strategies` across several budgets.
@@ -118,6 +127,11 @@ def budget_sweep(
     references (``as_is`` and, when requested, ``weighted``) are evaluated once
     at the full majority size and appended. Produces the strategy-vs-budget
     curves that are the talk's main result.
+
+    Args:
+        split: Pre-built :class:`EvalSplit` (e.g. cross-season) forwarded to every
+            :func:`compare_strategies` call so the test set is identical across
+            budgets; when ``None`` a stratified split of ``dataset`` is used.
 
     Returns:
         Long-format DataFrame: ``[strategy, seed, budget, n_train, <metrics>]``.
@@ -133,6 +147,7 @@ def budget_sweep(
                 n_seeds=n_seeds,
                 scaffold_split=scaffold_split,
                 include_weighted=False,
+                split=split,
                 seed=seed,
             )
         )
@@ -146,6 +161,7 @@ def budget_sweep(
         n_seeds=n_seeds,
         scaffold_split=scaffold_split,
         include_weighted=include_weighted,
+        split=split,
         seed=seed,
     )
     frames.append(reference)

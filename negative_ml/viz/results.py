@@ -16,8 +16,9 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.lines import Line2D
 
-from negative_ml.viz.style import PALETTE, style_axes
+from negative_ml.viz.style import DARK2, INK, PALETTE, style_axes
 
 #: Human-readable metric labels for axis titles.
 METRIC_LABELS = {
@@ -29,24 +30,37 @@ METRIC_LABELS = {
 }
 
 #: Stable color + marker per strategy so a method looks the same across panels.
+#: The four size-varying strategies take the first four Dark2 colors *in order*.
 STRATEGY_STYLE = {
-    "random": {"color": PALETTE["gray"], "marker": "o", "label": "random"},
-    "hard": {"color": PALETTE["red"], "marker": "s", "label": "hard (near-miss)"},
-    "diversity": {"color": PALETTE["green"], "marker": "^", "label": "diversity"},
+    "random": {"color": DARK2[0], "marker": "o", "label": "random"},
+    "hard": {"color": DARK2[1], "marker": "s", "label": "hard (near-miss)"},
+    "diversity": {"color": DARK2[2], "marker": "^", "label": "diversity"},
     "density_diversity": {
-        "color": PALETTE["blue"],
+        "color": DARK2[3],
         "marker": "D",
         "label": "density-diversity",
     },
 }
 #: Full-data references drawn as horizontal lines, not size-varying curves.
+#: ``as_is`` is a neutral guide; ``weighted`` continues the Dark2 order.
 REFERENCE_STYLE = {
-    "as_is": {"color": PALETTE["ink"], "linestyle": "--", "label": "as-is (full)"},
+    "as_is": {"color": INK, "linestyle": "--", "label": "as-is (full)"},
     "weighted": {
-        "color": PALETTE["purple"],
+        "color": DARK2[4],
         "linestyle": ":",
         "label": "weighted (full)",
     },
+}
+
+#: Per-split presentation. The *split* dimension is shown via linestyle (and a
+#: dedicated bar color), never color-coded against strategies, so the selection
+#: ``"hard"`` strategy (a color/marker) and the ``"hard"`` split (a linestyle)
+#: never collide in one legend.
+SPLIT_LINESTYLE = {"random": "-", "hard": "--"}
+SPLIT_COLOR = {"random": DARK2[0], "hard": DARK2[1]}
+SPLIT_LABEL = {
+    "random": "random split (within 2023)",
+    "hard": "hard split (2023→2024)",
 }
 
 
@@ -215,4 +229,151 @@ def plot_saturation_curve(
     )
     ax.set_xlabel(f"training set size ({x})")
     ax.set_ylabel(METRIC_LABELS.get(metric, metric))
+    return style_axes(ax)
+
+
+def plot_split_overlay(
+    df: pd.DataFrame,
+    metric: str,
+    ax: plt.Axes,
+    x: str = "n_train",
+    logx: bool = True,
+) -> plt.Axes:
+    """Overlay the same strategy curves for the random vs. hard split.
+
+    Strategy is encoded by **color** (reusing :data:`STRATEGY_STYLE`) and the
+    split by **linestyle** (solid = random, dashed = hard), so the two
+    dimensions read independently. Answers "do selection strategies that look
+    good in-distribution still help when generalizing to next season?".
+
+    Args:
+        df: Long-format frame carrying a ``split`` column alongside ``strategy``,
+            ``seed``, ``x``, and ``metric`` (typically filtered to one target).
+        metric: Column to put on the y-axis.
+        ax: Target matplotlib axes.
+        x: Column for the x-axis (total training size by default).
+        logx: Log-scale the x-axis.
+    """
+    present_splits = [s for s in SPLIT_LINESTYLE if s in df["split"].unique()]
+    present_strats = [s for s in STRATEGY_STYLE if s in df["strategy"].unique()]
+
+    for split_name in present_splits:
+        ls = SPLIT_LINESTYLE[split_name]
+        sub = df[df["split"] == split_name]
+        for strat in present_strats:
+            style = STRATEGY_STYLE[strat]
+            g = _agg(sub[sub["strategy"] == strat], x, metric)
+            if g.empty:
+                continue
+            ax.plot(
+                g[x],
+                g["mean"],
+                color=style["color"],
+                linestyle=ls,
+                marker=style["marker"],
+                markersize=5,
+                linewidth=1.6,
+            )
+
+    if logx:
+        ax.set_xscale("log")
+    ax.set_xlabel(f"training set size ({x})")
+    ax.set_ylabel(METRIC_LABELS.get(metric, metric))
+    ax.set_title(f"{METRIC_LABELS.get(metric, metric)}: random vs. hard split")
+
+    # Two independent legends: strategy (color) and split (linestyle).
+    strat_handles = [
+        Line2D(
+            [],
+            [],
+            color=STRATEGY_STYLE[s]["color"],
+            marker=STRATEGY_STYLE[s]["marker"],
+            label=STRATEGY_STYLE[s]["label"],
+        )
+        for s in present_strats
+    ]
+    split_handles = [
+        Line2D([], [], color=INK, linestyle=SPLIT_LINESTYLE[s], label=SPLIT_LABEL[s])
+        for s in present_splits
+    ]
+    first = ax.legend(
+        handles=strat_handles, loc="lower right", fontsize=8, title="strategy"
+    )
+    ax.add_artist(first)
+    ax.legend(handles=split_handles, loc="upper left", fontsize=8, title="split")
+    return style_axes(ax)
+
+
+def plot_negative_control(
+    df: pd.DataFrame,
+    metric: str = "auprc",
+    ax: plt.Axes | None = None,
+    annotate_corr: bool = True,
+) -> plt.Axes:
+    """Grouped bars: each single-feature control + the full model, by split.
+
+    Shows how far a single feature alone (the correlation negative control) gets
+    you versus the trained model, under each split. Each control bar is annotated
+    with that feature's correlation with the label, so a near-zero bar is visibly
+    explained (e.g. launch angle for triples, where the relationship is
+    non-monotonic and the linear control is near chance).
+
+    Args:
+        df: Long-format negative-control frame for **one target** with columns
+            ``[model, feature, corr, split, <metric>]``.
+        metric: Metric column to chart (``"auprc"`` by default).
+        ax: Target axes; created if ``None``.
+        annotate_corr: Annotate each control bar with its correlation coefficient.
+
+    Returns:
+        The styled ``ax``.
+    """
+    if ax is None:
+        _, ax = plt.subplots(figsize=(8, 5))
+
+    # Single-feature categories (in first-seen order) followed by the full model.
+    corr_feats = list(dict.fromkeys(df.loc[df["model"] == "correlation", "feature"]))
+    cats = corr_feats + ["all"]
+    cat_labels = corr_feats + ["full model"]
+    present_splits = [s for s in SPLIT_COLOR if s in df["split"].unique()]
+    n = max(len(present_splits), 1)
+    width = 0.8 / n
+    xpos = np.arange(len(cats))
+
+    for i, split_name in enumerate(present_splits):
+        sub = df[df["split"] == split_name].set_index("feature")
+        vals = [float(sub.loc[c, metric]) if c in sub.index else np.nan for c in cats]
+        offsets = xpos + (i - (n - 1) / 2) * width
+        ax.bar(
+            offsets,
+            vals,
+            width=width,
+            color=SPLIT_COLOR[split_name],
+            label=SPLIT_LABEL[split_name],
+        )
+        if annotate_corr:
+            for c, off, v in zip(cats, offsets, vals):
+                if c == "all" or np.isnan(v):
+                    continue
+                r = float(sub.loc[c, "corr"])
+                ax.text(
+                    off,
+                    v,
+                    f"r={r:+.2f}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=7,
+                    rotation=90,
+                )
+
+    if metric == "auroc":
+        ax.axhline(0.5, color=INK, ls="--", lw=1, label="chance (0.5)")
+    ax.set_xticks(xpos)
+    ax.set_xticklabels(cat_labels, rotation=20, ha="right")
+    ax.set_ylabel(METRIC_LABELS.get(metric, metric))
+    ax.set_title(
+        f"Negative control: single feature vs. full model "
+        f"({METRIC_LABELS.get(metric, metric)})"
+    )
+    ax.legend(loc="best", fontsize=8)
     return style_axes(ax)

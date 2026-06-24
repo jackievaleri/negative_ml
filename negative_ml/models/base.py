@@ -32,7 +32,8 @@ def make_model(
 
     Args:
         task: ``"classification"`` or ``"regression"``.
-        kind: Model family. Currently only ``"xgboost"`` is wired up.
+        kind: Model family — ``"xgboost"`` (default) or ``"correlation"`` (the
+            single-feature negative control, which requires a ``feature_index``).
         class_weight: Optional class weighting to test the "weighting can
             substitute for data" hypothesis (H4) without deleting examples.
         **params: Extra hyper-parameters forwarded to the estimator.
@@ -40,9 +41,13 @@ def make_model(
     Returns:
         An unfitted sklearn-compatible estimator.
     """
+    if kind == "correlation":
+        from negative_ml.models.baseline import CorrelationModel
+
+        return CorrelationModel(feature_index=params["feature_index"])
     if kind != "xgboost":
         raise ValueError(
-            f"Unsupported model kind {kind!r}; only 'xgboost' is wired up."
+            f"Unsupported model kind {kind!r}; expected 'xgboost' or 'correlation'."
         )
 
     from negative_ml.models.xgboost import xgb_classifier, xgb_regressor

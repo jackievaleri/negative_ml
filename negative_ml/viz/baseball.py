@@ -26,21 +26,33 @@ from sklearn.metrics import (
 from negative_ml import eval as ev
 from negative_ml.domains.base import Dataset
 from negative_ml.viz.style import (
+    DARK2,
     DENSITY_CMAP,
+    INK,
     PALETTE,
     PROBABILITY_CMAP,
     style_axes,
 )
 
-#: Stable color per outcome, with home runs visually dominant.
+#: Stable color per outcome. ``out`` is the dominant background class, so it
+#: takes the neutral gray; the four hit outcomes take the first four Dark2
+#: colors in order, leaving home runs on the bright magenta so they pop.
 OUTCOME_ORDER = ["out", "single", "double", "triple", "home_run"]
 OUTCOME_COLORS = {
     "out": PALETTE["light_gray"],
-    "single": PALETTE["blue"],
-    "double": PALETTE["green"],
-    "triple": PALETTE["purple"],
-    "home_run": PALETTE["red"],
+    "single": DARK2[0],
+    "double": DARK2[1],
+    "triple": DARK2[2],
+    "home_run": DARK2[3],
 }
+
+#: Short tick/axis labels per target (for confusion-matrix display labels).
+TARGET_ABBR = {"home_run": "HR", "triple": "3B", "double": "2B", "single": "1B"}
+
+
+def target_label(target: str) -> str:
+    """Human-readable target name for titles, e.g. ``home_run`` -> ``home run``."""
+    return target.replace("_", " ")
 
 
 # --- EDA (reproduce the blog geometry) -----------------------------------
@@ -121,33 +133,52 @@ def plot_spray_distribution(dataset: Dataset, ax: plt.Axes) -> plt.Axes:
         The styled ``ax``.
     """
     spray = dataset.X[:, 2]
-    ax.hist(spray, bins=60, color=PALETTE["blue"])
-    ax.axvline(0, color=PALETTE["ink"], lw=1, ls="--")
+    ax.hist(spray, bins=60, color=PALETTE["teal"])
+    ax.axvline(0, color=INK, lw=1, ls="--")
     ax.set_xlabel("adjusted spray angle (deg; + = pull)")
     ax.set_ylabel("batted balls")
     ax.set_title("Spray-angle distribution")
     return style_axes(ax)
 
 
-def plot_hr_density(dataset: Dataset, ax: plt.Axes) -> plt.Axes:
-    """Hexbin density of the batted-ball cloud with home runs overlaid.
+def plot_minority_density(
+    dataset: Dataset,
+    ax: plt.Axes,
+    label: str = "home run",
+    color: str | None = None,
+) -> plt.Axes:
+    """Hexbin density of the batted-ball cloud with the minority class overlaid.
 
     Args:
-        dataset: Loaded baseball dataset (features in ``X``, labels in ``y``).
+        dataset: Loaded baseball dataset (features in ``X``, minority in ``y==1``).
         ax: Target matplotlib axes.
+        label: Display name of the minority class (e.g. ``"home run"``, ``"triple"``).
+        color: Overlay color; defaults to the home-run magenta when ``None``.
 
     Returns:
         The styled ``ax``.
     """
     ev_, la = dataset.X[:, 0], dataset.X[:, 1]
     ax.hexbin(ev_, la, gridsize=45, cmap=DENSITY_CMAP, bins="log", mincnt=1)
-    hr = dataset.y == 1
-    ax.scatter(ev_[hr], la[hr], s=6, color=PALETTE["red"], alpha=0.5, label="home run")
+    minority = dataset.y == 1
+    ax.scatter(
+        ev_[minority],
+        la[minority],
+        s=6,
+        color=color or OUTCOME_COLORS["home_run"],
+        alpha=0.5,
+        label=label,
+    )
     ax.set_xlabel("exit velocity (mph)")
     ax.set_ylabel("launch angle (deg)")
-    ax.set_title("Batted-ball density (home runs overlaid)")
+    ax.set_title(f"Batted-ball density ({label}s overlaid)")
     ax.legend(markerscale=2, loc="upper left")
     return style_axes(ax)
+
+
+def plot_hr_density(dataset: Dataset, ax: plt.Axes) -> plt.Axes:
+    """Home-run density overlay (thin wrapper over :func:`plot_minority_density`)."""
+    return plot_minority_density(dataset, ax, label="home run")
 
 
 # --- Model performance (driven by negative_ml.eval) ----------------------
@@ -163,7 +194,7 @@ def plot_roc(y_true: ArrayLike, y_score: ArrayLike, ax: plt.Axes) -> plt.Axes:
         The styled ``ax``.
     """
     RocCurveDisplay.from_predictions(y_true, y_score, ax=ax, name="XGBoost")
-    ax.plot([0, 1], [0, 1], color=PALETTE["ink"], ls="--", lw=1)
+    ax.plot([0, 1], [0, 1], color=INK, ls="--", lw=1)
     ax.set_title(f"ROC (AUROC = {ev.auroc(y_true, y_score):.3f})")
     return style_axes(ax)
 
@@ -181,16 +212,18 @@ def plot_pr(y_true: ArrayLike, y_score: ArrayLike, ax: plt.Axes) -> plt.Axes:
     """
     PrecisionRecallDisplay.from_predictions(y_true, y_score, ax=ax, name="XGBoost")
     base = float(np.mean(y_true))
-    ax.axhline(
-        base, color=PALETTE["ink"], ls="--", lw=1, label=f"base rate = {base:.3f}"
-    )
+    ax.axhline(base, color=INK, ls="--", lw=1, label=f"base rate = {base:.3f}")
     ax.set_title(f"Precision-Recall (AUPRC = {ev.auprc(y_true, y_score):.3f})")
     ax.legend(loc="upper right")
     return style_axes(ax)
 
 
 def plot_confusion(
-    y_true: ArrayLike, y_score: ArrayLike, ax: plt.Axes, threshold: float = 0.5
+    y_true: ArrayLike,
+    y_score: ArrayLike,
+    ax: plt.Axes,
+    threshold: float = 0.5,
+    pos_label: str = "HR",
 ) -> plt.Axes:
     """Confusion matrix at a probability threshold.
 
@@ -199,13 +232,14 @@ def plot_confusion(
         y_score: Predicted probabilities for the positive class.
         ax: Target matplotlib axes.
         threshold: Probability cutoff at which scores are binarized.
+        pos_label: Short label for the positive class (e.g. ``"HR"``, ``"3B"``).
 
     Returns:
         The styled ``ax``.
     """
     y_pred = (np.asarray(y_score) >= threshold).astype(int)
     cm = confusion_matrix(y_true, y_pred)
-    ConfusionMatrixDisplay(cm, display_labels=["not HR", "HR"]).plot(
+    ConfusionMatrixDisplay(cm, display_labels=[f"not {pos_label}", pos_label]).plot(
         ax=ax, colorbar=False, cmap=DENSITY_CMAP
     )
     f1 = ev.f1_at_threshold(y_true, y_score, threshold)
@@ -235,25 +269,51 @@ def plot_precision_at_k(
         ks = np.unique(np.linspace(10, max(20, 5 * n_pos), 40).astype(int))
     prec = [ev.precision_at_k(y_true, y_score, int(k)) for k in ks]
     enr = [ev.enrichment_factor(y_true, y_score, int(k)) for k in ks]
-    ax.plot(ks, prec, color=PALETTE["green"], label="precision@k")
-    ax.axhline(
-        float(np.mean(y_true)), color=PALETTE["ink"], ls="--", lw=1, label="base rate"
-    )
+    ax.plot(ks, prec, color=DARK2[0], label="precision@k")
+    ax.axhline(float(np.mean(y_true)), color=INK, ls="--", lw=1, label="base rate")
     ax.set_xlabel("k (top-scored balls)")
     ax.set_ylabel("precision@k")
     ax.set_title("Early retrieval: precision@k")
     twin = ax.twinx()
-    twin.plot(ks, enr, color=PALETTE["red"], alpha=0.6, label="enrichment")
-    twin.set_ylabel("enrichment factor", color=PALETTE["red"])
+    twin.plot(ks, enr, color=DARK2[1], alpha=0.6, label="enrichment")
+    twin.set_ylabel("enrichment factor", color=DARK2[1])
     style_axes(twin, despine=("top",))  # keep the right spine for the twin axis
     ax.legend(loc="upper right")
+    return style_axes(ax)
+
+
+def plot_feature_importance_values(
+    feature_names: Sequence[str], importances: ArrayLike, ax: plt.Axes
+) -> plt.Axes:
+    """Horizontal bar chart of precomputed feature importances.
+
+    Data-driven core of :func:`plot_feature_importance`: takes the importance
+    values directly so the figure can be redrawn from a saved frame without the
+    fitted model in hand.
+
+    Args:
+        feature_names: Names aligned with ``importances``.
+        importances: Importance score per feature.
+        ax: Target matplotlib axes.
+
+    Returns:
+        The styled ``ax``.
+    """
+    importances = np.asarray(importances)
+    order = np.argsort(importances)
+    ax.barh(np.asarray(feature_names)[order], importances[order], color=PALETTE["teal"])
+    ax.set_xlabel("importance (gain)")
+    ax.set_title("XGBoost feature importance")
     return style_axes(ax)
 
 
 def plot_feature_importance(
     model: Any, feature_names: Sequence[str], ax: plt.Axes
 ) -> plt.Axes:
-    """Horizontal bar chart of XGBoost feature importances.
+    """Horizontal bar chart of a fitted model's feature importances.
+
+    Convenience wrapper around :func:`plot_feature_importance_values` for callers
+    (notebooks) holding a fitted model rather than a saved importance frame.
 
     Args:
         model: A fitted estimator exposing ``feature_importances_``.
@@ -263,31 +323,29 @@ def plot_feature_importance(
     Returns:
         The styled ``ax``.
     """
-    importances = np.asarray(model.feature_importances_)
-    order = np.argsort(importances)
-    ax.barh(np.asarray(feature_names)[order], importances[order], color=PALETTE["blue"])
-    ax.set_xlabel("importance (gain)")
-    ax.set_title("XGBoost feature importance")
-    return style_axes(ax)
+    return plot_feature_importance_values(
+        feature_names, np.asarray(model.feature_importances_), ax
+    )
 
 
-def plot_probability_heatmap(
-    model: Any, dataset: Dataset, ax: plt.Axes, grid: int = 200
-) -> plt.Axes:
-    """Predicted HR probability over the exit-velocity x launch-angle plane.
+def compute_probability_surface(
+    model: Any, dataset: Dataset, grid: int = 200
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Evaluate the model's HR probability over the exit-velo x launch-angle plane.
 
     Spray angle (the third feature) is held at its median so the surface is 2-D.
-    Ties the trained model back to the EDA geometry: the lit-up region should match
-    the home-run cluster in :func:`plot_exit_velo_launch_angle`.
+    Returned arrays are exactly what :func:`plot_probability_surface` consumes, so
+    a generation step can compute and persist them and a plotting step can redraw
+    without the fitted model.
 
     Args:
         model: A fitted estimator exposing ``predict_proba``.
         dataset: Loaded baseball dataset, used for feature ranges and the median.
-        ax: Target matplotlib axes.
         grid: Number of grid points per axis for the probability mesh.
 
     Returns:
-        The styled ``ax``.
+        ``(ev_lin, la_lin, proba)`` — the two 1-D axis grids and the
+        ``(grid, grid)`` probability surface.
     """
     ev_, la = dataset.X[:, 0], dataset.X[:, 1]
     ev_lin = np.linspace(np.percentile(ev_, 1), np.percentile(ev_, 99), grid)
@@ -298,11 +356,71 @@ def plot_probability_heatmap(
         [ev_grid.ravel(), la_grid.ravel(), np.full(ev_grid.size, spray_med)]
     )
     proba = model.predict_proba(flat)[:, 1].reshape(ev_grid.shape)
+    return ev_lin, la_lin, proba
+
+
+def plot_probability_surface(
+    ev_lin: ArrayLike,
+    la_lin: ArrayLike,
+    proba: ArrayLike,
+    ax: plt.Axes,
+    label: str = "home run",
+) -> plt.Axes:
+    """Draw a precomputed minority-probability surface as a heatmap.
+
+    Data-driven core of :func:`plot_probability_heatmap`. Ties the trained model
+    back to the EDA geometry: the lit-up region should match the minority cluster
+    in :func:`plot_exit_velo_launch_angle`.
+
+    Args:
+        ev_lin: 1-D exit-velocity grid (the surface's x-axis).
+        la_lin: 1-D launch-angle grid (the surface's y-axis).
+        proba: ``(len(la_lin), len(ev_lin))`` predicted-probability surface.
+        ax: Target matplotlib axes.
+        label: Display name of the predicted class (e.g. ``"home run"``).
+
+    Returns:
+        The styled ``ax``.
+    """
+    ev_grid, la_grid = np.meshgrid(np.asarray(ev_lin), np.asarray(la_lin))
     mesh = ax.pcolormesh(
-        ev_grid, la_grid, proba, cmap=PROBABILITY_CMAP, vmin=0, vmax=1, shading="auto"
+        ev_grid,
+        la_grid,
+        np.asarray(proba),
+        cmap=PROBABILITY_CMAP,
+        vmin=0,
+        vmax=1,
+        shading="auto",
     )
-    ax.figure.colorbar(mesh, ax=ax, label="P(home run)")
+    ax.figure.colorbar(mesh, ax=ax, label=f"P({label})")
     ax.set_xlabel("exit velocity (mph)")
     ax.set_ylabel("launch angle (deg)")
-    ax.set_title("Model: predicted home-run probability")
+    ax.set_title(f"Model: predicted {label} probability")
     return style_axes(ax)
+
+
+def plot_probability_heatmap(
+    model: Any,
+    dataset: Dataset,
+    ax: plt.Axes,
+    grid: int = 200,
+    label: str = "home run",
+) -> plt.Axes:
+    """Predicted minority probability over the exit-velocity x launch-angle plane.
+
+    Convenience wrapper that computes the surface from a fitted model and draws
+    it; use :func:`compute_probability_surface` + :func:`plot_probability_surface`
+    to separate the (expensive) evaluation from the drawing.
+
+    Args:
+        model: A fitted estimator exposing ``predict_proba``.
+        dataset: Loaded baseball dataset, used for feature ranges and the median.
+        ax: Target matplotlib axes.
+        grid: Number of grid points per axis for the probability mesh.
+        label: Display name of the predicted class (e.g. ``"home run"``).
+
+    Returns:
+        The styled ``ax``.
+    """
+    ev_lin, la_lin, proba = compute_probability_surface(model, dataset, grid=grid)
+    return plot_probability_surface(ev_lin, la_lin, proba, ax, label=label)
