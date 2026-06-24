@@ -1,9 +1,9 @@
-"""The shared :class:`Dataset` abstraction used across every domain.
+"""The shared Dataset abstraction used across every domain.
 
 Antibacterial molecules, baseball batted balls, and sandwich ratings look
 nothing alike, but the central experiment is the same in all three: hold the
 minority / high-value examples fixed and vary how the majority class is
-sub-selected. Wrapping each domain in a single ``Dataset`` lets the splitting,
+sub-selected. Wrapping each domain in a single Dataset lets the splitting,
 selection, experiment, and evaluation code be written exactly once.
 """
 
@@ -22,13 +22,13 @@ class Dataset:
     """A featurized dataset plus the metadata needed to study imbalance.
 
     Attributes:
-        X: Feature matrix, shape ``(n_samples, n_features)``.
+        X: Feature matrix, shape (n_samples, n_features).
         y: Targets. Binary {0, 1} labels for classification (1 == minority /
             class of interest), or continuous values for regression.
-        task: Either ``"classification"`` or ``"regression"``.
-        feature_names: Optional column names for ``X``.
+        task: Either "classification" or "regression".
+        feature_names: Optional column names for X.
         groups: Optional group id per row (e.g. molecular scaffold) used for
-            grouped / scaffold splits. ``None`` when not applicable.
+            grouped / scaffold splits. None when not applicable.
         meta: Optional raw rows / identifiers (SMILES, player, ingredients)
             kept alongside the features for inspection and matched-pair eval.
     """
@@ -57,15 +57,15 @@ class Dataset:
     def minority_mask(self, threshold: float | None = None) -> np.ndarray:
         """Boolean mask selecting the minority / class-of-interest examples.
 
-        For classification this is ``y == 1``. For regression the minority is
-        defined as the low-value tail ``y <= threshold`` (e.g. low-rated
-        sandwiches); ``threshold`` must then be supplied.
+        For classification this is y == 1. For regression the minority is
+        defined as the low-value tail y <= threshold (e.g. low-rated
+        sandwiches); threshold must then be supplied.
 
         Args:
             threshold: Cutoff for the regression minority tail.
 
         Returns:
-            Boolean array of length ``n_samples``.
+            Boolean array of length n_samples.
         """
         if self.task == "classification":
             return self.y == 1
@@ -78,7 +78,7 @@ class Dataset:
         return ~self.minority_mask(threshold)
 
     def subset(self, indices: np.ndarray) -> "Dataset":
-        """Return a new ``Dataset`` containing only the given row indices."""
+        """Return a new Dataset containing only the given row indices."""
         indices = np.asarray(indices)
         meta = (
             None

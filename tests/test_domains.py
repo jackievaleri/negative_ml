@@ -3,8 +3,8 @@
 import numpy as np
 import pandas as pd
 
+from negative_ml.core.dataset import Dataset
 from negative_ml.domains import baseball
-from negative_ml.domains.base import Dataset
 
 
 def test_dataset_validates_shapes():
@@ -37,11 +37,11 @@ def test_dataset_masks_and_subset():
     assert sub.feature_names == ["a", "b"]
 
 
-def _synthetic_statcast() -> pd.DataFrame:
+def synthetic_statcast() -> pd.DataFrame:
     """A tiny Statcast-like frame with one row that must be filtered out.
 
     Hit coordinates are chosen so handedness/pull behavior is unambiguous:
-    ``hc_x < 125`` is the left-field side, ``hc_x > 125`` the right-field side.
+    hc_x < 125 is the left-field side, hc_x > 125 the right-field side.
     """
     return pd.DataFrame(
         {
@@ -57,8 +57,8 @@ def _synthetic_statcast() -> pd.DataFrame:
 
 
 def test_featurize_filters_and_labels():
-    """_featurize drops invalid kinematics and labels home runs as minority."""
-    ds = baseball._featurize(_synthetic_statcast(), binary=True)
+    """featurize drops invalid kinematics and labels home runs as minority."""
+    ds = baseball.featurize(synthetic_statcast(), binary=True)
     # The NaN-exit-velocity row is dropped: 4 -> 3 rows.
     assert ds.n_samples == 3
     assert ds.feature_names == ["exit_velocity", "launch_angle", "spray_angle"]
@@ -69,7 +69,7 @@ def test_featurize_filters_and_labels():
 
 def test_featurize_spray_is_pull_positive_and_handedness_aware():
     """Pull is positive for both hands; same location flips sign across hands."""
-    ds = baseball._featurize(_synthetic_statcast(), binary=True)
+    ds = baseball.featurize(synthetic_statcast(), binary=True)
     spray = ds.X[:, 2]
     assert spray[0] > 0  # R batter pulling to left field
     assert spray[1] > 0  # L batter pulling to right field
@@ -80,13 +80,13 @@ def test_featurize_spray_is_pull_positive_and_handedness_aware():
 
 def test_featurize_multiclass_target():
     """binary=False yields integer-coded 5-class outcomes (out..home_run)."""
-    ds = baseball._featurize(_synthetic_statcast(), binary=False)
+    ds = baseball.featurize(synthetic_statcast(), binary=False)
     # classes = [out, single, double, triple, home_run]; HR -> 4, single -> 1.
     assert ds.y.tolist() == [4, 1, 4]
 
 
 def test_featurize_respects_target():
-    """The binary positive class follows ``target`` (home_run by default)."""
+    """The binary positive class follows target (home_run by default)."""
     df = pd.DataFrame(
         {
             "launch_speed": [100.0, 95.0, 88.0],
@@ -97,8 +97,8 @@ def test_featurize_respects_target():
             "events": ["triple", "home_run", "single"],
         }
     )
-    assert baseball._featurize(df, binary=True, target="triple").y.tolist() == [1, 0, 0]
-    assert baseball._featurize(df, binary=True, target="home_run").y.tolist() == [
+    assert baseball.featurize(df, binary=True, target="triple").y.tolist() == [1, 0, 0]
+    assert baseball.featurize(df, binary=True, target="home_run").y.tolist() == [
         0,
         1,
         0,
@@ -110,11 +110,11 @@ def test_featurize_unknown_target_raises():
     import pytest
 
     with pytest.raises(ValueError):
-        baseball._featurize(_synthetic_statcast(), binary=True, target="grand_slam")
+        baseball.featurize(synthetic_statcast(), binary=True, target="grand_slam")
 
 
 def test_seasons_registry_and_load_season_dates():
-    """``SEASONS`` covers 2023/2024 and 2024 reuses the default (cached) dates."""
+    """SEASONS covers 2023/2024 and 2024 reuses the default (cached) dates."""
     assert set(baseball.SEASONS) >= {2023, 2024}
     assert baseball.SEASONS[2024] == (baseball.DEFAULT_START, baseball.DEFAULT_END)
 

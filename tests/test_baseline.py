@@ -6,7 +6,7 @@ from sklearn.metrics import roc_auc_score
 from negative_ml.models.baseline import CorrelationModel
 
 
-def _xy(n: int = 200):
+def make_xy(n: int = 200):
     """A dataset whose feature 0 is positively correlated with the label."""
     rng = np.random.default_rng(0)
     y = (rng.random(n) < 0.3).astype(int)
@@ -17,7 +17,7 @@ def _xy(n: int = 200):
 
 def test_positive_feature_ranks_positives_high():
     """A positively correlated feature scores positives above negatives."""
-    X, y = _xy()
+    X, y = make_xy()
     m = CorrelationModel(0).fit(X, y)
     assert m.corr_ > 0 and m.sign_ == 1.0
     score = m.predict_proba(X)[:, 1]
@@ -26,7 +26,7 @@ def test_positive_feature_ranks_positives_high():
 
 def test_sign_flips_for_anticorrelated_feature():
     """Sign orientation makes an anti-correlated feature score the same way."""
-    X, y = _xy()
+    X, y = make_xy()
     X = X.copy()
     X[:, 0] = -X[:, 0]  # feature 0 now anti-correlated with y
     m = CorrelationModel(0).fit(X, y)
@@ -55,8 +55,8 @@ def test_zero_variance_feature_is_chance_and_safe():
 
 
 def test_predict_proba_is_valid_and_clipped():
-    """Output is ``(n, 2)``, rows sum to 1, and out-of-range inputs clip to [0, 1]."""
-    X, y = _xy()
+    """Output is (n, 2), rows sum to 1, and out-of-range inputs clip to [0, 1]."""
+    X, y = make_xy()
     m = CorrelationModel(0).fit(X, y)
     X_test = X.copy()
     X_test[0, 0] = 1e6  # far above the training range

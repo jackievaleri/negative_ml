@@ -2,10 +2,10 @@
 
 Two regimes matter for the study:
 
-    - *Random* splits: the easy, optimistic baseline.
-    - *Scaffold / grouped* splits: hold out entire structural families
-      (via ``Dataset.groups``) to measure generalization under distribution
-      shift. This is where curated majority data is expected to pay off.
+    - Random splits: the easy, optimistic baseline.
+    - Scaffold / grouped splits: hold out entire structural families (via
+      Dataset.groups) to measure generalization under distribution shift. This
+      is where curated majority data is expected to pay off.
 
 Splitters return integer index arrays so they compose cleanly with the
 selection and experiment code.
@@ -16,13 +16,13 @@ from __future__ import annotations
 import numpy as np
 from sklearn.model_selection import GroupShuffleSplit, train_test_split
 
-from negative_ml.config import RANDOM_SEED
-from negative_ml.domains.base import Dataset
+from negative_ml.core.config import RANDOM_SEED, TEST_SIZE
+from negative_ml.core.dataset import Dataset
 
 
 def random_split(
     dataset: Dataset,
-    test_size: float = 0.2,
+    test_size: float = TEST_SIZE,
     stratify: bool = True,
     seed: int = RANDOM_SEED,
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -31,8 +31,14 @@ def random_split(
     Stratification is only applied for classification (it is meaningless for the
     continuous regression target).
 
+    Args:
+        dataset: Dataset to split.
+        test_size: Fraction of samples held out for the test set.
+        stratify: Whether to stratify the split by label (classification only).
+        seed: Random seed controlling the split.
+
     Returns:
-        ``(train_idx, test_idx)`` integer index arrays.
+        (train_idx, test_idx) integer index arrays.
     """
     indices = np.arange(dataset.n_samples)
     stratify_on = dataset.y if (stratify and dataset.task == "classification") else None
@@ -47,17 +53,22 @@ def random_split(
 
 def scaffold_split(
     dataset: Dataset,
-    test_size: float = 0.2,
+    test_size: float = TEST_SIZE,
     seed: int = RANDOM_SEED,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Grouped split that keeps each ``dataset.groups`` family on one side.
+    """Grouped split that keeps each dataset.groups family on one side.
 
-    Requires ``dataset.groups`` to be set (e.g. Bemis-Murcko scaffolds for
+    Requires dataset.groups to be set (e.g. Bemis-Murcko scaffolds for
     molecules). Tests generalization under distribution shift. Not used by the
     baseball domain, which has no natural grouping.
 
+    Args:
+        dataset: Dataset to split; its groups attribute must be set.
+        test_size: Fraction of groups held out for the test set.
+        seed: Random seed controlling the split.
+
     Returns:
-        ``(train_idx, test_idx)`` integer index arrays.
+        (train_idx, test_idx) integer index arrays.
     """
     if dataset.groups is None:
         raise ValueError("scaffold_split requires dataset.groups to be set.")

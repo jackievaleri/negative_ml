@@ -6,7 +6,7 @@ exposed through a small factory so experiments can request a model by task
 without importing a specific estimator.
 """
 
-from negative_ml.models.base import make_model
+from negative_ml.models.base import make_model, model_factory
 from negative_ml.models.baseline import CorrelationModel
 
-__all__ = ["make_model", "CorrelationModel"]
+__all__ = ["make_model", "model_factory", "CorrelationModel"]

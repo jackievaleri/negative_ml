@@ -3,9 +3,9 @@
 Two complementary sweeps, both returning a tidy results frame (one row per
 budget x seed) ready for plotting a saturation curve:
 
-    A) ``fix_minority_vary_majority`` — keep all minority examples, grow the
+    A) fix_minority_vary_majority — keep all minority examples, grow the
        majority count; find where performance plateaus.
-    B) ``scale_total_proportional`` — subsample the whole dataset at a fixed
+    B) scale_total_proportional — subsample the whole dataset at a fixed
        class ratio; separates "more majority data" from "more data overall".
 """
 
@@ -16,15 +16,15 @@ from collections.abc import Sequence
 import numpy as np
 import pandas as pd
 
-from negative_ml.config import RANDOM_SEED
-from negative_ml.domains.base import Dataset
-from negative_ml.experiments._common import (
+from negative_ml.core.config import RANDOM_SEED
+from negative_ml.core.dataset import Dataset
+from negative_ml.core.experiment import (
     EvalSplit,
     ModelFactory,
     fit_score,
     resolve_split,
 )
-from negative_ml.selection import random_undersample
+from negative_ml.core.selection import random_undersample
 
 
 def fix_minority_vary_majority(
@@ -39,18 +39,18 @@ def fix_minority_vary_majority(
     """Hold the minority fixed; sweep the number of majority examples (H1).
 
     Args:
-        dataset: Full training domain (ignored when ``split`` is supplied).
+        dataset: Full training domain (ignored when split is supplied).
         model_factory: Builds a fresh model for each fit.
         majority_sizes: Majority-class counts to evaluate.
         n_seeds: Repeats per size for error bars.
         scaffold_split: Use scaffold/grouped instead of random eval split.
-        split: Pre-built :class:`EvalSplit` (e.g. cross-season) to evaluate on;
-            when ``None`` a stratified split of ``dataset`` is used.
+        split: Pre-built EvalSplit (e.g. cross-season) to evaluate on;
+            when None a stratified split of dataset is used.
         seed: Base seed for the (fixed) split and per-repeat selection.
 
     Returns:
         Long-format DataFrame with columns
-        ``[majority_size, seed, n_train, auroc, auprc, ...]``.
+        [majority_size, seed, n_train, auroc, auprc, ...].
     """
     sp = resolve_split(dataset, split, scaffold=scaffold_split, seed=seed)
     train_ds = sp.train_ds
@@ -86,16 +86,23 @@ def scale_total_proportional(
 ) -> pd.DataFrame:
     """Subsample the whole training set at a fixed class ratio.
 
-    Isolates the gain from *more data overall* vs. *more majority data*: both
+    Isolates the gain from more data overall vs. more majority data: both
     classes shrink together, so the imbalance ratio is held roughly constant.
 
     Args:
-        split: Pre-built :class:`EvalSplit` (e.g. cross-season) to evaluate on;
-            when ``None`` a stratified split of ``dataset`` is used.
+        dataset: Dataset to subsample.
+        model_factory: Builds a fresh estimator for each fit.
+        fractions: Fractions of the full training set to subsample.
+        n_seeds: Number of subsampling seeds averaged at each fraction.
+        scaffold_split: Whether to use a scaffold/grouped split when split is
+            None.
+        split: Pre-built EvalSplit (e.g. cross-season) to evaluate on;
+            when None a stratified split of dataset is used.
+        seed: Base random seed for the splits and subsampling.
 
     Returns:
         Long-format DataFrame with columns
-        ``[fraction, seed, n_train, auroc, auprc, ...]``.
+        [fraction, seed, n_train, auroc, auprc, ...].
     """
     sp = resolve_split(dataset, split, scaffold=scaffold_split, seed=seed)
     train_ds = sp.train_ds

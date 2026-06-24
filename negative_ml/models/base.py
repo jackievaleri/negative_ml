@@ -1,24 +1,28 @@
 """Common model interface and factory.
 
-Experiments should depend on this thin surface (``make_model`` returning an
+Experiments should depend on this thin surface (make_model returning an
 sklearn-compatible estimator) rather than on a concrete library, so that the
 saturation / selection runners never change when the underlying model does.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, Protocol
+
+from negative_ml.models.baseline import CorrelationModel
+from negative_ml.models.xgboost import xgb_classifier, xgb_regressor
 
 
 class Estimator(Protocol):
     """Minimal sklearn-style estimator contract used by the experiments."""
 
     def fit(self, X: Any, y: Any, **kwargs: Any) -> "Estimator":
-        """Fit the estimator to features ``X`` and targets ``y``."""
+        """Fit the estimator to features X and targets y."""
         ...
 
     def predict(self, X: Any) -> Any:
-        """Return predictions for features ``X``."""
+        """Return predictions for features X."""
         ...
 
 
@@ -31,9 +35,9 @@ def make_model(
     """Construct an estimator for the given task.
 
     Args:
-        task: ``"classification"`` or ``"regression"``.
-        kind: Model family — ``"xgboost"`` (default) or ``"correlation"`` (the
-            single-feature negative control, which requires a ``feature_index``).
+        task: "classification" or "regression".
+        kind: Model family — "xgboost" (default) or "correlation" (the
+            single-feature negative control, which requires a feature_index).
         class_weight: Optional class weighting to test the "weighting can
             substitute for data" hypothesis (H4) without deleting examples.
         **params: Extra hyper-parameters forwarded to the estimator.
@@ -42,15 +46,11 @@ def make_model(
         An unfitted sklearn-compatible estimator.
     """
     if kind == "correlation":
-        from negative_ml.models.baseline import CorrelationModel
-
         return CorrelationModel(feature_index=params["feature_index"])
     if kind != "xgboost":
         raise ValueError(
             f"Unsupported model kind {kind!r}; expected 'xgboost' or 'correlation'."
         )
-
-    from negative_ml.models.xgboost import xgb_classifier, xgb_regressor
 
     if task == "classification":
         # "balanced" weighting is resolved against the data later (it needs the
@@ -64,3 +64,18 @@ def make_model(
     raise ValueError(
         f"Unknown task {task!r}; expected 'classification' or 'regression'."
     )
+
+
+def model_factory(task: str) -> Callable[..., Estimator]:
+    """Return a factory that builds a fresh model for task on each call.
+
+    The experiment runners expect a callable that accepts keyword overrides
+    (e.g. class_weight) and returns an unfitted estimator; this binds the task
+    so callers do not repeat the make_model wiring.
+    """
+
+    def build(**params: Any) -> Estimator:
+        """Build a fresh estimator for the bound task, forwarding overrides."""
+        return make_model(task, **params)
+
+    return build

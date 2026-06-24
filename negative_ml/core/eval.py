@@ -1,11 +1,11 @@
 """Evaluation metrics for the imbalance study (plan.md 4.3).
 
-Three families of metrics, all collected by :func:`compute_metrics`:
+Three families of metrics, all collected by compute_metrics:
 
-    A) Global discrimination — AUROC, AUPRC, F1 at a threshold.
-    B) Early retrieval / top-k — precision@k, enrichment factor (the practical
+    A) Global discrimination - AUROC, AUPRC, F1 at a threshold.
+    B) Early retrieval / top-k - precision@k, enrichment factor (the practical
        "we only act on the top predictions" scenario).
-    C) Matched pairs — for highly similar examples with different outcomes, does
+    C) Matched pairs - for highly similar examples with different outcomes, does
        the model rank them correctly? This probes whether the model captures a
        meaningful decision boundary rather than broad class separation.
 
@@ -21,19 +21,25 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
-from negative_ml.config import DEFAULT_TOP_K
+from negative_ml.core.config import DEFAULT_THRESHOLD, DEFAULT_TOP_K
 
 
 def compute_metrics(
     y_true: np.ndarray,
     y_score: np.ndarray,
     k: int = DEFAULT_TOP_K,
-    threshold: float = 0.5,
+    threshold: float = DEFAULT_THRESHOLD,
 ) -> dict[str, float]:
     """Compute the full global + early-retrieval metric panel.
 
+    Args:
+        y_true: Ground-truth binary labels.
+        y_score: Model scores (predicted probabilities) for the positive class.
+        k: Cutoff for the early-retrieval metrics (precision@k, enrichment).
+        threshold: Score threshold used to binarize scores for the F1 metric.
+
     Returns:
-        Mapping of metric name -> value (auroc, auprc, f1, precision_at_k,
+        Mapping of metric name to value (auroc, auprc, f1, precision_at_k,
         enrichment_factor).
     """
     return {
@@ -57,7 +63,7 @@ def auprc(y_true: np.ndarray, y_score: np.ndarray) -> float:
 
 
 def f1_at_threshold(
-    y_true: np.ndarray, y_score: np.ndarray, threshold: float = 0.5
+    y_true: np.ndarray, y_score: np.ndarray, threshold: float = DEFAULT_THRESHOLD
 ) -> float:
     """F1 score after thresholding scores into hard labels."""
     y_pred = (np.asarray(y_score) >= threshold).astype(int)
@@ -66,7 +72,7 @@ def f1_at_threshold(
 
 # --- B) Early retrieval / top-k ------------------------------------------
 def precision_at_k(y_true: np.ndarray, y_score: np.ndarray, k: int) -> float:
-    """Fraction of the top-``k`` highest-scored items that are true positives."""
+    """Fraction of the top-k highest-scored items that are true positives."""
     y_true = np.asarray(y_true)
     k = min(k, len(y_true))
     if k <= 0:
@@ -76,7 +82,7 @@ def precision_at_k(y_true: np.ndarray, y_score: np.ndarray, k: int) -> float:
 
 
 def enrichment_factor(y_true: np.ndarray, y_score: np.ndarray, k: int) -> float:
-    """Top-``k`` hit rate relative to the dataset-wide positive rate."""
+    """Top-k hit rate relative to the dataset-wide positive rate."""
     y_true = np.asarray(y_true)
     base_rate = float(np.mean(y_true))
     if base_rate == 0.0:
@@ -92,16 +98,20 @@ def matched_pair_accuracy(
 ) -> float:
     """Fraction of similar-but-different-outcome pairs ranked in the right order.
 
-    For each ``(i, j)`` pair the higher-labeled example should receive the higher
+    For each (i, j) pair the higher-labeled example should receive the higher
     score; ties in the score count as incorrect. Pairs with equal labels are
     skipped (they have no defined correct order).
 
     Args:
         y_score: Model scores for all examples.
-        pairs: ``(n_pairs, 2)`` row-index pairs (see e.g.
-            :func:`negative_ml.domains.sandwiches.matched_pairs`).
+        pairs: (n_pairs, 2) row-index pairs (see e.g.
+            negative_ml.domains.sandwiches.matched_pairs).
         y_true: Ground-truth labels/targets, used to define the correct order
             within each pair.
+
+    Returns:
+        Fraction of decided pairs ranked in the correct order (0.0 if no pair
+        has a defined order).
     """
     y_score = np.asarray(y_score)
     y_true = np.asarray(y_true)

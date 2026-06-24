@@ -1,8 +1,8 @@
-"""Tests for negative_ml.eval (global, top-k, and matched-pair metrics)."""
+"""Tests for negative_ml.core.eval (global, top-k, and matched-pair metrics)."""
 
 import numpy as np
 
-from negative_ml import eval as ev
+from negative_ml.core import eval as ev
 
 
 def test_perfect_scores_saturate_global_metrics():

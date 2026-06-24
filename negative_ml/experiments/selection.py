@@ -1,7 +1,7 @@
 """Fixed-budget majority-selection comparison (plan.md 4.2, H2/H3/H4).
 
-Holds the budget constant and varies *how* the kept majority examples are
-chosen — using the strategies in :mod:`negative_ml.selection` — to isolate
+Holds the budget constant and varies how the kept majority examples are
+chosen — using the strategies in negative_ml.core.selection — to isolate
 whether boundary proximity (H2) or coverage (H3) beats raw volume, and whether
 class weighting (H4) can stand in for data.
 """
@@ -13,19 +13,19 @@ from collections.abc import Sequence
 import numpy as np
 import pandas as pd
 
-from negative_ml.config import RANDOM_SEED
-from negative_ml.domains.base import Dataset
-from negative_ml.experiments._common import (
+from negative_ml.core.config import RANDOM_SEED
+from negative_ml.core.dataset import Dataset
+from negative_ml.core.experiment import (
     EvalSplit,
     ModelFactory,
     fit_score,
     resolve_split,
 )
-from negative_ml.selection import BUDGET_VARYING, STRATEGIES
+from negative_ml.core.selection import BUDGET_VARYING, STRATEGIES
 
 #: Pseudo-strategy: keep ALL majority data but up-weight the minority via
-#: ``scale_pos_weight`` instead of deleting examples (tests H4). Handled
-#: specially because it changes the *model*, not the data selection.
+#: scale_pos_weight instead of deleting examples (tests H4). Handled
+#: specially because it changes the model, not the data selection.
 WEIGHTED = "weighted"
 
 
@@ -43,20 +43,20 @@ def compare_strategies(
     """Compare majority-selection strategies at a single budget.
 
     Args:
-        dataset: Full training domain (ignored when ``split`` is supplied).
+        dataset: Full training domain (ignored when split is supplied).
         model_factory: Builds a fresh model for each fit (accepts kwargs such as
-            ``class_weight``).
+            class_weight).
         budget: Number of majority examples each strategy may keep.
-        strategies: Names from :data:`negative_ml.selection.STRATEGIES`.
+        strategies: Names from negative_ml.core.selection.STRATEGIES.
         n_seeds: Repeats per strategy (drives error bars).
         scaffold_split: Use scaffold/grouped instead of random eval split.
         include_weighted: Also evaluate the class-weighting baseline (H4).
-        split: Pre-built :class:`EvalSplit` (e.g. cross-season) to evaluate on;
-            when ``None`` a stratified split of ``dataset`` is used.
+        split: Pre-built EvalSplit (e.g. cross-season) to evaluate on;
+            when None a stratified split of dataset is used.
         seed: Base seed for the (fixed) train/test split and per-repeat seeds.
 
     Returns:
-        Long-format DataFrame: ``[strategy, seed, budget, n_train, <metrics>]``.
+        Long-format DataFrame: [strategy, seed, budget, n_train, <metrics>].
     """
     # One fixed split so the test set is identical across every strategy.
     sp = resolve_split(dataset, split, scaffold=scaffold_split, seed=seed)
@@ -121,20 +121,29 @@ def budget_sweep(
     split: EvalSplit | None = None,
     seed: int = RANDOM_SEED,
 ) -> pd.DataFrame:
-    """Run :func:`compare_strategies` across several budgets.
+    """Run compare_strategies across several budgets.
 
-    The budget-varying strategies are swept over ``budgets``; the full-data
-    references (``as_is`` and, when requested, ``weighted``) are evaluated once
+    The budget-varying strategies are swept over budgets; the full-data
+    references (as_is and, when requested, weighted) are evaluated once
     at the full majority size and appended. Produces the strategy-vs-budget
     curves that are the talk's main result.
 
     Args:
-        split: Pre-built :class:`EvalSplit` (e.g. cross-season) forwarded to every
-            :func:`compare_strategies` call so the test set is identical across
-            budgets; when ``None`` a stratified split of ``dataset`` is used.
+        dataset: Dataset whose majority class is sub-selected.
+        model_factory: Builds a fresh estimator for each fit.
+        budgets: Majority-class budgets to sweep over.
+        strategies: Budget-varying selection strategies to compare.
+        n_seeds: Number of seeds averaged at each budget.
+        scaffold_split: Whether to use a scaffold/grouped split when split is
+            None.
+        include_weighted: Whether to add the full-data weighted reference.
+        split: Pre-built EvalSplit (e.g. cross-season) forwarded to every
+            compare_strategies call so the test set is identical across
+            budgets; when None a stratified split of dataset is used.
+        seed: Base random seed for the splits and selection.
 
     Returns:
-        Long-format DataFrame: ``[strategy, seed, budget, n_train, <metrics>]``.
+        Long-format DataFrame: [strategy, seed, budget, n_train, <metrics>].
     """
     frames = []
     for budget in budgets:

@@ -2,19 +2,19 @@
 
 Features are exit velocity, launch angle, and an adjusted (pull-positive) spray
 angle; the task is to predict a rare batted-ball outcome. The default minority
-``target`` is the home run — it occupies a small, well-defined region of the
+target is the home run — it occupies a small, well-defined region of the
 exit-velocity / launch-angle plane (high exit velocity, ~12-50 deg launch angle),
 which makes "near-miss" majority examples (balls that just miss being home runs) a
-natural selection target. The ``target`` can instead be any hit type; ``triple``
+natural selection target. The target can instead be any hit type; triple
 is a deliberately harder, more imbalanced minority (rarer than home runs, and
 geometrically diffuse rather than a tight high-exit-velocity cluster).
 
-Data is pulled with ``pybaseball`` (imported lazily) one MLB season at a time —
-see :data:`SEASONS` and :func:`load_season`. For the binary framing used
-throughout the imbalance study, the chosen ``target`` is the minority class
-(``y == 1``) and every other batted ball is the majority class; the full
+Data is pulled with pybaseball one MLB season at a time — see SEASONS and
+load_season. For the binary framing used
+throughout the imbalance study, the chosen target is the minority class
+(y == 1) and every other batted ball is the majority class; the full
 multiclass outcome (out / single / double / triple / home_run) is retained in
-``meta``.
+meta.
 """
 
 from __future__ import annotations
@@ -23,16 +23,17 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from pybaseball import statcast
 
-from negative_ml.config import RAW_DATA_DIR
-from negative_ml.domains.base import Dataset
+from negative_ml.core.config import RAW_DATA_DIR
+from negative_ml.core.dataset import Dataset
 
 # Default Statcast pull: the full 2024 MLB regular season.
 DEFAULT_START = "2024-03-20"
 DEFAULT_END = "2024-09-30"
 
-#: MLB regular-season date ranges by year, ``year -> (start, end)``. 2024 keeps
-#: the exact :data:`DEFAULT_START`/:data:`DEFAULT_END` so its cached parquet is
+#: MLB regular-season date ranges by year, year -> (start, end). 2024 keeps
+#: the exact DEFAULT_START/DEFAULT_END so its cached parquet is
 #: reused. 2023 is the primary training season; 2024 is the held-out future year
 #: used for the cross-season ("hard") split.
 SEASONS = {
@@ -45,8 +46,8 @@ SEASONS = {
 _HC_X_ORIGIN = 125.42
 _HC_Y_ORIGIN = 198.27
 
-#: Map raw Statcast ``events`` values to the 5-class batted-ball outcome. Any
-#: batted-ball event not listed here is treated as an ``out``.
+#: Map raw Statcast events values to the 5-class batted-ball outcome. Any
+#: batted-ball event not listed here is treated as an out.
 _HIT_EVENTS = {
     "single": "single",
     "double": "double",
@@ -64,46 +65,46 @@ def load(
     end: str = DEFAULT_END,
     target: str = "home_run",
 ) -> Dataset:
-    """Load batted-ball outcomes as a ``Dataset``.
+    """Load batted-ball outcomes as a Dataset.
 
     Args:
         path: Optional cached CSV/parquet of Statcast batted-ball events. If
-            ``None``, data is fetched/cached via :func:`fetch_statcast` for the
-            ``start``/``end`` range.
-        binary: If ``True``, frame as ``target`` (minority, ``y == 1``) vs. every
-            other batted ball (majority). If ``False``, put the integer-encoded
-            5-class outcome in ``y`` instead (``target`` is then ignored).
-        start: Statcast start date (``YYYY-MM-DD``) when fetching.
-        end: Statcast end date (``YYYY-MM-DD``) when fetching.
+            None, data is fetched/cached via fetch_statcast for the
+            start/end range.
+        binary: If True, frame as target (minority, y == 1) vs. every
+            other batted ball (majority). If False, put the integer-encoded
+            5-class outcome in y instead (target is then ignored).
+        start: Statcast start date (YYYY-MM-DD) when fetching.
+        end: Statcast end date (YYYY-MM-DD) when fetching.
         target: Which hit type is the positive/minority class in the binary
-            framing — one of :data:`_HIT_EVENTS` (``home_run`` by default,
-            ``triple`` for the harder problem).
+            framing — one of _HIT_EVENTS (home_run by default,
+            triple for the harder problem).
 
     Returns:
-        A classification ``Dataset`` with the geometric features in ``X`` and the
-        full outcome label retained in ``meta``.
+        A classification Dataset with the geometric features in X and the
+        full outcome label retained in meta.
     """
     if path is not None:
-        events = _read_cached(Path(path))
+        events = read_cached(Path(path))
     else:
         events = fetch_statcast(start, end)
-    return _featurize(events, binary=binary, target=target)
+    return featurize(events, binary=binary, target=target)
 
 
 def load_season(year: int, target: str = "home_run", binary: bool = True) -> Dataset:
-    """Load a full MLB season by year (see :data:`SEASONS`).
+    """Load a full MLB season by year (see SEASONS).
 
-    Convenience wrapper over :func:`load` that resolves a season's date range, so
-    callers say ``load_season(2023, target="triple")`` rather than repeating the
+    Convenience wrapper over load that resolves a season's date range, so
+    callers say load_season(2023, target="triple") rather than repeating the
     Statcast start/end dates.
 
     Args:
-        year: Season year present in :data:`SEASONS` (2023 or 2024).
-        target: Positive/minority hit type (see :func:`load`).
-        binary: Binary ``target``-vs-rest framing if ``True``, else 5-class.
+        year: Season year present in SEASONS (2023 or 2024).
+        target: Positive/minority hit type (see load).
+        binary: Binary target-vs-rest framing if True, else 5-class.
 
     Returns:
-        The featurized ``Dataset`` for that season.
+        The featurized Dataset for that season.
     """
     if year not in SEASONS:
         raise ValueError(
@@ -116,22 +117,20 @@ def load_season(year: int, target: str = "home_run", binary: bool = True) -> Dat
 def fetch_statcast(start: str, end: str) -> pd.DataFrame:
     """Fetch and cache Statcast batted-ball events for a date range.
 
-    Thin wrapper over ``pybaseball.statcast`` (imported lazily). The raw events
-    frame is cached as parquet under ``data/raw`` so repeated experiment runs are
-    cheap; the first full-season pull takes several minutes.
+    Thin wrapper over pybaseball.statcast. The raw events frame is cached as
+    parquet under data/raw so repeated experiment runs are cheap; the first
+    full-season pull takes several minutes.
 
     Args:
-        start: Start date, ``YYYY-MM-DD``.
-        end: End date, ``YYYY-MM-DD``.
+        start: Start date, YYYY-MM-DD.
+        end: End date, YYYY-MM-DD.
 
     Returns:
-        The raw Statcast events ``DataFrame``.
+        The raw Statcast events DataFrame.
     """
     cache_path = RAW_DATA_DIR / f"statcast_{start}_{end}.parquet"
     if cache_path.exists():
         return pd.read_parquet(cache_path)
-
-    from pybaseball import statcast  # lazy: heavy import + optional dependency
 
     events = statcast(start_dt=start, end_dt=end)
     RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -139,22 +138,22 @@ def fetch_statcast(start: str, end: str) -> pd.DataFrame:
     return events
 
 
-def _read_cached(path: Path) -> pd.DataFrame:
+def read_cached(path: Path) -> pd.DataFrame:
     """Read a cached events frame (parquet or CSV) by file extension."""
     if path.suffix == ".parquet":
         return pd.read_parquet(path)
     return pd.read_csv(path)
 
 
-def _adjusted_spray_angle(
+def adjusted_spray_angle(
     hc_x: np.ndarray, hc_y: np.ndarray, stand: np.ndarray
 ) -> np.ndarray:
     """Pull-positive spray angle (degrees) from Statcast hit coordinates.
 
-    The angle is measured from the line straight up the middle: ``raw`` is
+    The angle is measured from the line straight up the middle: raw is
     positive toward the first-base / right-field side. It is adjusted by batter
-    hand so that, for every batter, positive means *pulled* and negative means
-    *opposite field* — right-handers pull to left field (raw < 0) and left-handers
+    hand so that, for every batter, positive means pulled and negative means
+    opposite field — right-handers pull to left field (raw < 0) and left-handers
     pull to right field (raw > 0), so the sign is flipped only for right-handers.
     """
     raw = np.degrees(np.arctan2(hc_x - _HC_X_ORIGIN, _HC_Y_ORIGIN - hc_y))
@@ -162,28 +161,28 @@ def _adjusted_spray_angle(
     return raw * handed
 
 
-def _outcome_label(events: pd.Series) -> pd.Series:
-    """Map raw Statcast ``events`` to the 5-class outcome (out is the default)."""
+def outcome_label(events: pd.Series) -> pd.Series:
+    """Map raw Statcast events to the 5-class outcome (out is the default)."""
     return events.map(_HIT_EVENTS).fillna("out")
 
 
-def _featurize(
+def featurize(
     events: pd.DataFrame, binary: bool = True, target: str = "home_run"
 ) -> Dataset:
-    """Turn a raw Statcast events frame into a featurized ``Dataset``.
+    """Turn a raw Statcast events frame into a featurized Dataset.
 
     Pure and offline-testable: keeps only batted balls with valid kinematics and
     hit coordinates, builds the (exit velocity, launch angle, spray angle) feature
-    matrix, and labels each row. See :func:`load` for the public entry point.
+    matrix, and labels each row. See load for the public entry point.
 
     Args:
-        events: Raw Statcast events frame (e.g. from :func:`fetch_statcast`).
-        binary: ``target``-vs-rest label if ``True``, else 5-class integer target.
+        events: Raw Statcast events frame (e.g. from fetch_statcast).
+        binary: target-vs-rest label if True, else 5-class integer target.
         target: Positive/minority hit type for the binary framing — one of
-            :data:`_HIT_EVENTS`.
+            _HIT_EVENTS.
 
     Returns:
-        A classification ``Dataset``.
+        A classification Dataset.
     """
     if binary and target not in _HIT_EVENTS:
         raise ValueError(
@@ -195,7 +194,7 @@ def _featurize(
     df = df.dropna(subset=["launch_speed", "launch_angle", "hc_x", "hc_y"])
     df = df.reset_index(drop=True)
 
-    spray = _adjusted_spray_angle(
+    spray = adjusted_spray_angle(
         df["hc_x"].to_numpy(float),
         df["hc_y"].to_numpy(float),
         df["stand"].to_numpy(),
@@ -208,7 +207,7 @@ def _featurize(
         ]
     )
 
-    outcome = _outcome_label(df["events"])
+    outcome = outcome_label(df["events"])
     if binary:
         y = (df["events"] == target).astype(int).to_numpy()
     else:

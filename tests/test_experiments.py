@@ -2,18 +2,18 @@
 
 import numpy as np
 
-from negative_ml.domains.base import Dataset
-from negative_ml.experiments import saturation, selection
-from negative_ml.experiments._common import (
+from negative_ml.core.dataset import Dataset
+from negative_ml.core.experiment import (
     cross_dataset_split,
     split_from_dataset,
 )
+from negative_ml.experiments import saturation, selection
 from negative_ml.models import make_model
 
 METRIC_COLS = {"auroc", "auprc", "f1", "precision_at_k", "enrichment_factor"}
 
 
-def _dataset(n: int = 400, pos_rate: float = 0.15) -> Dataset:
+def make_dataset(n: int = 400, pos_rate: float = 0.15) -> Dataset:
     """A small, learnable imbalanced classification dataset."""
     rng = np.random.default_rng(1)
     y = (rng.random(n) < pos_rate).astype(int)
@@ -22,18 +22,18 @@ def _dataset(n: int = 400, pos_rate: float = 0.15) -> Dataset:
     return Dataset(X=X, y=y, task="classification")
 
 
-def _factory():
+def make_factory():
     """Return a model factory bound to the classification task."""
     return lambda **kw: make_model("classification", **kw)
 
 
 def test_compare_strategies_shape_and_columns():
     """One row per strategy x seed, with all metric columns present."""
-    ds = _dataset()
+    ds = make_dataset()
     strategies = ("random", "hard")
     df = selection.compare_strategies(
         ds,
-        _factory(),
+        make_factory(),
         budget=40,
         strategies=strategies,
         n_seeds=2,
@@ -48,11 +48,11 @@ def test_compare_strategies_shape_and_columns():
 
 def test_budget_sweep_includes_references_once():
     """The sweep covers each budget and appends as_is/weighted once."""
-    ds = _dataset()
+    ds = make_dataset()
     budgets = [20, 40]
     df = selection.budget_sweep(
         ds,
-        _factory(),
+        make_factory(),
         budgets=budgets,
         strategies=("random",),
         n_seeds=1,
@@ -67,9 +67,9 @@ def test_budget_sweep_includes_references_once():
 
 def test_fix_minority_vary_majority_columns():
     """Saturation A returns one row per size x seed with metrics."""
-    ds = _dataset()
+    ds = make_dataset()
     df = saturation.fix_minority_vary_majority(
-        ds, _factory(), majority_sizes=[20, 50], n_seeds=2
+        ds, make_factory(), majority_sizes=[20, 50], n_seeds=2
     )
     assert len(df) == 4
     assert {"majority_size", "seed", "n_train"}.issubset(df.columns)
@@ -78,9 +78,9 @@ def test_fix_minority_vary_majority_columns():
 
 def test_scale_total_proportional_columns():
     """Saturation B returns one row per fraction x seed with metrics."""
-    ds = _dataset()
+    ds = make_dataset()
     df = saturation.scale_total_proportional(
-        ds, _factory(), fractions=[0.25, 0.5], n_seeds=2
+        ds, make_factory(), fractions=[0.25, 0.5], n_seeds=2
     )
     assert len(df) == 4
     assert {"fraction", "seed", "n_train"}.issubset(df.columns)
@@ -92,8 +92,8 @@ def test_scale_total_proportional_columns():
 
 def test_cross_dataset_split_uses_test_dataset():
     """The hard split trains on one dataset and tests on the entirety of another."""
-    train = _dataset()
-    test = _dataset(n=120)
+    train = make_dataset()
+    test = make_dataset(n=120)
     sp = cross_dataset_split(train, test, name="hard")
     assert sp.train_ds is train
     assert np.array_equal(sp.X_test, test.X)
@@ -102,31 +102,31 @@ def test_cross_dataset_split_uses_test_dataset():
 
 
 def test_runners_accept_injected_split():
-    """Runners take a pre-built split; they do not stamp a ``split`` column."""
-    train = _dataset()
-    test = _dataset(n=160)
+    """Runners take a pre-built split; they do not stamp a split column."""
+    train = make_dataset()
+    test = make_dataset(n=160)
     sp = cross_dataset_split(train, test)
 
     sel_df = selection.compare_strategies(
-        train, _factory(), budget=40, strategies=("random",), n_seeds=1, split=sp
+        train, make_factory(), budget=40, strategies=("random",), n_seeds=1, split=sp
     )
     assert len(sel_df) == 1
     assert "split" not in sel_df.columns  # the scripts add target/split, not runners
 
     sat_df = saturation.scale_total_proportional(
-        train, _factory(), fractions=[0.5], n_seeds=1, split=sp
+        train, make_factory(), fractions=[0.5], n_seeds=1, split=sp
     )
     assert len(sat_df) == 1
 
 
 def test_injected_split_default_matches_internal_split():
     """Passing an explicit random split reproduces the default-split result."""
-    ds = _dataset()
+    ds = make_dataset()
     explicit = split_from_dataset(ds)
     a = selection.compare_strategies(
-        ds, _factory(), budget=40, strategies=("random",), n_seeds=1
+        ds, make_factory(), budget=40, strategies=("random",), n_seeds=1
     )
     b = selection.compare_strategies(
-        ds, _factory(), budget=40, strategies=("random",), n_seeds=1, split=explicit
+        ds, make_factory(), budget=40, strategies=("random",), n_seeds=1, split=explicit
     )
     assert np.allclose(a["auprc"].to_numpy(), b["auprc"].to_numpy())

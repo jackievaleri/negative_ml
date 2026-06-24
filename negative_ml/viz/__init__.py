@@ -1,10 +1,10 @@
 """Plotting helpers for the imbalance study.
 
-Functions draw onto a caller-supplied matplotlib ``Axes`` so the same code backs
+Functions draw onto a caller-supplied matplotlib Axes so the same code backs
 both the reproducible scripts (saving PNGs) and the EDA notebooks (inline display).
 
 Importing this package applies the shared house style (the Dark2 palette and the
-saved-figure resolution); see :mod:`negative_ml.viz.style`.
+saved-figure resolution); see negative_ml.viz.style.
 """
 
 from __future__ import annotations

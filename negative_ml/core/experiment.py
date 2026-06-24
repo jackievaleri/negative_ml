@@ -3,13 +3,13 @@
 Both the saturation (4.1) and selection (4.2) experiments follow the same
 recipe: hold one train/test split fixed, fit a fresh model on some subset of the
 training rows, and score it on the held-out test set with the standard metric
-panel. Centralizing that here keeps the two runners focused on *which rows* they
+panel. Centralizing that here keeps the two runners focused on which rows they
 select rather than on plumbing.
 
-The split itself is an injectable :class:`EvalSplit` so the same runners serve two
-regimes: an in-dataset random/scaffold split (the default), and a *cross-dataset*
-split that trains on one dataset and tests on another (e.g. train on 2023, test on
-2024 — the "hard" distribution-shift split). Runners that take ``split=None``
+The split itself is an injectable EvalSplit so the same runners serve two
+regimes: an in-dataset random/scaffold split (the default), and a cross-dataset
+split that trains on one dataset and tests on another (e.g. train on 2023, test
+on 2024 - the "hard" distribution-shift split). Runners that take split=None
 build the default split, preserving their original behavior.
 """
 
@@ -20,13 +20,13 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from negative_ml import eval as ev
-from negative_ml.config import RANDOM_SEED
-from negative_ml.domains.base import Dataset
-from negative_ml.splitting import random_split, scaffold_split
+from negative_ml.core import eval as ev
+from negative_ml.core.config import RANDOM_SEED
+from negative_ml.core.dataset import Dataset
+from negative_ml.core.splitting import random_split, scaffold_split
 
-#: A model factory: ``(**kwargs) -> unfitted estimator`` (see ``models.make_model``).
-#: Accepting kwargs lets callers pass e.g. ``class_weight`` for the H4 baseline.
+#: A model factory: (**kwargs) -> unfitted estimator (see models.make_model).
+#: Accepting kwargs lets callers pass e.g. class_weight for the H4 baseline.
 ModelFactory = Callable[..., object]
 
 
@@ -35,11 +35,12 @@ class EvalSplit:
     """A fixed train pool + held-out test set fed to the experiment runners.
 
     Attributes:
-        train_ds: The training-pool ``Dataset``; selection strategies index rows
+        train_ds: The training-pool Dataset; selection strategies index rows
             into this (its minority is always kept, its majority sub-selected).
-        X_test, y_test: The held-out evaluation features and labels.
+        X_test: The held-out evaluation features.
+        y_test: The held-out evaluation labels.
         name: Label for the split regime, carried into result frames as the
-            ``split`` column by the scripts (e.g. ``"random"`` or ``"hard"``).
+            split column by the scripts (e.g. "random" or "hard").
     """
 
     train_ds: Dataset
@@ -65,7 +66,7 @@ def split_from_dataset(
     seed: int = RANDOM_SEED,
     name: str = "random",
 ) -> EvalSplit:
-    """Build an :class:`EvalSplit` from one dataset via :func:`make_split`.
+    """Build an EvalSplit from one dataset via make_split.
 
     This is the default regime: a stratified random (or scaffold) split where the
     train pool and test set come from the same dataset.
@@ -84,11 +85,11 @@ def cross_dataset_split(
     test_dataset: Dataset,
     name: str = "hard",
 ) -> EvalSplit:
-    """Train on *all* of one dataset, test on *all* of another (no overlap).
+    """Train on all of one dataset, test on all of another (no overlap).
 
-    The cross-season ("hard") regime: e.g. ``train_dataset`` is the full 2023
-    season and ``test_dataset`` the full 2024 season, so the model is scored under
-    genuine distribution shift rather than an in-distribution random holdout.
+    The cross-season ("hard") regime: e.g. train_dataset is the full 2023 season
+    and test_dataset the full 2024 season, so the model is scored under genuine
+    distribution shift rather than an in-distribution random holdout.
     """
     return EvalSplit(
         train_ds=train_dataset,
@@ -104,10 +105,10 @@ def resolve_split(
     scaffold: bool = False,
     seed: int = RANDOM_SEED,
 ) -> EvalSplit:
-    """Return ``split`` if given, else build the default in-dataset split.
+    """Return split if given, else build the default in-dataset split.
 
-    Lets every runner accept an optional pre-built ``split`` while keeping their
-    original ``dataset`` + ``scaffold`` + ``seed`` behavior when none is supplied.
+    Lets every runner accept an optional pre-built split while keeping their
+    original dataset + scaffold + seed behavior when none is supplied.
     """
     if split is not None:
         return split
@@ -122,16 +123,18 @@ def fit_score(
     model_factory: ModelFactory,
     **model_kwargs,
 ) -> dict[str, float]:
-    """Fit a fresh model on ``train_ds`` rows and score it on the test set.
+    """Fit a fresh model on train_ds rows and score it on the test set.
 
     Args:
-        train_ds: The training-split ``Dataset`` rows are indexed into.
-        train_rows: Row indices (into ``train_ds``) to train on.
-        X_test, y_test: Held-out evaluation features and labels.
-        model_factory: Builds a fresh estimator; forwarded ``model_kwargs``.
+        train_ds: The training-split Dataset rows are indexed into.
+        train_rows: Row indices (into train_ds) to train on.
+        X_test: Held-out evaluation features.
+        y_test: Held-out evaluation labels.
+        model_factory: Builds a fresh estimator; forwarded model_kwargs.
+        **model_kwargs: Hyper-parameters forwarded to model_factory.
 
     Returns:
-        The :func:`negative_ml.eval.compute_metrics` panel.
+        The negative_ml.core.eval.compute_metrics panel.
     """
     rows = np.asarray(train_rows)
     model = model_factory(**model_kwargs)

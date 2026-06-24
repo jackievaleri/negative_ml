@@ -3,7 +3,7 @@
 For a fixed train/test split, score the test set two ways and report the same
 metric panel for each:
 
-    - one :class:`~negative_ml.models.baseline.CorrelationModel` per feature — the
+    - one CorrelationModel per feature — the
       single-feature negative control (rank by that feature, oriented by its
       correlation sign);
     - the full model trained on every feature.
@@ -12,7 +12,7 @@ If the full model barely beats the best single-feature control, the features car
 the signal individually and the model adds little; if every control sits near
 chance while the model does not (the triples case, where no single feature
 separates the classes), the model is capturing genuine multivariate structure.
-The control rides the exact same :func:`~negative_ml.experiments._common.fit_score`
+The control rides the exact same fit_score
 path as the real models, so the two are measured identically.
 """
 
@@ -21,9 +21,9 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from negative_ml.config import RANDOM_SEED
-from negative_ml.domains.base import Dataset
-from negative_ml.experiments._common import (
+from negative_ml.core.config import RANDOM_SEED
+from negative_ml.core.dataset import Dataset
+from negative_ml.core.experiment import (
     EvalSplit,
     ModelFactory,
     fit_score,
@@ -32,11 +32,11 @@ from negative_ml.experiments._common import (
 from negative_ml.models import make_model
 
 
-def _correlation_factory(feature_index: int) -> ModelFactory:
-    """A model factory that builds the single-feature control for ``feature_index``.
+def correlation_factory(feature_index: int) -> ModelFactory:
+    """A model factory that builds the single-feature control for feature_index.
 
-    Absorbs any ``**kwargs`` (e.g. an ignored ``class_weight``) so it satisfies the
-    :data:`ModelFactory` contract that :func:`fit_score` expects.
+    Absorbs any **kwargs (e.g. an ignored class_weight) so it satisfies the
+    ModelFactory contract that fit_score expects.
     """
     return lambda **_kw: make_model(
         "classification", kind="correlation", feature_index=feature_index
@@ -53,19 +53,19 @@ def run_negative_control(
     """Score each single-feature control and the full model on one split.
 
     Args:
-        dataset: Full training domain (ignored when ``split`` is supplied).
+        dataset: Full training domain (ignored when split is supplied).
         full_model_factory: Builds the full (all-feature) model to compare against.
-        split: Pre-built :class:`EvalSplit` (e.g. cross-season) to evaluate on;
-            when ``None`` a stratified split of ``dataset`` is used.
+        split: Pre-built EvalSplit (e.g. cross-season) to evaluate on;
+            when None a stratified split of dataset is used.
         scaffold_split: Use scaffold/grouped instead of random eval split.
         seed: Base seed for the (fixed) split.
 
     Returns:
         Long-format DataFrame with one row per feature plus one full-model row:
-        ``[model, feature, corr, n_train, auroc, auprc, f1, precision_at_k,
-        enrichment_factor]``. ``model`` is ``"correlation"`` for the per-feature
-        controls and ``"full_model"`` for the trained model (whose ``feature`` is
-        ``"all"`` and ``corr`` is ``NaN``).
+        [model, feature, corr, n_train, auroc, auprc, f1, precision_at_k,
+        enrichment_factor]. model is "correlation" for the per-feature
+        controls and "full_model" for the trained model (whose feature is
+        "all" and corr is NaN).
     """
     sp = resolve_split(dataset, split, scaffold=scaffold_split, seed=seed)
     train_ds = sp.train_ds
@@ -86,7 +86,7 @@ def run_negative_control(
             else 0.0
         )
         metrics = fit_score(
-            train_ds, train_rows, sp.X_test, sp.y_test, _correlation_factory(j)
+            train_ds, train_rows, sp.X_test, sp.y_test, correlation_factory(j)
         )
         rows.append(
             {
