@@ -3,8 +3,9 @@
 import numpy as np
 import pandas as pd
 
+from negative_ml.core.config import SANDWICH_LOW_RATING_THRESHOLD
 from negative_ml.core.dataset import Dataset
-from negative_ml.domains import baseball
+from negative_ml.domains import baseball, sandwiches
 
 
 def test_dataset_validates_shapes():
@@ -150,3 +151,100 @@ def test_seasons_registry_and_load_season_dates():
 
     with pytest.raises(ValueError):
         baseball.load_season(1999)
+
+
+def synthetic_sandwiches() -> pd.DataFrame:
+    """A tiny melted ratings frame (the read_ratings shape) exercising cleaning.
+
+    Includes a null-ingredient row (dropped by dropna), three repairable rating
+    typos (kept after normalize_ratings), an unparseable rating (dropped by
+    validate_ratings), a low-rated minority example, and two single-ingredient
+    matched pairs among the surviving rows.
+    """
+    rows = [
+        # row 0/1: identical except Cheese -> a single-ingredient matched pair.
+        ("White", "Ham", "Swiss", "Lettuce", "Bacon", "Mayo", "9.5/10", "S1", 1),
+        ("White", "Ham", "Cheddar", "Lettuce", "Bacon", "Mayo", "7.0/10", "S1", 2),
+        # row 2: a low-rated minority example, and exercises "10/10".
+        ("Rye", "Tuna", "No cheese", "Tomato", "-", "Mustard", "2.0/10", "S2", 3),
+        # row 3: a null ingredient -> dropped by dropna.
+        (np.nan, "Egg", "Swiss", "Onion", "Salt", "Ketchup", "5.0/10", "S2", 4),
+        # row 4/5: identical except Sauce -> a matched pair; both ratings repaired.
+        ("Bagel", "Egg", "Swiss", "Onion", "Salt", "Ketchup", "  4.2/10", "S3", 5),
+        ("Bagel", "Egg", "Swiss", "Onion", "Salt", "Mustard", "4.6", "S3", 6),
+        # row 6: a repairable "4.9/ 10"; row 7: an unparseable rating -> dropped.
+        ("Pita", "Lamb", "Feta", "Cucumber", "Mint", "Yogurt", "4.9/ 10", "S4", 7),
+        ("Pita", "Lamb", "Feta", "Cucumber", "Mint", "Yogurt", "yum", "S4", 8),
+    ]
+    columns = sandwiches.INGREDIENT_COLS + ["Rating", "Season", "Episode"]
+    return pd.DataFrame(rows, columns=columns)
+
+
+def test_featurize_cleans_and_builds_regression_dataset():
+    """featurize drops null/unparseable rows and yields a 0-10 regression target."""
+    ds = sandwiches.featurize(synthetic_sandwiches())
+    # 8 rows in -> the null-ingredient and "yum" rows drop -> 6 survive.
+    assert ds.n_samples == 6
+    assert ds.task == "regression"
+    # Repaired ratings survive with the right numeric value.
+    assert sorted(ds.y.tolist()) == [2.0, 4.2, 4.6, 4.9, 7.0, 9.5]
+    # groups is the Main ingredient family.
+    assert ds.groups.tolist() == ["Ham", "Ham", "Tuna", "Egg", "Egg", "Lamb"]
+
+
+def test_clean_ratings_parses_and_repairs():
+    """Clean_Rating parses X.X/10 and 10/10, and repairs the known typos."""
+    cleaned = sandwiches.clean_ratings(synthetic_sandwiches())
+    by_rating = dict(zip(cleaned["Rating"], cleaned["Clean_Rating"]))
+    assert by_rating["2.0/10"] == 2.0  # plain X.X/10
+    assert by_rating["9.5/10"] == 9.5
+    # The three typos were repaired in place, not dropped.
+    assert by_rating["4.2/10"] == 4.2
+    assert by_rating["4.6/10"] == 4.6
+    assert by_rating["4.9/10"] == 4.9
+
+
+def test_validate_ratings_drops_unparseable():
+    """A rating that is not numeric even after repair is dropped."""
+    repaired = sandwiches.normalize_ratings(synthetic_sandwiches())
+    validated = sandwiches.validate_ratings(repaired)
+    assert "yum" not in validated["Rating"].tolist()
+    assert validated["Rating"].str.match(sandwiches.RATING_REGEX).all()
+
+
+def test_encode_ingredients_is_multi_hot_and_reindexes():
+    """Each row has exactly six ones; feature_names reindex fills unseen with 0."""
+    cleaned = sandwiches.clean_ratings(synthetic_sandwiches())
+    X, names = sandwiches.encode_ingredients(cleaned)
+    assert (X.sum(axis=1) == 6).all()
+    assert all("=" in name for name in names)
+    # Reindexing onto an extended column order keeps width and fills the new
+    # column with zeros (the deli-search candidate path).
+    X2, names2 = sandwiches.encode_ingredients(cleaned, feature_names=names + ["X=Y"])
+    assert names2 == names + ["X=Y"]
+    assert (X2[:, -1] == 0).all()
+
+
+def test_matched_pairs_single_ingredient_and_cap():
+    """Single-ingredient pairs are found and the cap is respected deterministically."""
+    ds = sandwiches.featurize(synthetic_sandwiches())
+    pairs = sandwiches.matched_pairs(ds, max_differences=1)
+    # The two engineered single-difference pairs (Cheese and Sauce swaps).
+    assert len(pairs) == 2
+    for i, j in pairs:
+        recipes = ds.meta[sandwiches.INGREDIENT_COLS].to_numpy()
+        assert np.count_nonzero(recipes[i] != recipes[j]) == 1
+    capped = sandwiches.matched_pairs(ds, max_differences=1, max_pairs=1)
+    assert len(capped) == 1
+    # Deterministic subsample (same seed every call).
+    assert (
+        capped.tolist()
+        == sandwiches.matched_pairs(ds, max_differences=1, max_pairs=1).tolist()
+    )
+
+
+def test_minority_mask_selects_low_rated_tail():
+    """The regression minority is the low-rated tail (y <= the low threshold)."""
+    ds = sandwiches.featurize(synthetic_sandwiches())
+    mask = ds.minority_mask(SANDWICH_LOW_RATING_THRESHOLD)
+    assert ds.y[mask].tolist() == [2.0]

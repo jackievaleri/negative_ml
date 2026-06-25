@@ -1,0 +1,242 @@
+"""Plotting helpers for the sandwich EDA + model-performance figures.
+
+Reproduces the Roll-for-Sandwich exploratory analysis from the reference notebook
+(rating distribution, ratings over time, per-ingredient rating spreads, and a
+predicted-vs-actual check) in the house style. The reference used seaborn with a
+single indigo accent; these helpers redraw the same views with plain matplotlib
+and the shared Dark2 palette so the sandwich figures match the rest of the study.
+
+As in negative_ml.viz.baseball, every function draws onto a caller-supplied
+matplotlib Axes so the same code backs both the reproducible script (saving PNGs)
+and the notebook (inline display). Colors and axis styling come from
+negative_ml.viz.style.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+import matplotlib.pyplot as plt
+import numpy as np
+from numpy.typing import ArrayLike
+from scipy.stats import gaussian_kde, pearsonr
+
+from negative_ml.viz.style import INK, PALETTE, style_axes
+
+#: Single accent color for the sandwich EDA, echoing the reference notebook's
+#: indigo while staying inside the Dark2 palette.
+ACCENT = PALETTE["purple"]
+
+
+def plot_rating_distribution(clean_ratings: ArrayLike, ax: plt.Axes) -> plt.Axes:
+    """Histogram of the 0-10 ratings with a KDE overlay and the mean marked.
+
+    Shows the skew the study turns on: ratings pile up high (most sandwiches are
+    well liked) with a thin low tail of "negative" examples.
+
+    Args:
+        clean_ratings: Numeric 0-10 ratings (the Clean_Rating column).
+        ax: Target matplotlib axes.
+
+    Returns:
+        The styled ax.
+    """
+    ratings = np.asarray(clean_ratings, dtype=float)
+    edges = np.linspace(0, 10, 21)
+    ax.hist(ratings, bins=edges, color=ACCENT, alpha=0.5)
+    # Scale the KDE (a density) up to the histogram's count axis so the smooth
+    # curve and the bars share a y-scale.
+    if np.std(ratings) > 0:
+        grid = np.linspace(0, 10, 200)
+        bin_width = edges[1] - edges[0]
+        density = gaussian_kde(ratings)(grid) * len(ratings) * bin_width
+        ax.plot(grid, density, color=ACCENT, lw=2)
+    mean = float(np.mean(ratings))
+    ax.axvline(mean, color=INK, ls="--", lw=1, label=f"mean = {mean:.2f}")
+    ax.set_xlabel("rating")
+    ax.set_ylabel("number of episodes")
+    ax.set_xlim(0, 10)
+    ax.set_title("Rating distribution (skewed high; low scores are rare)")
+    ax.legend(loc="upper left")
+    return style_axes(ax)
+
+
+def plot_rating_timeline(
+    episodes: ArrayLike, clean_ratings: ArrayLike, ax: plt.Axes
+) -> plt.Axes:
+    """Scatter of rating versus episode number (ratings over the show's run).
+
+    Episode values that are not numeric are dropped before plotting (mirrors the
+    reference notebook), so the x-axis is the chronological episode index.
+
+    Args:
+        episodes: Episode identifiers (coerced to numeric; non-numeric dropped).
+        clean_ratings: Numeric 0-10 ratings aligned with episodes.
+        ax: Target matplotlib axes.
+
+    Returns:
+        The styled ax.
+    """
+    episode_num = np.asarray([to_float(e) for e in np.asarray(episodes)], dtype=float)
+    ratings = np.asarray(clean_ratings, dtype=float)
+    keep = ~np.isnan(episode_num)
+    ax.scatter(episode_num[keep], ratings[keep], s=10, color=ACCENT, alpha=0.7)
+    ax.set_xlabel("episode")
+    ax.set_ylabel("rating")
+    ax.set_ylim(0, 10)
+    ax.set_title("Ratings over time")
+    return style_axes(ax)
+
+
+def plot_ingredient_violin(
+    values: ArrayLike, clean_ratings: ArrayLike, ax: plt.Axes, column: str
+) -> plt.Axes:
+    """Rating spread per ingredient value (violin plus a jittered swarm).
+
+    Restricted upstream to the well-sampled values of one ingredient column, this
+    shows how the rating distribution shifts with, say, the choice of bread or
+    cheese. Degenerate categories (a single rating, or all equal) get the swarm
+    only, since a violin's kernel density is undefined there.
+
+    Args:
+        values: Ingredient value per sandwich (one ingredient column).
+        clean_ratings: Numeric 0-10 ratings aligned with values.
+        ax: Target matplotlib axes.
+        column: Ingredient column name (used for the x-axis label).
+
+    Returns:
+        The styled ax.
+    """
+    values = np.asarray(values)
+    ratings = np.asarray(clean_ratings, dtype=float)
+    categories = sorted(set(values.tolist()))
+    grouped = [ratings[values == cat] for cat in categories]
+
+    violin_data, violin_pos = [], []
+    rng = np.random.default_rng(0)
+    for pos, group in enumerate(grouped):
+        if len(group) >= 2 and np.std(group) > 0:
+            violin_data.append(group)
+            violin_pos.append(pos)
+        # Jittered swarm so individual sandwiches stay visible on top of the violin.
+        jitter = rng.uniform(-0.12, 0.12, size=len(group))
+        ax.scatter(
+            np.full(len(group), pos) + jitter,
+            group,
+            s=14,
+            color=ACCENT,
+            alpha=0.7,
+            edgecolors="none",
+        )
+    if violin_data:
+        parts = ax.violinplot(
+            violin_data, positions=violin_pos, showextrema=False, widths=0.8
+        )
+        for body in parts["bodies"]:
+            body.set_facecolor(ACCENT)
+            body.set_alpha(0.3)
+
+    ax.set_xticks(range(len(categories)))
+    ax.set_xticklabels(categories, rotation=90, fontsize=8)
+    ax.set_ylabel("rating")
+    ax.set_ylim(0, 10)
+    ax.set_title(f"Rating by {column.lower()}")
+    return style_axes(ax)
+
+
+def plot_ingredient_frequency(
+    counts: Sequence[tuple[str, int]], ax: plt.Axes, column: str
+) -> plt.Axes:
+    """Horizontal bar chart of how often each ingredient value appears.
+
+    Args:
+        counts: (value, count) pairs for one ingredient column, most common last
+            looks best after the internal sort.
+        ax: Target matplotlib axes.
+        column: Ingredient column name (used for the title).
+
+    Returns:
+        The styled ax.
+    """
+    ordered = sorted(counts, key=lambda vc: vc[1])
+    labels = [value for value, _ in ordered]
+    heights = [count for _, count in ordered]
+    ax.barh(labels, heights, color=ACCENT)
+    ax.set_xlabel("count")
+    ax.tick_params(axis="y", labelsize=8)
+    ax.set_title(f"{column} frequency")
+    return style_axes(ax)
+
+
+def plot_predicted_vs_actual(
+    y_true: ArrayLike, y_pred: ArrayLike, ax: plt.Axes, model_name: str = "XGBoost"
+) -> plt.Axes:
+    """Scatter of predicted versus actual rating, annotated with Pearson r.
+
+    The regression analogue of the baseball ROC panel: points hugging the identity
+    line mean the model ranks sandwiches well. Pearson r summarizes the agreement.
+
+    Args:
+        y_true: Actual 0-10 ratings.
+        y_pred: Model-predicted ratings aligned with y_true.
+        ax: Target matplotlib axes.
+        model_name: Model label for the title.
+
+    Returns:
+        The styled ax.
+    """
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    ax.scatter(y_true, y_pred, s=12, color=ACCENT, alpha=0.7, edgecolors="none")
+    ax.plot([0, 10], [0, 10], color=INK, ls="--", lw=1)
+    ax.set_xlim(0, 10.1)
+    ax.set_ylim(0, 10.1)
+    ax.set_xlabel("actual rating")
+    ax.set_ylabel("predicted rating")
+    r = float(pearsonr(y_true, y_pred)[0]) if np.std(y_pred) > 0 else 0.0
+    ax.set_title(f"{model_name}: predicted vs. actual (r = {r:.3f})")
+    return style_axes(ax)
+
+
+def plot_best_worst_sandwich(
+    best_label: str,
+    best_score: float,
+    worst_label: str,
+    worst_score: float,
+    ax: plt.Axes,
+) -> plt.Axes:
+    """Horizontal bars for the highest- and lowest-scoring predicted sandwiches.
+
+    Visual summary of the deli-counter search: the model's idea of the best and
+    worst sandwich it can build from the popular ingredients.
+
+    Args:
+        best_label: Ingredient summary of the best predicted sandwich.
+        best_score: Predicted rating of the best sandwich.
+        worst_label: Ingredient summary of the worst predicted sandwich.
+        worst_score: Predicted rating of the worst sandwich.
+        ax: Target matplotlib axes.
+
+    Returns:
+        The styled ax.
+    """
+    labels = [f"worst\n{worst_label}", f"best\n{best_label}"]
+    scores = [worst_score, best_score]
+    colors = [PALETTE["orange"], PALETTE["teal"]]
+    ax.barh([0, 1], scores, color=colors)
+    for y, score in zip((0, 1), scores):
+        ax.text(score, y, f" {score:.2f}", va="center", fontsize=9)
+    ax.set_yticks([0, 1])
+    ax.set_yticklabels(labels, fontsize=8)
+    ax.set_xlim(0, 10)
+    ax.set_xlabel("predicted rating")
+    ax.set_title("Deli counter: best and worst predicted sandwich")
+    return style_axes(ax)
+
+
+def to_float(value: object) -> float:
+    """Coerce a value to float, returning NaN when it is not numeric."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float("nan")

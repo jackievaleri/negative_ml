@@ -67,6 +67,37 @@ XGB_DEFAULTS: dict[str, Any] = {
 SANDWICH_LOW_RATING_THRESHOLD = 3.0
 SANDWICH_HIGH_RATING_THRESHOLD = 7.0
 
+# --- Sandwich EDA / deli-search tunables ----------------------------------
+# Ingredient values rarer than these counts are excluded from the EDA so each
+# panel stays legible. DISPLAY is the "print the popular ones" cutoff; VIOLIN is
+# the per-ingredient rating-distribution cutoff; DELI is the floor for an
+# ingredient to enter the best/worst combinatorial search.
+SANDWICH_FREQ_THRESHOLD_DISPLAY = 10
+SANDWICH_FREQ_THRESHOLD_VIOLIN = 5
+SANDWICH_FREQ_THRESHOLD_DELI = 5
+# Hard cap on the deli search's Cartesian product. The reference notebook used a
+# count of 3, which enumerates ~29 million sandwiches; the default of 5 keeps it
+# near ~40k. The cap guards against an accidentally low threshold blowing up.
+SANDWICH_DELI_MAX_COMBINATIONS = 200_000
+
+# Ratings are defined on a 0-10 scale, so model predictions are clipped to this
+# range before they are reported (gradient boosting can otherwise extrapolate past
+# the ends on unseen ingredient combinations).
+SANDWICH_RATING_RANGE = (0.0, 10.0)
+
+# XGBoost overrides for the sandwich regressor. The dataset is tiny and very wide
+# (a few hundred sandwiches, hundreds of one-hot ingredient columns), so the
+# baseball-scale XGB_DEFAULTS (300 deep trees) overfit badly; a small, shallow,
+# regularized model generalizes far better here.
+SANDWICH_XGB_PARAMS: dict[str, Any] = {
+    "n_estimators": 200,
+    "max_depth": 3,
+    "learning_rate": 0.05,
+    "subsample": 0.8,
+    "colsample_bytree": 0.6,
+    "reg_lambda": 2.0,
+}
+
 # --- Visualization --------------------------------------------------------
 # Resolution (dots per inch) for every saved figure.
 FIGURE_DPI = 300
