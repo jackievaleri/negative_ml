@@ -29,6 +29,35 @@ METRIC_LABELS = {
     "enrichment_factor": "Enrichment factor",
 }
 
+#: Principled y-axis limits per metric so panels are comparable and not visually
+#: exaggerated by autoscaling. AUROC starts at chance (0.5); the probability-
+#: scaled metrics span the full [0, 1]; enrichment is unbounded above, so only its
+#: floor is fixed. A None bound is left to autoscale.
+METRIC_YLIM = {
+    "auroc": (0.5, 1.0),
+    "auprc": (0.0, 1.0),
+    "f1": (0.0, 1.0),
+    "precision_at_k": (0.0, 1.0),
+    "enrichment_factor": (0.0, None),
+}
+
+
+def apply_metric_ylim(ax: plt.Axes, metric: str) -> plt.Axes:
+    """Set ax's y-limits from METRIC_YLIM (no-op for an unmapped metric).
+
+    Args:
+        ax: Axes whose y-limits to set.
+        metric: Metric key into METRIC_YLIM.
+
+    Returns:
+        The same ax, for chaining.
+    """
+    lim = METRIC_YLIM.get(metric)
+    if lim is not None:
+        ax.set_ylim(lim[0], lim[1])
+    return ax
+
+
 #: Stable color + marker per strategy so a method looks the same across panels.
 #: The four size-varying strategies take the first four Dark2 colors in order.
 STRATEGY_STYLE = {
@@ -56,11 +85,12 @@ REFERENCE_STYLE = {
 #: dedicated bar color), never color-coded against strategies, so the selection
 #: "hard" strategy (a color/marker) and the "hard" split (a linestyle)
 #: never collide in one legend.
-SPLIT_LINESTYLE = {"random": "-", "hard": "--"}
-SPLIT_COLOR = {"random": DARK2[0], "hard": DARK2[1]}
+SPLIT_LINESTYLE = {"random": "-", "hard": "--", "park": ":"}
+SPLIT_COLOR = {"random": DARK2[0], "hard": DARK2[1], "park": DARK2[2]}
 SPLIT_LABEL = {
     "random": "random split (within 2023)",
     "hard": "hard split (2023→2024)",
+    "park": "park split (outlier parks held out)",
 }
 
 
@@ -108,6 +138,10 @@ def plot_strategy_curves(
     varying = [s for s in STRATEGY_STYLE if s in present]
     x_all = df[x].to_numpy()
     x_lo, x_hi = float(np.min(x_all)), float(np.max(x_all))
+    # Cap the axis at the largest varying-strategy budget, not the full-data
+    # references (as-is/weighted), which sit at the full dataset size.
+    varying_x = df.loc[df["strategy"].isin(varying), x].to_numpy()
+    x_hi_curve = float(np.max(varying_x)) if varying_x.size else x_hi
 
     for name in varying:
         style = STRATEGY_STYLE[name]
@@ -145,9 +179,13 @@ def plot_strategy_curves(
 
     if logx:
         ax.set_xscale("log")
+        ax.set_xlim(right=x_hi_curve * 1.05)  # tight margin past the largest budget
+    else:
+        ax.set_xlim(right=x_hi_curve + 0.02 * (x_hi_curve - x_lo))
     ax.set_xlabel(f"training set size ({x})")
     ax.set_ylabel(METRIC_LABELS.get(metric, metric))
     ax.set_title(METRIC_LABELS.get(metric, metric))
+    apply_metric_ylim(ax, metric)
     return style_axes(ax)
 
 
@@ -232,6 +270,7 @@ def plot_saturation_curve(
     )
     ax.set_xlabel(f"training set size ({x})")
     ax.set_ylabel(METRIC_LABELS.get(metric, metric))
+    apply_metric_ylim(ax, metric)
     return style_axes(ax)
 
 
@@ -285,6 +324,7 @@ def plot_split_overlay(
         ax.set_xscale("log")
     ax.set_xlabel(f"training set size ({x})")
     ax.set_ylabel(METRIC_LABELS.get(metric, metric))
+    apply_metric_ylim(ax, metric)
     ax.set_title(f"{METRIC_LABELS.get(metric, metric)}: random vs. hard split")
 
     # Two independent legends: strategy (color) and split (linestyle).
@@ -374,6 +414,7 @@ def plot_negative_control(
 
     if metric == "auroc":
         ax.axhline(0.5, color=INK, ls="--", lw=1, label="chance (0.5)")
+    apply_metric_ylim(ax, metric)
     ax.set_xticks(xpos)
     ax.set_xticklabels(cat_labels, rotation=20, ha="right")
     ax.set_ylabel(METRIC_LABELS.get(metric, metric))

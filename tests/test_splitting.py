@@ -1,9 +1,10 @@
-"""Tests for negative_ml.core.splitting (random and scaffold splits)."""
+"""Tests for negative_ml.core.splitting (random, scaffold, and ballpark splits)."""
 
 import numpy as np
+import pytest
 
 from negative_ml.core.dataset import Dataset
-from negative_ml.core.splitting import random_split
+from negative_ml.core.splitting import ballpark_split, random_split
 
 
 def imbalanced_dataset(n: int = 200) -> Dataset:
@@ -39,3 +40,38 @@ def test_random_split_is_deterministic():
     b = random_split(ds, seed=7)
     assert np.array_equal(a[0], b[0])
     assert np.array_equal(a[1], b[1])
+
+
+def grouped_dataset() -> Dataset:
+    """A tiny dataset with a ballpark group per row."""
+    parks = np.array(["BOS", "LAD", "COL", "SF", "BOS", "LAD"])
+    return Dataset(
+        X=np.arange(12).reshape(6, 2),
+        y=np.array([0, 1, 0, 1, 0, 1]),
+        task="classification",
+        groups=parks,
+    )
+
+
+def test_ballpark_split_holds_out_named_parks():
+    """Every row in a test park lands in test; everything else in train."""
+    ds = grouped_dataset()
+    train_idx, test_idx = ballpark_split(ds, test_parks=["BOS", "COL"])
+    assert sorted(test_idx) == [0, 2, 4]  # BOS rows 0, 4 and COL row 2
+    assert sorted(train_idx) == [1, 3, 5]
+    assert set(np.asarray(ds.groups)[test_idx]) == {"BOS", "COL"}
+    assert set(train_idx).isdisjoint(test_idx)
+
+
+def test_ballpark_split_requires_groups():
+    """A dataset without groups cannot be ballpark-split."""
+    ds = Dataset(X=np.zeros((4, 2)), y=np.zeros(4), task="classification")
+    with pytest.raises(ValueError):
+        ballpark_split(ds, test_parks=["BOS"])
+
+
+def test_ballpark_split_unknown_parks_raise():
+    """Test parks that match no row fail loudly instead of emptying the test set."""
+    ds = grouped_dataset()
+    with pytest.raises(ValueError):
+        ballpark_split(ds, test_parks=["NYY"])

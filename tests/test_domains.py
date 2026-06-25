@@ -52,6 +52,13 @@ def synthetic_statcast() -> pd.DataFrame:
             "hc_y": [120.0, 120.0, 120.0, 120.0],
             "stand": ["R", "L", "R", "L"],
             "events": ["home_run", "single", "field_out", "home_run"],
+            "plate_x": [0.1, -0.2, 0.0, 0.3],
+            "plate_z": [2.5, 1.8, 2.0, 3.1],
+            "release_speed": [93.0, 88.0, 80.0, 95.0],
+            # One NaN to exercise the median imputation on a kept row.
+            "release_spin_rate": [2200.0, np.nan, 1900.0, 2400.0],
+            "pitch_type": ["FF", "SL", "CH", "FF"],
+            "home_team": ["BOS", "NYY", "LAD", "BOS"],
         }
     )
 
@@ -61,10 +68,25 @@ def test_featurize_filters_and_labels():
     ds = baseball.featurize(synthetic_statcast(), binary=True)
     # The NaN-exit-velocity row is dropped: 4 -> 3 rows.
     assert ds.n_samples == 3
-    assert ds.feature_names == ["exit_velocity", "launch_angle", "spray_angle"]
+    assert ds.feature_names == [
+        "exit_velocity",
+        "launch_angle",
+        "spray_angle",
+        "plate_x",
+        "plate_z",
+        "release_speed",
+        "release_spin_rate",
+        "is_fastball",
+        "is_breaking",
+        "is_offspeed",
+    ]
     # Two home runs remain (rows 0 and 3), both labeled 1.
     assert ds.y.tolist() == [1, 0, 1]
     assert set(ds.meta["outcome"]) == {"home_run", "single"}
+    # The home team is retained as groups for the ballpark split.
+    assert ds.groups.tolist() == ["BOS", "NYY", "BOS"]
+    # No NaNs survive (release_spin_rate was median-imputed).
+    assert not np.isnan(ds.X).any()
 
 
 def test_featurize_spray_is_pull_positive_and_handedness_aware():
@@ -95,6 +117,12 @@ def test_featurize_respects_target():
             "hc_y": [120.0, 120.0, 120.0],
             "stand": ["R", "L", "R"],
             "events": ["triple", "home_run", "single"],
+            "plate_x": [0.0, 0.1, -0.1],
+            "plate_z": [2.0, 2.5, 1.9],
+            "release_speed": [90.0, 92.0, 85.0],
+            "release_spin_rate": [2100.0, 2300.0, 2000.0],
+            "pitch_type": ["SI", "FF", "CU"],
+            "home_team": ["COL", "BOS", "SF"],
         }
     )
     assert baseball.featurize(df, binary=True, target="triple").y.tolist() == [1, 0, 0]

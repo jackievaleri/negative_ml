@@ -26,6 +26,14 @@ RANDOM_SEED = 1234
 # Default held-out fraction for both the random and scaffold splits.
 TEST_SIZE = 0.2
 
+# Quirky-dimension MLB parks forced entirely into the test set for the baseball
+# "park" split (a park-factor distribution shift that is harder than a random
+# holdout and complementary to the chronological cross-season split). Identified
+# by the Statcast home_team code: Fenway (BOS), Coors (COL), Yankee Stadium
+# (NYY), Great American (CIN), Oracle (SF), Wrigley (CHC), and Minute Maid's
+# Crawford Boxes (HOU). Adjust freely; HR rate by park spans ~0.030-0.061.
+OUTLIER_BALLPARKS = ["BOS", "COL", "NYY", "CIN", "SF", "CHC", "HOU"]
+
 # --- Evaluation -----------------------------------------------------------
 # Top-k cutoff used for early-retrieval metrics (precision@k, enrichment).
 DEFAULT_TOP_K = 100
@@ -64,3 +72,5 @@ SANDWICH_HIGH_RATING_THRESHOLD = 7.0
 FIGURE_DPI = 300
 # Approximate cap on plotted points per dense series in scatter plots.
 VIZ_MAX_POINTS = 30_000
+# Smaller per-panel point cap for the (many-panel) feature pair matrix.
+VIZ_PAIRPLOT_POINTS = 4_000

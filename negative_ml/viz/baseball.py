@@ -191,6 +191,9 @@ def plot_roc(y_true: ArrayLike, y_score: ArrayLike, ax: plt.Axes) -> plt.Axes:
     """
     RocCurveDisplay.from_predictions(y_true, y_score, ax=ax, name="XGBoost")
     ax.plot([0, 1], [0, 1], color=INK, ls="--", lw=1)
+    # FPR and TPR are rates in [0, 1]; pin the axes so the curve is not padded.
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
     ax.set_title(f"ROC (AUROC = {ev.auroc(y_true, y_score):.3f})")
     return style_axes(ax)
 
@@ -209,6 +212,9 @@ def plot_pr(y_true: ArrayLike, y_score: ArrayLike, ax: plt.Axes) -> plt.Axes:
     PrecisionRecallDisplay.from_predictions(y_true, y_score, ax=ax, name="XGBoost")
     base = float(np.mean(y_true))
     ax.axhline(base, color=INK, ls="--", lw=1, label=f"base rate = {base:.3f}")
+    # Precision and recall are both in [0, 1]; pin the axes.
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
     ax.set_title(f"Precision-Recall (AUPRC = {ev.auprc(y_true, y_score):.3f})")
     ax.legend(loc="upper right")
     return style_axes(ax)
@@ -269,6 +275,7 @@ def plot_precision_at_k(
     ax.axhline(float(np.mean(y_true)), color=INK, ls="--", lw=1, label="base rate")
     ax.set_xlabel("k (top-scored balls)")
     ax.set_ylabel("precision@k")
+    ax.set_ylim(0, 1)  # precision is a fraction in [0, 1]
     ax.set_title("Early retrieval: precision@k")
     twin = ax.twinx()
     twin.plot(ks, enr, color=DARK2[1], alpha=0.6, label="enrichment")
@@ -329,14 +336,15 @@ def compute_probability_surface(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Evaluate the model's HR probability over the exit-velo x launch-angle plane.
 
-    Spray angle (the third feature) is held at its median so the surface is 2-D.
-    Returned arrays are exactly what plot_probability_surface consumes, so
-    a generation step can compute and persist them and a plotting step can redraw
+    Every feature other than exit velocity and launch angle is held at its column
+    median so the surface stays 2-D regardless of how many features the model uses.
+    Returned arrays are exactly what plot_probability_surface consumes, so a
+    generation step can compute and persist them and a plotting step can redraw
     without the fitted model.
 
     Args:
         model: A fitted estimator exposing predict_proba.
-        dataset: Loaded baseball dataset, used for feature ranges and the median.
+        dataset: Loaded baseball dataset, used for feature ranges and medians.
         grid: Number of grid points per axis for the probability mesh.
 
     Returns:
@@ -347,10 +355,11 @@ def compute_probability_surface(
     ev_lin = np.linspace(np.percentile(ev_, 1), np.percentile(ev_, 99), grid)
     la_lin = np.linspace(np.percentile(la, 1), np.percentile(la, 99), grid)
     ev_grid, la_grid = np.meshgrid(ev_lin, la_lin)
-    spray_med = float(np.median(dataset.X[:, 2]))
-    flat = np.column_stack(
-        [ev_grid.ravel(), la_grid.ravel(), np.full(ev_grid.size, spray_med)]
-    )
+    # Hold every other feature at its column median; vary only exit velo / launch.
+    medians = np.median(np.asarray(dataset.X, dtype=float), axis=0)
+    flat = np.tile(medians, (ev_grid.size, 1))
+    flat[:, 0] = ev_grid.ravel()
+    flat[:, 1] = la_grid.ravel()
     proba = model.predict_proba(flat)[:, 1].reshape(ev_grid.shape)
     return ev_lin, la_lin, proba
 

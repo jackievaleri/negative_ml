@@ -43,12 +43,17 @@ from loguru import logger
 from negative_ml.core import eval as ev
 from negative_ml.core.config import REPO_ROOT
 from negative_ml.core.dataset import Dataset
-from negative_ml.core.experiment import cross_dataset_split, split_from_dataset
+from negative_ml.core.experiment import (
+    cross_dataset_split,
+    park_split_from_dataset,
+    split_from_dataset,
+)
 from negative_ml.domains import baseball
 from negative_ml.experiments.negative_control import run_negative_control
 from negative_ml.models import model_factory
 from negative_ml.runner import data_path, figure_path, metrics_path
 from negative_ml.viz import baseball as viz
+from negative_ml.viz import diagnostics as diag
 from negative_ml.viz import results as rviz
 from negative_ml.viz.style import save_fig
 
@@ -58,8 +63,9 @@ DOMAIN = "baseball"
 TARGETS = ["home_run", "triple"]
 #: Seasons: 2023 is primary; the hard split tests on the held-out 2024.
 TRAIN_YEAR, TEST_YEAR = 2023, 2024
-#: Evaluation regimes built per target.
-SPLITS = ("random", "hard")
+#: Evaluation regimes built per target: random (within-2023 holdout), hard
+#: (2023->2024 season shift), and park (quirky outlier ballparks held out).
+SPLITS = ("random", "hard", "park")
 
 
 def save_figure(fig: plt.Figure, category: str, name: str) -> None:
@@ -74,10 +80,11 @@ def artifact(category: str, name: str, suffix: str = ".csv"):
 
 
 def build_splits(ds_train: Dataset, ds_test: Dataset) -> dict:
-    """Random (within-2023) and hard (2023->2024) evaluation splits."""
+    """Random (within-2023), hard (2023->2024), and park-holdout splits."""
     return {
         "random": split_from_dataset(ds_train, name="random"),
         "hard": cross_dataset_split(ds_train, ds_test, name="hard"),
+        "park": park_split_from_dataset(ds_train, name="park"),
     }
 
 
@@ -91,6 +98,7 @@ def generate() -> None:
     """
     full_factory = model_factory("classification")
     nc_frames = []
+    label_corr_frames, park_rate_frames, shift_frames = [], [], []
 
     for target in TARGETS:
         ds_train = baseball.load_season(TRAIN_YEAR, target=target)
@@ -100,7 +108,35 @@ def generate() -> None:
             f"{int(ds_train.y.sum()):,} pos ({ds_train.y.mean():.2%}) ==="
         )
 
-        for split_name, sp in build_splits(ds_train, ds_test).items():
+        # Per-target diagnostics: leakage smell-test and per-park positive rate.
+        label_corr_frames.append(
+            diag.label_correlation_table(
+                ds_train.X, ds_train.y, ds_train.feature_names
+            ).assign(target=target)
+        )
+        park_rate_frames.append(
+            diag.per_park_positive_rate(ds_train.groups, ds_train.y).assign(
+                target=target
+            )
+        )
+
+        splits = build_splits(ds_train, ds_test)
+
+        # Feature correlations and covariate shift depend only on X (identical
+        # across targets), so compute them once on the first target.
+        if target == TARGETS[0]:
+            for method in ("pearson", "spearman"):
+                diag.feature_correlation_matrix(
+                    ds_train.X, ds_train.feature_names, method=method
+                ).to_csv(artifact("metrics", f"feature_corr_{method}"))
+            for split_name, sp in splits.items():
+                shift_frames.append(
+                    diag.covariate_shift_table(
+                        sp.train_ds.X, sp.X_test, ds_train.feature_names
+                    ).assign(split=split_name)
+                )
+
+        for split_name, sp in splits.items():
             model = full_factory()
             model.fit(sp.train_ds.X, sp.train_ds.y)
             y_score = model.predict_proba(sp.X_test)[:, 1]
@@ -139,6 +175,15 @@ def generate() -> None:
     nc_path = metrics_path("negative_control", "baseball")
     pd.concat(nc_frames, ignore_index=True).to_csv(nc_path, index=False)
     logger.info(f"  wrote {nc_path.relative_to(REPO_ROOT)}")
+
+    for frames, name in (
+        (label_corr_frames, "label_correlation"),
+        (park_rate_frames, "per_park_rate"),
+        (shift_frames, "covariate_shift"),
+    ):
+        path = metrics_path(name, "baseball")
+        pd.concat(frames, ignore_index=True).to_csv(path, index=False)
+        logger.info(f"  wrote {path.relative_to(REPO_ROOT)}")
 
 
 def make_eda_figures() -> None:
@@ -256,9 +301,93 @@ def make_negative_control_figures() -> None:
         save_figure(fig, "negative_control", f"neg_control_{target}.png")
 
 
+def make_feature_relationship_figures() -> None:
+    """Pearson/Spearman correlation heatmaps and the feature pair matrix."""
+    logger.info("Feature-relationship figures:")
+    pearson_path = artifact("metrics", "feature_corr_pearson")
+    spearman_path = artifact("metrics", "feature_corr_spearman")
+    require_artifacts(pearson_path, spearman_path)
+    pearson = pd.read_csv(pearson_path, index_col=0)
+    spearman = pd.read_csv(spearman_path, index_col=0)
+
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6.5))
+    diag.plot_correlation_heatmap(pearson, axes[0], title="Pearson correlation")
+    diag.plot_correlation_heatmap(spearman, axes[1], title="Spearman correlation")
+    fig.suptitle("Feature correlations (linear vs. monotonic)", fontsize=13)
+    fig.tight_layout()
+    save_figure(fig, "eda", "eda_feature_correlation.png")
+
+    # The pair matrix needs raw feature values: re-load the cached season.
+    shared = baseball.load_season(TRAIN_YEAR, target="home_run")
+    n_cont = len(baseball.CONTINUOUS_FEATURES)
+    fig = diag.plot_feature_pair_matrix(
+        shared.X[:, :n_cont],
+        baseball.CONTINUOUS_FEATURES,
+        shared.minority_mask(),
+        minority_label="home run",
+    )
+    save_figure(fig, "eda", "eda_feature_pair_matrix.png")
+
+
+def make_leakage_figures() -> None:
+    """Covariate-shift, train/test distribution, per-park, and smell-test figures."""
+    logger.info("Leakage / distribution figures:")
+    shift_path = metrics_path("covariate_shift", "baseball")
+    park_path = metrics_path("per_park_rate", "baseball")
+    corr_path = metrics_path("label_correlation", "baseball")
+    require_artifacts(shift_path, park_path, corr_path)
+    shift = pd.read_csv(shift_path)
+    park = pd.read_csv(park_path)
+    label_corr = pd.read_csv(corr_path)
+
+    # Covariate shift per split, one panel each.
+    splits_present = list(dict.fromkeys(shift["split"]))
+    fig, axes = plt.subplots(
+        1, len(splits_present), figsize=(5 * len(splits_present), 4), squeeze=False
+    )
+    for ax, split_name in zip(axes.ravel(), splits_present):
+        diag.plot_covariate_shift(shift[shift["split"] == split_name], ax)
+        ax.set_title(f"Covariate shift — {split_name} split")
+    fig.tight_layout()
+    save_figure(fig, "leakage", "leakage_covariate_shift.png")
+
+    # Train vs. test feature distributions per split (raw values re-loaded).
+    shared = baseball.load_season(TRAIN_YEAR, target="home_run")
+    shared_test = baseball.load_season(TEST_YEAR, target="home_run")
+    for split_name, sp in build_splits(shared, shared_test).items():
+        fig = diag.plot_train_test_distributions(
+            sp.train_ds.X,
+            sp.X_test,
+            shared.feature_names,
+            test_label=f"test ({split_name})",
+        )
+        save_figure(fig, "leakage", f"leakage_distributions_{split_name}.png")
+
+    # Per-park positive rate and the leakage smell-test, per target.
+    for target in TARGETS:
+        pr = park[park["target"] == target]
+        if not pr.empty:
+            fig, ax = plt.subplots(figsize=(11, 4.5))
+            diag.plot_per_park_rate(pr, ax, label=viz.target_label(target))
+            fig.tight_layout()
+            save_figure(fig, "leakage", f"leakage_per_park_rate_{target}.png")
+        lc = label_corr[label_corr["target"] == target]
+        if not lc.empty:
+            fig, ax = plt.subplots(figsize=(8, 4.5))
+            diag.plot_label_correlations(lc, ax)
+            ax.set_title(
+                f"Feature-label correlation — {viz.target_label(target)} "
+                "(leakage smell-test)"
+            )
+            fig.tight_layout()
+            save_figure(fig, "leakage", f"leakage_label_corr_{target}.png")
+
+
 def plot() -> None:
     """Rebuild every EDA + performance + negative-control figure from saved data."""
     make_eda_figures()
+    make_feature_relationship_figures()
+    make_leakage_figures()
     make_performance_figures()
     make_negative_control_figures()
 

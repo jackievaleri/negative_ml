@@ -1,0 +1,444 @@
+"""Data-leakage and feature-relationship diagnostics for the baseball domain.
+
+These are the critical-review figures a machine-learning scientist or statistician
+would ask for before trusting the models: do the train and test sets come from the
+same distribution (covariate shift), is any single feature suspiciously predictive
+of the label (leakage smell-test), how do the features relate to each other
+(correlation and pairwise structure), and how does the positive rate vary across
+the ballparks that the park split holds out.
+
+Following the rest of negative_ml.viz, the compute functions return tidy frames so
+a generation step can persist them and a plotting step can redraw without
+recomputation; the single-axes plotters draw onto a caller-supplied Axes while the
+grid plotters (distributions, pair matrix) build and return their own Figure.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+from negative_ml.core.config import OUTLIER_BALLPARKS, VIZ_PAIRPLOT_POINTS
+from negative_ml.viz.style import (
+    DIVERGING_CMAP,
+    INK,
+    LIGHT_GRAY,
+    PALETTE,
+    style_axes,
+)
+
+
+# --- compute (decoupled from drawing) -------------------------------------
+def ks_statistic(a: np.ndarray, b: np.ndarray) -> float:
+    """Two-sample Kolmogorov-Smirnov statistic between two 1-D samples.
+
+    The KS statistic is the maximum absolute gap between the two empirical CDFs,
+    a scale-free measure of distribution shift in [0, 1] (0 = identical, 1 =
+    disjoint). Computed with numpy so no SciPy dependency is needed; only the
+    statistic (not the p-value) is returned, which is what the shift chart shows.
+
+    Args:
+        a: First sample (e.g. a training feature column).
+        b: Second sample (e.g. the same feature in the test set).
+
+    Returns:
+        The KS statistic; 0.0 if either sample is empty.
+    """
+    a = np.sort(np.asarray(a, dtype=float))
+    b = np.sort(np.asarray(b, dtype=float))
+    if a.size == 0 or b.size == 0:
+        return 0.0
+    grid = np.concatenate([a, b])
+    cdf_a = np.searchsorted(a, grid, side="right") / a.size
+    cdf_b = np.searchsorted(b, grid, side="right") / b.size
+    return float(np.max(np.abs(cdf_a - cdf_b)))
+
+
+def covariate_shift_table(
+    train_X: np.ndarray, test_X: np.ndarray, feature_names: Sequence[str]
+) -> pd.DataFrame:
+    """Per-feature train-vs-test KS statistic, sorted from most to least shifted.
+
+    Quantifies covariate shift so a hard or park split's difficulty can be
+    attributed to specific features rather than eyeballed from histograms.
+
+    Args:
+        train_X: Training feature matrix.
+        test_X: Test feature matrix (same column order as train_X).
+        feature_names: Column names aligned with the matrices.
+
+    Returns:
+        Frame with columns [feature, ks], sorted by descending ks.
+    """
+    train_X = np.asarray(train_X, dtype=float)
+    test_X = np.asarray(test_X, dtype=float)
+    rows = [
+        {"feature": name, "ks": ks_statistic(train_X[:, i], test_X[:, i])}
+        for i, name in enumerate(feature_names)
+    ]
+    return pd.DataFrame(rows).sort_values("ks", ascending=False).reset_index(drop=True)
+
+
+def feature_correlation_matrix(
+    X: np.ndarray, feature_names: Sequence[str], method: str = "pearson"
+) -> pd.DataFrame:
+    """Feature-by-feature correlation matrix.
+
+    Args:
+        X: Feature matrix.
+        feature_names: Column names aligned with X.
+        method: Correlation method passed to pandas ("pearson" or "spearman").
+            Spearman captures monotonic relationships that Pearson misses.
+
+    Returns:
+        A square correlation DataFrame indexed and columned by feature name.
+    """
+    return pd.DataFrame(np.asarray(X, dtype=float), columns=list(feature_names)).corr(
+        method=method
+    )
+
+
+def label_correlation_table(
+    X: np.ndarray, y: np.ndarray, feature_names: Sequence[str]
+) -> pd.DataFrame:
+    """Per-feature correlation with the label (a leakage smell-test).
+
+    Reports both Pearson (linear / point-biserial against the binary label) and
+    Spearman (monotonic). A feature with a near-perfect correlation would signal
+    leakage; the geometry features are expected to be moderate, which is the point
+    of the check after the outcome-derived columns were excluded.
+
+    Args:
+        X: Feature matrix.
+        y: Binary label aligned with X rows.
+        feature_names: Column names aligned with X.
+
+    Returns:
+        Frame with columns [feature, pearson, spearman], sorted by descending
+        absolute Pearson correlation.
+    """
+    df = pd.DataFrame(np.asarray(X, dtype=float), columns=list(feature_names))
+    df["__label__"] = np.asarray(y, dtype=float)
+    pearson = df.corr(method="pearson")["__label__"].drop("__label__")
+    spearman = df.corr(method="spearman")["__label__"].drop("__label__")
+    out = pd.DataFrame(
+        {
+            "feature": pearson.index,
+            "pearson": pearson.values,
+            "spearman": spearman.values,
+        }
+    )
+    return out.reindex(
+        out["pearson"].abs().sort_values(ascending=False).index
+    ).reset_index(drop=True)
+
+
+def per_park_positive_rate(groups: np.ndarray, y: np.ndarray) -> pd.DataFrame:
+    """Positive-class rate and batted-ball count per ballpark.
+
+    Args:
+        groups: Per-row ballpark identifier (Statcast home_team code).
+        y: Binary label aligned with groups.
+
+    Returns:
+        Frame with columns [park, n, positive_rate], sorted by positive_rate.
+    """
+    df = pd.DataFrame({"park": np.asarray(groups), "y": np.asarray(y, dtype=float)})
+    g = df.groupby("park")["y"].agg(["mean", "size"]).reset_index()
+    g = g.rename(columns={"mean": "positive_rate", "size": "n"})
+    return g.sort_values("positive_rate").reset_index(drop=True)
+
+
+# --- plotting -------------------------------------------------------------
+def plot_correlation_heatmap(
+    corr: pd.DataFrame, ax: plt.Axes, title: str = "Feature correlation"
+) -> plt.Axes:
+    """Draw a signed correlation matrix as a diverging heatmap on [-1, 1].
+
+    Args:
+        corr: Square correlation frame (see feature_correlation_matrix).
+        ax: Target matplotlib axes.
+        title: Axes title.
+
+    Returns:
+        The styled ax.
+    """
+    values = corr.to_numpy()
+    labels = list(corr.columns)
+    im = ax.imshow(values, cmap=DIVERGING_CMAP, vmin=-1.0, vmax=1.0)
+    ax.set_xticks(range(len(labels)))
+    ax.set_yticks(range(len(labels)))
+    ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
+    ax.set_yticklabels(labels, fontsize=8)
+    for i in range(len(labels)):
+        for j in range(len(labels)):
+            ax.text(
+                j,
+                i,
+                f"{values[i, j]:.2f}",
+                ha="center",
+                va="center",
+                fontsize=6,
+                color=INK if abs(values[i, j]) < 0.6 else "white",
+            )
+    ax.figure.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    ax.set_title(title)
+    return style_axes(ax, despine=())
+
+
+def plot_label_correlations(
+    df: pd.DataFrame, ax: plt.Axes, leakage_threshold: float = 0.95
+) -> plt.Axes:
+    """Grouped bars of each feature's Pearson and Spearman correlation with y.
+
+    The leakage smell-test: bars that approach +/-1 would flag a feature that
+    nearly determines the label. The dashed guides mark the leakage threshold; the
+    geometry features are expected to stay well inside it, confirming the
+    outcome-derived columns were the only genuine leakage risks.
+
+    Args:
+        df: Frame with [feature, pearson, spearman] (see label_correlation_table).
+        ax: Target matplotlib axes.
+        leakage_threshold: Absolute correlation above which a feature is flagged.
+
+    Returns:
+        The styled ax.
+    """
+    feats = df["feature"].tolist()
+    x = np.arange(len(feats))
+    width = 0.4
+    ax.bar(
+        x - width / 2,
+        df["pearson"],
+        width=width,
+        color=PALETTE["teal"],
+        label="Pearson",
+    )
+    ax.bar(
+        x + width / 2,
+        df["spearman"],
+        width=width,
+        color=PALETTE["orange"],
+        label="Spearman",
+    )
+    ax.axhline(0, color=INK, lw=0.8)
+    ax.axhline(
+        leakage_threshold,
+        color=PALETTE["magenta"],
+        ls="--",
+        lw=1,
+        label=f"leakage flag (|r|>{leakage_threshold:g})",
+    )
+    ax.axhline(-leakage_threshold, color=PALETTE["magenta"], ls="--", lw=1)
+    ax.set_ylim(-1, 1)
+    ax.set_xticks(x)
+    ax.set_xticklabels(feats, rotation=45, ha="right", fontsize=8)
+    ax.set_ylabel("correlation with label")
+    ax.set_title("Feature-label correlation (leakage smell-test)")
+    ax.legend(loc="best", fontsize=8)
+    return style_axes(ax)
+
+
+def plot_train_test_distributions(
+    train_X: np.ndarray,
+    test_X: np.ndarray,
+    feature_names: Sequence[str],
+    bins: int = 40,
+    train_label: str = "train",
+    test_label: str = "test",
+) -> plt.Figure:
+    """Overlaid normalized train-vs-test histograms, one panel per feature.
+
+    A visual companion to covariate_shift_table: where the two outlines diverge,
+    the test set is sampling a different region of that feature than training, so
+    metrics on it reflect extrapolation. Densities are normalized so the
+    differently sized train and test sets are comparable.
+
+    Args:
+        train_X: Training feature matrix.
+        test_X: Test feature matrix (same column order).
+        feature_names: Column names aligned with the matrices.
+        bins: Histogram bin count per panel.
+        train_label: Legend label for the training distribution.
+        test_label: Legend label for the test distribution.
+
+    Returns:
+        The created Figure (caller saves / displays it).
+    """
+    train_X = np.asarray(train_X, dtype=float)
+    test_X = np.asarray(test_X, dtype=float)
+    n = len(feature_names)
+    ncols = 3
+    nrows = (n + ncols - 1) // ncols
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(5 * ncols, 3.2 * nrows), squeeze=False
+    )
+    flat = axes.ravel()
+    for i, name in enumerate(feature_names):
+        ax = flat[i]
+        lo = float(min(train_X[:, i].min(), test_X[:, i].min()))
+        hi = float(max(train_X[:, i].max(), test_X[:, i].max()))
+        edges = np.linspace(lo, hi, bins + 1)
+        ax.hist(
+            train_X[:, i],
+            bins=edges,
+            density=True,
+            histtype="step",
+            color=PALETTE["teal"],
+            lw=1.6,
+            label=train_label,
+        )
+        ax.hist(
+            test_X[:, i],
+            bins=edges,
+            density=True,
+            histtype="step",
+            color=PALETTE["orange"],
+            lw=1.6,
+            label=test_label,
+        )
+        ax.set_title(name, fontsize=10)
+        ax.set_yticks([])
+        style_axes(ax)
+    for ax in flat[n:]:
+        ax.set_visible(False)
+    flat[0].legend(loc="upper right", fontsize=8)
+    fig.suptitle("Train vs. test feature distributions (covariate shift)", fontsize=13)
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    return fig
+
+
+def plot_covariate_shift(shift_df: pd.DataFrame, ax: plt.Axes) -> plt.Axes:
+    """Horizontal bar chart of per-feature train-vs-test KS statistics.
+
+    Args:
+        shift_df: Frame with [feature, ks] (see covariate_shift_table).
+        ax: Target matplotlib axes.
+
+    Returns:
+        The styled ax.
+    """
+    d = shift_df.sort_values("ks")
+    ax.barh(d["feature"], d["ks"], color=PALETTE["purple"])
+    ax.set_xlabel("KS statistic (train vs. test)")
+    ax.set_xlim(0, 1)
+    ax.set_title("Covariate shift by feature")
+    return style_axes(ax)
+
+
+def plot_per_park_rate(
+    rate_df: pd.DataFrame,
+    ax: plt.Axes,
+    highlight: Sequence[str] = OUTLIER_BALLPARKS,
+    label: str = "positive",
+) -> plt.Axes:
+    """Bar chart of per-park positive rate, highlighting the held-out parks.
+
+    Justifies the park split: the highlighted (held-out) parks should sit toward
+    the extremes of the positive-rate distribution, so training without them and
+    testing on them is a genuine park-factor shift.
+
+    Args:
+        rate_df: Frame with [park, n, positive_rate] (see per_park_positive_rate).
+        ax: Target matplotlib axes.
+        highlight: Park identifiers drawn in the highlight color (held-out parks).
+        label: Name of the positive class for the y-axis label.
+
+    Returns:
+        The styled ax.
+    """
+    d = rate_df.sort_values("positive_rate")
+    highlight_set = set(highlight)
+    colors = [
+        PALETTE["orange"] if p in highlight_set else LIGHT_GRAY for p in d["park"]
+    ]
+    ax.bar(d["park"], d["positive_rate"], color=colors)
+    ax.axhline(
+        float(np.average(d["positive_rate"], weights=d["n"])),
+        color=INK,
+        ls="--",
+        lw=1,
+        label="overall rate",
+    )
+    ax.set_xticklabels(d["park"], rotation=90, fontsize=7)
+    ax.set_ylabel(f"{label} rate")
+    ax.set_ylim(0, None)
+    ax.set_title("Positive rate by ballpark (held-out parks highlighted)")
+    ax.legend(loc="upper left", fontsize=8)
+    return style_axes(ax)
+
+
+def plot_feature_pair_matrix(
+    X: np.ndarray,
+    feature_names: Sequence[str],
+    minority_mask: np.ndarray,
+    minority_label: str = "minority",
+    max_points: int = VIZ_PAIRPLOT_POINTS,
+    seed: int = 0,
+) -> plt.Figure:
+    """Scatter-matrix of continuous features, minority class drawn on top.
+
+    The diagonal shows each feature's marginal histogram; the lower triangle
+    shows pairwise scatters with the majority in gray and the minority class
+    highlighted, exposing collinearity and where the class of interest sits in
+    each plane. Points are subsampled for legibility.
+
+    Args:
+        X: Feature matrix restricted to the columns to show (continuous features).
+        feature_names: Names aligned with the columns of X.
+        minority_mask: Boolean mask (len == rows of X) flagging the minority rows.
+        minority_label: Legend label for the highlighted class.
+        max_points: Approximate cap on majority points drawn per panel.
+        seed: Seed for the majority subsample.
+
+    Returns:
+        The created Figure.
+    """
+    X = np.asarray(X, dtype=float)
+    minority_mask = np.asarray(minority_mask, dtype=bool)
+    rng = np.random.default_rng(seed)
+    maj_idx = np.flatnonzero(~minority_mask)
+    if maj_idx.size > max_points:
+        maj_idx = rng.choice(maj_idx, max_points, replace=False)
+    min_idx = np.flatnonzero(minority_mask)
+
+    n = len(feature_names)
+    fig, axes = plt.subplots(n, n, figsize=(2.2 * n, 2.2 * n), squeeze=False)
+    for r in range(n):
+        for c in range(n):
+            ax = axes[r, c]
+            if r == c:
+                ax.hist(X[:, r], bins=40, color=PALETTE["teal"])
+            elif r > c:
+                ax.scatter(
+                    X[maj_idx, c],
+                    X[maj_idx, r],
+                    s=4,
+                    alpha=0.2,
+                    color=LIGHT_GRAY,
+                    edgecolors="none",
+                )
+                ax.scatter(
+                    X[min_idx, c],
+                    X[min_idx, r],
+                    s=5,
+                    alpha=0.5,
+                    color=PALETTE["magenta"],
+                    edgecolors="none",
+                    label=minority_label,
+                )
+            else:
+                ax.set_visible(False)
+            if c == 0 and r != 0:
+                ax.set_ylabel(feature_names[r], fontsize=8)
+            if r == n - 1:
+                ax.set_xlabel(feature_names[c], fontsize=8)
+            ax.tick_params(labelsize=6)
+            style_axes(ax)
+    axes[1, 0].legend(loc="upper right", fontsize=8, markerscale=2)
+    fig.suptitle("Feature pair matrix (minority class highlighted)", fontsize=13)
+    fig.tight_layout(rect=(0, 0, 1, 0.98))
+    return fig

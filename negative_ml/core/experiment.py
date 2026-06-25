@@ -15,15 +15,15 @@ build the default split, preserving their original behavior.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
 
 from negative_ml.core import eval as ev
-from negative_ml.core.config import RANDOM_SEED
+from negative_ml.core.config import OUTLIER_BALLPARKS, RANDOM_SEED
 from negative_ml.core.dataset import Dataset
-from negative_ml.core.splitting import random_split, scaffold_split
+from negative_ml.core.splitting import ballpark_split, random_split, scaffold_split
 
 #: A model factory: (**kwargs) -> unfitted estimator (see models.make_model).
 #: Accepting kwargs lets callers pass e.g. class_weight for the H4 baseline.
@@ -72,6 +72,34 @@ def split_from_dataset(
     train pool and test set come from the same dataset.
     """
     train_idx, test_idx = make_split(dataset, scaffold=scaffold, seed=seed)
+    return EvalSplit(
+        train_ds=dataset.subset(train_idx),
+        X_test=dataset.X[test_idx],
+        y_test=dataset.y[test_idx],
+        name=name,
+    )
+
+
+def park_split_from_dataset(
+    dataset: Dataset,
+    test_parks: Sequence[str] = OUTLIER_BALLPARKS,
+    name: str = "park",
+) -> EvalSplit:
+    """Build an EvalSplit that holds entire ballparks out of training.
+
+    Wraps ballpark_split into an EvalSplit (parallel to split_from_dataset). The
+    train pool and test set come from the same season, so this isolates a
+    park-factor distribution shift from the season shift of cross_dataset_split.
+
+    Args:
+        dataset: Dataset whose groups hold the per-row ballpark identifier.
+        test_parks: Ballpark identifiers (home_team codes) to hold out for test.
+        name: Split-regime label carried into result frames.
+
+    Returns:
+        An EvalSplit whose train pool excludes the held-out parks.
+    """
+    train_idx, test_idx = ballpark_split(dataset, test_parks=test_parks)
     return EvalSplit(
         train_ds=dataset.subset(train_idx),
         X_test=dataset.X[test_idx],

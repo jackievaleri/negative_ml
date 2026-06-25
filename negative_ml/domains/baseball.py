@@ -1,13 +1,27 @@
 """MLB batted-ball outcomes domain — intuitive geometry (plan.md 3.2).
 
-Features are exit velocity, launch angle, and an adjusted (pull-positive) spray
-angle; the task is to predict a rare batted-ball outcome. The default minority
-target is the home run — it occupies a small, well-defined region of the
-exit-velocity / launch-angle plane (high exit velocity, ~12-50 deg launch angle),
-which makes "near-miss" majority examples (balls that just miss being home runs) a
-natural selection target. The target can instead be any hit type; triple
-is a deliberately harder, more imbalanced minority (rarer than home runs, and
+The core features are exit velocity, launch angle, and an adjusted (pull-positive)
+spray angle, extended with pitch context (plate location, release speed, release
+spin rate) and a coarse pitch-class indicator (fastball / breaking / offspeed);
+the task is to predict a rare batted-ball outcome. The default minority target is
+the home run — it occupies a small, well-defined region of the exit-velocity /
+launch-angle plane (high exit velocity, ~12-50 deg launch angle), which makes
+"near-miss" majority examples (balls that just miss being home runs) a natural
+selection target. The target can instead be any hit type; triple is a
+deliberately harder, more imbalanced minority (rarer than home runs, and
 geometrically diffuse rather than a tight high-exit-velocity cluster).
+
+Two groups of available Statcast columns are deliberately left out of the feature
+matrix. hit_distance_sc, estimated_ba_using_speedangle,
+estimated_woba_using_speedangle, and launch_speed_angle (the barrel class) are
+measured or modeled consequences of the outcome itself, so they would leak the
+label. bat_speed and swing_length (bat tracking) are ~58% missing in 2023 and
+would break the NaN-intolerant distance and clustering used by the selection
+strategies; they can be added if the study moves to a 2024+ training season.
+
+The batter's home team is retained as Dataset.groups so a ballpark-based split can
+hold entire (quirky) parks out of training — a harder, park-factor distribution
+shift than the chronological cross-season split.
 
 Data is pulled with pybaseball one MLB season at a time — see SEASONS and
 load_season. For the binary framing used
@@ -55,7 +69,48 @@ _HIT_EVENTS = {
     "home_run": "home_run",
 }
 
-_FEATURE_NAMES = ["exit_velocity", "launch_angle", "spray_angle"]
+#: Continuous features, in column order. Exit velocity, launch angle, and spray
+#: angle stay first so the 2-D EDA and the probability surface keep indexing
+#: X[:, 0:3].
+CONTINUOUS_FEATURES = [
+    "exit_velocity",
+    "launch_angle",
+    "spray_angle",
+    "plate_x",
+    "plate_z",
+    "release_speed",
+    "release_spin_rate",
+]
+
+#: Coarse pitch-class indicator features, appended after the continuous block.
+#: pitch_type is grouped into three classes rather than one-hotting the ~9 raw
+#: codes, which keeps the feature count and the negative-control chart readable.
+PITCH_CLASS_FEATURES = ["is_fastball", "is_breaking", "is_offspeed"]
+
+_FEATURE_NAMES = CONTINUOUS_FEATURES + PITCH_CLASS_FEATURES
+
+#: Raw Statcast pitch_type codes grouped into the three coarse classes. Codes not
+#: listed (or missing) map to all-zero indicators — an implicit "other" class.
+_FASTBALL_CODES = {"FF", "SI", "FC", "FT", "FA"}
+_BREAKING_CODES = {"SL", "CU", "ST", "SV", "KC", "CS", "SC", "KN", "EP", "SLV"}
+_OFFSPEED_CODES = {"CH", "FS", "FO"}
+
+#: Columns pulled from the raw events frame: the batted-ball kinematics and
+#: landing location, plus the pitch-context and home-team columns added above.
+_NEEDED_COLUMNS = [
+    "launch_speed",
+    "launch_angle",
+    "hc_x",
+    "hc_y",
+    "stand",
+    "events",
+    "plate_x",
+    "plate_z",
+    "release_speed",
+    "release_spin_rate",
+    "pitch_type",
+    "home_team",
+]
 
 
 def load(
@@ -166,6 +221,47 @@ def outcome_label(events: pd.Series) -> pd.Series:
     return events.map(_HIT_EVENTS).fillna("out")
 
 
+def pitch_class_indicators(pitch_type: pd.Series) -> np.ndarray:
+    """Coarse pitch-class indicators (fastball / breaking / offspeed).
+
+    Groups the many raw Statcast pitch_type codes into three classes so the pitch
+    mix enters the model as three indicator columns rather than a wide one-hot.
+    Unknown or missing codes map to all-zero (an implicit "other" class).
+
+    Args:
+        pitch_type: Raw Statcast pitch_type codes, one per batted ball.
+
+    Returns:
+        Float array of shape (n, 3): the fastball, breaking, and offspeed columns.
+    """
+    codes = pitch_type.fillna("").to_numpy()
+    is_fastball = np.isin(codes, list(_FASTBALL_CODES)).astype(float)
+    is_breaking = np.isin(codes, list(_BREAKING_CODES)).astype(float)
+    is_offspeed = np.isin(codes, list(_OFFSPEED_CODES)).astype(float)
+    return np.column_stack([is_fastball, is_breaking, is_offspeed])
+
+
+def impute_column_medians(X: np.ndarray) -> np.ndarray:
+    """Fill NaNs in each column with that column's median.
+
+    The selection strategies standardize and run nearest-neighbor and k-means on
+    the feature matrix, none of which tolerate NaNs. Pitch-context columns carry a
+    small residual missing fraction (e.g. release_spin_rate ~0.6%), so they are
+    median-imputed here once at featurization time.
+
+    Args:
+        X: Float feature matrix that may contain NaNs.
+
+    Returns:
+        A copy of X with each column's NaNs replaced by that column's median.
+    """
+    X = np.asarray(X, dtype=float).copy()
+    medians = np.nanmedian(X, axis=0)
+    rows, cols = np.where(np.isnan(X))
+    X[rows, cols] = np.take(medians, cols)
+    return X
+
+
 def featurize(
     events: pd.DataFrame, binary: bool = True, target: str = "home_run"
 ) -> Dataset:
@@ -188,8 +284,7 @@ def featurize(
         raise ValueError(
             f"Unknown target {target!r}; choose from {sorted(_HIT_EVENTS)}."
         )
-    needed = ["launch_speed", "launch_angle", "hc_x", "hc_y", "stand", "events"]
-    df = events.loc[:, needed].copy()
+    df = events.loc[:, _NEEDED_COLUMNS].copy()
     # Keep batted balls only: valid kinematics and a landing location.
     df = df.dropna(subset=["launch_speed", "launch_angle", "hc_x", "hc_y"])
     df = df.reset_index(drop=True)
@@ -199,13 +294,22 @@ def featurize(
         df["hc_y"].to_numpy(float),
         df["stand"].to_numpy(),
     )
-    X = np.column_stack(
+    # Continuous block (order matches CONTINUOUS_FEATURES), median-imputed so the
+    # downstream distance / clustering selection code stays NaN-free.
+    continuous = np.column_stack(
         [
             df["launch_speed"].to_numpy(float),
             df["launch_angle"].to_numpy(float),
             spray,
+            df["plate_x"].to_numpy(float),
+            df["plate_z"].to_numpy(float),
+            df["release_speed"].to_numpy(float),
+            df["release_spin_rate"].to_numpy(float),
         ]
     )
+    continuous = impute_column_medians(continuous)
+    indicators = pitch_class_indicators(df["pitch_type"])
+    X = np.column_stack([continuous, indicators])
 
     outcome = outcome_label(df["events"])
     if binary:
@@ -221,5 +325,6 @@ def featurize(
         y=y,
         task="classification",
         feature_names=list(_FEATURE_NAMES),
+        groups=df["home_team"].to_numpy(),
         meta=meta,
     )

@@ -10,16 +10,17 @@ The study is run over a matrix of conditions:
 
     - target  ∈ {home_run, triple} — triples are rarer and harder (no single
       feature separates them), a stress test for every selection method.
-    - split   ∈ {random, hard} — random is a stratified holdout within the
-      2023 season; hard trains on all of 2023 and tests on all of 2024, i.e.
-      genuine cross-season distribution shift.
+    - split   ∈ {random, hard, park} — random is a stratified holdout within the
+      2023 season; hard trains on all of 2023 and tests on all of 2024 (genuine
+      cross-season distribution shift); park holds quirky outlier ballparks
+      (Fenway, Coors, etc.) entirely out of training, a park-factor shift.
 
 The headline figure realizes the talk's main result:
 
     y = model performance metric, x = dataset size, color/marker = selection method,
 
-with the split overlaid (solid = random, dashed = hard) to show whether a
-method's in-distribution gains survive the jump to next season.
+with the split overlaid (solid = random, dashed = hard, dotted = park) to show
+whether a method's in-distribution gains survive the harder splits.
 
 Plotting is a first-class, independent step. Generation writes tidy result frames
 under results/ (one combined frame per experiment, tagged with target and
@@ -46,13 +47,18 @@ import pandas as pd
 from loguru import logger
 
 from negative_ml.core.config import REPO_ROOT
-from negative_ml.core.experiment import cross_dataset_split, split_from_dataset
+from negative_ml.core.experiment import (
+    cross_dataset_split,
+    park_split_from_dataset,
+    split_from_dataset,
+)
 from negative_ml.domains import baseball
 from negative_ml.experiments import saturation as sat
 from negative_ml.experiments import selection as sel
 from negative_ml.models import model_factory
 from negative_ml.runner import figure_path, metrics_path
 from negative_ml.viz import results as viz
+from negative_ml.viz import selection_examples as selviz
 from negative_ml.viz.style import DARK2, save_fig
 
 DOMAIN = "baseball"
@@ -68,6 +74,9 @@ BUDGETS = [250, 500, 1000, 2000, 4000, 8000, 16000]
 FRACTIONS = [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]
 N_SEEDS = 3
 METRICS = ["auroc", "auprc", "precision_at_k", "enrichment_factor"]
+#: Tiny budget used only for the human-readable downselection-example tables and
+#: scatters (few enough rows to actually read and reason about).
+EXAMPLE_BUDGET = 12
 
 
 def save_figure(fig: plt.Figure, category: str, name: str) -> None:
@@ -84,10 +93,16 @@ def save_frame(df: pd.DataFrame, experiment: str) -> None:
 
 
 def build_splits(ds_train, ds_test):
-    """The two evaluation regimes keyed by name (random within / hard across)."""
+    """The three evaluation regimes keyed by name.
+
+    random is a stratified holdout within 2023; hard trains on 2023 and tests on
+    2024 (season shift); park holds quirky outlier ballparks out of training
+    within 2023 (park-factor shift).
+    """
     return {
         "random": split_from_dataset(ds_train, name="random"),
         "hard": cross_dataset_split(ds_train, ds_test, name="hard"),
+        "park": park_split_from_dataset(ds_train, name="park"),
     }
 
 
@@ -110,11 +125,19 @@ def generate() -> None:
     """
     classifier_factory = model_factory("classification")
     selection_frames, sat_frames, sat_prop_frames = [], [], []
+    example_frames = []
 
     for target in TARGETS:
         logger.info(f"=== target: {target} ===")
         ds_train = baseball.load_season(TRAIN_YEAR, target=target)
         ds_test = baseball.load_season(TEST_YEAR, target=target)
+
+        # Human-readable downselection examples on the full season (tiny budget).
+        example_frames.append(
+            selviz.selection_examples_frame(ds_train, EXAMPLE_BUDGET).assign(
+                target=target
+            )
+        )
         logger.info(
             f"  {TRAIN_YEAR}: {ds_train.n_samples:,} balls, {int(ds_train.y.sum()):,} "
             f"{target} ({ds_train.y.mean():.2%}); {TEST_YEAR} test: "
@@ -165,6 +188,7 @@ def generate() -> None:
     save_frame(selection_df, "selection")
     save_frame(pd.concat(sat_frames, ignore_index=True), "saturation")
     save_frame(pd.concat(sat_prop_frames, ignore_index=True), "saturation_proportional")
+    save_frame(pd.concat(example_frames, ignore_index=True), "selection_examples")
 
     logger.info("Mean metrics by target / split / strategy (over budgets & seeds):")
     summary = selection_df.groupby(["target", "split", "strategy"])[METRICS].mean()
@@ -208,6 +232,40 @@ def plot_saturation_panels(satm, satp, title: str, fname: str) -> None:
     save_figure(fig, "saturation", fname)
 
 
+def make_example_figures() -> None:
+    """Log the downselection-example tables and draw the four-panel scatters.
+
+    Reads the saved selection_examples frame, prints a readable per-strategy
+    table for each target (so the picks can be reasoned about), and saves a
+    four-panel scatter showing what each strategy keeps against the full cloud.
+    """
+    path = metrics_path("selection_examples", DOMAIN)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Missing {path.name}; run generation first "
+            "(run: python scripts/baseball_downselection.py --generate-only)."
+        )
+    examples = pd.read_csv(path)
+    cols = [
+        "exit_velocity",
+        "launch_angle",
+        "spray_angle",
+        "outcome",
+        "dist_to_minority",
+    ]
+    for target in list(dict.fromkeys(examples["target"])):
+        ex_t = examples[examples["target"] == target]
+        logger.info(f"Downselection examples — {target} (budget={EXAMPLE_BUDGET}):")
+        for strat in selviz.BUDGET_VARYING:
+            sub = ex_t[ex_t["strategy"] == strat]
+            if sub.empty:
+                continue
+            logger.info(f"  [{strat}]\n{sub[cols].to_string(index=False)}")
+        ds = baseball.load_season(TRAIN_YEAR, target=target)
+        fig = selviz.plot_selection_examples(ds, ex_t, label=target.replace("_", " "))
+        save_figure(fig, "downselection", f"downselection_examples_{target}.png")
+
+
 def plot() -> None:
     """Rebuild every downselection figure from the saved result frames.
 
@@ -216,6 +274,7 @@ def plot() -> None:
     saturation split-overlay — the figures that show whether in-distribution gains
     survive the cross-season jump.
     """
+    make_example_figures()
     selection_df, sat_majority, sat_proportional = read_frames()
     targets = list(dict.fromkeys(selection_df["target"]))
 
@@ -225,7 +284,7 @@ def plot() -> None:
         satp_t = sat_proportional[sat_proportional["target"] == target]
 
         logger.info(f"Figures for target {target}:")
-        for split_name in ("random", "hard"):
+        for split_name in ("random", "hard", "park"):
             sel_ts = sel_t[sel_t["split"] == split_name]
             if sel_ts.empty:
                 continue
@@ -251,7 +310,11 @@ def plot() -> None:
         save_figure(fig, "downselection", f"downselection_overlay_{target}.png")
 
         fig, ax = plt.subplots(figsize=(8, 5.5))
-        for split_name, color in (("random", DARK2[0]), ("hard", DARK2[1])):
+        for split_name, color in (
+            ("random", DARK2[0]),
+            ("hard", DARK2[1]),
+            ("park", DARK2[2]),
+        ):
             d = satp_t[satp_t["split"] == split_name]
             if not d.empty:
                 viz.plot_saturation_curve(

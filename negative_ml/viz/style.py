@@ -67,6 +67,8 @@ PALETTE = {
 DENSITY_CMAP = "Greens"  # tonal match for the teal-led Dark2 palette
 #: Sequential colormap for the model probability surface.
 PROBABILITY_CMAP = "magma"
+#: Diverging colormap for signed [-1, 1] correlation heatmaps (zero at white).
+DIVERGING_CMAP = "RdBu_r"
 
 
 def dark2(i: int) -> str:
