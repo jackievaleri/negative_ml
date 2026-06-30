@@ -51,3 +51,58 @@ def test_regressor_is_available():
     model = make_model("regression")
     model.fit(X, y)
     assert model.predict(X).shape == (50,)
+
+
+def test_logistic_kind_builds_balanced_classifier():
+    """kind='logistic' builds a fitable LogisticRegression and forwards class_weight."""
+    from sklearn.linear_model import LogisticRegression
+
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(120, 4))
+    y = (X[:, 0] > 0).astype(int)
+    model = make_model(
+        "classification", kind="logistic", class_weight="balanced", C=2.0
+    )
+    assert isinstance(model, LogisticRegression)
+    assert model.get_params()["class_weight"] == "balanced"
+    assert model.get_params()["C"] == 2.0
+    model.fit(X, y)
+    proba = model.predict_proba(X)[:, 1]
+    assert proba[y == 1].mean() > proba[y == 0].mean()
+
+
+def test_ridge_kind_builds_regressor():
+    """kind='ridge' builds a fitable Ridge regressor for the regression task."""
+    from sklearn.linear_model import Ridge
+
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(60, 3))
+    y = X[:, 0] * 2.0
+    model = make_model("regression", kind="ridge", alpha=1.0)
+    assert isinstance(model, Ridge)
+    model.fit(X, y)
+    assert model.predict(X).shape == (60,)
+
+
+def test_ridge_kind_builds_classifier():
+    """kind='ridge' builds a fitable RidgeClassifier for the classification task."""
+    from sklearn.linear_model import RidgeClassifier
+
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(120, 4))
+    y = (X[:, 0] > 0).astype(int)
+    model = make_model("classification", kind="ridge", alpha=1.0)
+    assert isinstance(model, RidgeClassifier)
+    model.fit(X, y)
+    # decision_function ranks positives above negatives on this separable data.
+    scores = model.decision_function(X)
+    assert scores.shape == (120,)
+    assert scores[y == 1].mean() > scores[y == 0].mean()
+
+
+def test_logistic_kind_rejects_regression_task():
+    """kind='logistic' is classification-only and rejects the regression task."""
+    import pytest
+
+    with pytest.raises(ValueError):
+        make_model("regression", kind="logistic")

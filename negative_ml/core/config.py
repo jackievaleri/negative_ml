@@ -67,6 +67,35 @@ XGB_DEFAULTS: dict[str, Any] = {
 SANDWICH_LOW_RATING_THRESHOLD = 3.0
 SANDWICH_HIGH_RATING_THRESHOLD = 7.0
 
+# Good-vs-bad classification cut: a sandwich is "bad" at or below this rating and
+# "good" above it. The 0-10 midpoint splits the data far more evenly (~26% bad)
+# than the rare low-rated tail at SANDWICH_LOW_RATING_THRESHOLD (~11% below 3), so
+# a good-vs-bad classifier is a better-posed, more learnable problem than scoring
+# the thin negative tail. Ratings of exactly 5 fall on the "bad" side (not above).
+SANDWICH_GOOD_RATING_THRESHOLD = 5.0
+
+# --- Sandwich classifier ---------------------------------------------------
+# The sandwich set is tiny (~240 rows), so a single hold-out split is too noisy
+# to score a model on. Metrics are averaged over SANDWICH_CV_REPEATS runs of
+# SANDWICH_CV_FOLDS-fold stratified cross-validation instead.
+SANDWICH_CV_FOLDS = 5
+SANDWICH_CV_REPEATS = 10
+
+# The good-vs-bad classifier selects the SANDWICH_CLF_TOP_FEATURES most important
+# ingredient indicators before fitting the ridge classifier. Importance is a
+# univariate F-test (ANOVA), which scores each feature's linear association with
+# the label and so matches the linear ridge; gradient-boosted "gain" importance
+# ranks split usefulness, which does not transfer to a linear model and left it
+# below chance. The encoding has hundreds of one-hot columns but only ~240 rows,
+# so paring it down keeps the linear model from fitting noise. Selection is refit
+# inside each cross-validation fold so the reported metrics stay honest.
+SANDWICH_CLF_TOP_FEATURES = 30
+
+# L2 penalty for the ridge classifier (sklearn RidgeClassifier alpha). Wide,
+# sparse one-hot features with very few rows are the regime where a regularized
+# linear classifier generalizes better than deep gradient-boosted trees.
+SANDWICH_RIDGE_ALPHA = 1.0
+
 # --- Sandwich EDA / deli-search tunables ----------------------------------
 # Ingredient values rarer than these counts are excluded from the EDA so each
 # panel stays legible. DISPLAY is the "print the popular ones" cutoff; VIOLIN is

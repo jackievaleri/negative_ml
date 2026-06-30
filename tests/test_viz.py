@@ -128,6 +128,24 @@ def test_sandwich_viz_helpers_smoke():
     plt.close("all")
 
 
+def test_sandwich_classification_viz_helpers_smoke():
+    """The good-vs-bad classifier viz helpers draw onto an Axes without error."""
+    fpr = np.array([0.0, 0.5, 1.0])
+    tpr = np.array([0.0, 0.7, 1.0])
+    _, ax = plt.subplots()
+    assert swviz.plot_roc_curves([("Ridge classifier", fpr, tpr, 0.58)], ax) is ax
+
+    _, ax = plt.subplots()
+    matrix = np.array([[40, 17], [12, 30]])
+    assert swviz.plot_confusion(matrix, ax, class_labels=("bad", "good")) is ax
+
+    _, ax = plt.subplots()
+    features = ["Sauce=Ketchup", "Bread=Rye", "Main=Ham"]
+    importances = np.array([0.21, 0.15, 0.09])
+    assert swviz.plot_feature_importance(features, importances, ax) is ax
+    plt.close("all")
+
+
 def test_sandwich_to_float():
     """to_float coerces numbers and maps non-numeric values to NaN."""
     assert swviz.to_float("3.5") == 3.5

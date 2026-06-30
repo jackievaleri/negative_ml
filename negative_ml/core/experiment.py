@@ -143,6 +143,27 @@ def resolve_split(
     return split_from_dataset(dataset, scaffold=scaffold, seed=seed)
 
 
+def positive_scores(model: object, X: np.ndarray) -> np.ndarray:
+    """Positive-class scores from a fitted classifier.
+
+    Returns predict_proba for the positive class when the estimator exposes it,
+    and falls back to the decision_function otherwise. Both are valid for the
+    rank-based metrics (AUROC, AUPRC), so this lets estimators without calibrated
+    probabilities (e.g. a RidgeClassifier pipeline) flow through the same
+    experiment plumbing as the XGBoost models.
+
+    Args:
+        model: A fitted classifier exposing predict_proba or decision_function.
+        X: Features to score.
+
+    Returns:
+        A 1-D array of positive-class scores aligned with X.
+    """
+    if hasattr(model, "predict_proba"):
+        return model.predict_proba(X)[:, 1]
+    return np.asarray(model.decision_function(X))
+
+
 def fit_score(
     train_ds: Dataset,
     train_rows: np.ndarray,
@@ -167,5 +188,4 @@ def fit_score(
     rows = np.asarray(train_rows)
     model = model_factory(**model_kwargs)
     model.fit(train_ds.X[rows], train_ds.y[rows])
-    y_score = model.predict_proba(X_test)[:, 1]
-    return ev.compute_metrics(y_test, y_score)
+    return ev.compute_metrics(y_test, positive_scores(model, X_test))

@@ -8,5 +8,11 @@ without importing a specific estimator.
 
 from negative_ml.models.base import make_model, model_factory
 from negative_ml.models.baseline import CorrelationModel
+from negative_ml.models.linear import feature_selected_ridge_classifier
 
-__all__ = ["make_model", "model_factory", "CorrelationModel"]
+__all__ = [
+    "make_model",
+    "model_factory",
+    "CorrelationModel",
+    "feature_selected_ridge_classifier",
+]

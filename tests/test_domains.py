@@ -3,7 +3,10 @@
 import numpy as np
 import pandas as pd
 
-from negative_ml.core.config import SANDWICH_LOW_RATING_THRESHOLD
+from negative_ml.core.config import (
+    SANDWICH_GOOD_RATING_THRESHOLD,
+    SANDWICH_LOW_RATING_THRESHOLD,
+)
 from negative_ml.core.dataset import Dataset
 from negative_ml.domains import baseball, sandwiches
 
@@ -248,3 +251,44 @@ def test_minority_mask_selects_low_rated_tail():
     ds = sandwiches.featurize(synthetic_sandwiches())
     mask = ds.minority_mask(SANDWICH_LOW_RATING_THRESHOLD)
     assert ds.y[mask].tolist() == [2.0]
+
+
+def test_to_classification_binarizes_low_rated_tail():
+    """to_classification labels the low-rated tail positive, keeping X/groups/meta."""
+    ds = sandwiches.featurize(synthetic_sandwiches())
+    cds = sandwiches.to_classification(ds)
+    assert cds.task == "classification"
+    # Positives are exactly the regression low-rated minority.
+    expected = ds.minority_mask(SANDWICH_LOW_RATING_THRESHOLD).astype(int)
+    assert cds.y.tolist() == expected.tolist()
+    assert set(cds.y.tolist()) == {0, 1}
+    # Features, groups, and meta are carried through untouched.
+    assert np.array_equal(cds.X, ds.X)
+    assert cds.groups.tolist() == ds.groups.tolist()
+    assert cds.minority_mask().tolist() == expected.astype(bool).tolist()
+
+
+def test_to_classification_good_bad_cut_at_five():
+    """At the good/bad cut, ratings at or below 5 are bad (positive), above are good."""
+    ds = sandwiches.featurize(synthetic_sandwiches())
+    cds = sandwiches.to_classification(ds, threshold=SANDWICH_GOOD_RATING_THRESHOLD)
+    # Surviving ratings are [2.0, 4.2, 4.6, 4.9, 7.0, 9.5]; only the >5 ones are good.
+    bad = ds.y <= SANDWICH_GOOD_RATING_THRESHOLD
+    assert cds.y.tolist() == bad.astype(int).tolist()
+    assert cds.y.sum() == 4  # 2.0, 4.2, 4.6, 4.9 are bad; 7.0 and 9.5 are good.
+
+
+def test_prune_rare_features_keeps_well_sampled_columns():
+    """prune_rare_features masks out columns seen in fewer than min_count rows."""
+    # Three columns appearing in 3, 1, and 2 of the rows respectively.
+    X = np.array(
+        [
+            [1, 0, 1],
+            [1, 1, 1],
+            [1, 0, 0],
+        ],
+        dtype=float,
+    )
+    keep = sandwiches.prune_rare_features(X, min_count=2)
+    assert keep.tolist() == [True, False, True]
+    assert X[:, keep].shape == (3, 2)

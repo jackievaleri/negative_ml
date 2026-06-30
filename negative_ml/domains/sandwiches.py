@@ -31,7 +31,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from negative_ml.core.config import RANDOM_SEED, RAW_DATA_DIR
+from negative_ml.core.config import (
+    RANDOM_SEED,
+    RAW_DATA_DIR,
+    SANDWICH_LOW_RATING_THRESHOLD,
+)
 from negative_ml.core.dataset import Dataset
 
 #: Source workbook, read from data/raw by default (see RAW_DATA_DIR).
@@ -212,6 +216,28 @@ def encode_ingredients(
     return dummies.to_numpy(dtype=float), list(dummies.columns)
 
 
+def prune_rare_features(X: np.ndarray, min_count: int) -> np.ndarray:
+    """Boolean mask keeping only multi-hot columns seen in enough sandwiches.
+
+    The multi-hot ingredient encoding is very wide (one indicator per ingredient
+    value), and with only a few hundred sandwiches most columns are near-singleton
+    ingredient values that a model can only memorize. Dropping the columns whose
+    count (their column sum, since the matrix is 0/1) falls below min_count trims
+    that noise before the linear classifier without touching the well-sampled
+    ingredients. Apply the returned mask to both the matrix and feature_names to
+    keep them aligned.
+
+    Args:
+        X: A 0/1 multi-hot feature matrix, shape (n_samples, n_features).
+        min_count: Minimum number of sandwiches a column must appear in to be
+            kept (columns with a smaller column sum are dropped).
+
+    Returns:
+        Boolean array of length n_features; True for columns to keep.
+    """
+    return np.asarray(X).sum(axis=0) >= min_count
+
+
 def ingredient_value_counts(
     frame: pd.DataFrame, threshold: int
 ) -> dict[str, list[str]]:
@@ -278,6 +304,38 @@ def load(path: str | Path | None = None) -> Dataset:
         (y <= SANDWICH_LOW_RATING_THRESHOLD) is the minority of interest.
     """
     return featurize(read_ratings(path))
+
+
+def to_classification(
+    dataset: Dataset, threshold: float = SANDWICH_LOW_RATING_THRESHOLD
+) -> Dataset:
+    """Recast the regression sandwich Dataset as low-rated-vs-rest classification.
+
+    The shared selection and saturation experiments score a positive (minority)
+    class with predict_proba and classification metrics, so they need a binary
+    label rather than the 0-10 rating. This relabels each sandwich as positive
+    when its rating falls in the rare low-rated tail (rating <= threshold) - the
+    same minority that minority_mask(threshold) selects on the regression Dataset
+    - and negative otherwise, leaving the features, groups, and meta untouched.
+    The result drops straight into the same majority-class downselection pipeline
+    used by the molecule and baseball classification domains.
+
+    Args:
+        dataset: A regression sandwich Dataset (see load / featurize).
+        threshold: Rating at or below which a sandwich is the low-rated minority.
+
+    Returns:
+        A classification Dataset whose y is 1 for the low-rated minority and 0
+        for every other sandwich.
+    """
+    return Dataset(
+        X=dataset.X,
+        y=dataset.minority_mask(threshold).astype(int),
+        task="classification",
+        feature_names=dataset.feature_names,
+        groups=dataset.groups,
+        meta=dataset.meta,
+    )
 
 
 def matched_pairs(

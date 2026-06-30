@@ -21,7 +21,14 @@ import numpy as np
 from numpy.typing import ArrayLike
 from scipy.stats import gaussian_kde, pearsonr
 
-from negative_ml.viz.style import INK, PALETTE, style_axes
+from negative_ml.viz.style import (
+    DENSITY_CMAP,
+    INK,
+    LIGHT_GRAY,
+    PALETTE,
+    dark2,
+    style_axes,
+)
 
 #: Single accent color for the sandwich EDA, echoing the reference notebook's
 #: indigo while staying inside the Dark2 palette.
@@ -231,6 +238,107 @@ def plot_best_worst_sandwich(
     ax.set_xlim(0, 10)
     ax.set_xlabel("predicted rating")
     ax.set_title("Deli counter: best and worst predicted sandwich")
+    return style_axes(ax)
+
+
+def plot_roc_curves(
+    curves: Sequence[tuple[str, ArrayLike, ArrayLike, float]], ax: plt.Axes
+) -> plt.Axes:
+    """Plot one or more good-vs-bad ROC curves, each annotated with its AUROC.
+
+    Curves are drawn in Dark2 order against the chance diagonal. The positive
+    class is the bad sandwich (rating at or below the good/bad cut).
+
+    Args:
+        curves: One (label, fpr, tpr, auroc) tuple per curve, in the order they
+            should be colored and listed in the legend.
+        ax: Target matplotlib axes.
+
+    Returns:
+        The styled ax.
+    """
+    for i, (label, fpr, tpr, auroc) in enumerate(curves):
+        ax.plot(
+            np.asarray(fpr, dtype=float),
+            np.asarray(tpr, dtype=float),
+            color=dark2(i),
+            lw=2,
+            label=f"{label} (AUROC = {auroc:.3f})",
+        )
+    ax.plot([0, 1], [0, 1], color=LIGHT_GRAY, ls="--", lw=1, label="chance")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_xlabel("false positive rate")
+    ax.set_ylabel("true positive rate")
+    ax.set_title("Good-vs-bad ROC (positive = bad sandwich)")
+    ax.legend(loc="lower right", fontsize=8)
+    return style_axes(ax)
+
+
+def plot_confusion(
+    matrix: ArrayLike, ax: plt.Axes, class_labels: Sequence[str] = ("bad", "good")
+) -> plt.Axes:
+    """Heatmap of a 2x2 good-vs-bad confusion matrix with the counts annotated.
+
+    Rows are the true class and columns the predicted class, ordered to match
+    class_labels, which run in label order: bad (0) first, good (1) second.
+
+    Args:
+        matrix: A 2x2 count matrix, matrix[true, pred].
+        ax: Target matplotlib axes.
+        class_labels: Names for the two classes, in label (0, 1) order.
+
+    Returns:
+        The styled ax.
+    """
+    matrix = np.asarray(matrix, dtype=int)
+    ax.imshow(matrix, cmap=DENSITY_CMAP)
+    threshold = matrix.max() / 2 if matrix.max() > 0 else 0
+    for i in range(matrix.shape[0]):
+        for j in range(matrix.shape[1]):
+            ax.text(
+                j,
+                i,
+                str(matrix[i, j]),
+                ha="center",
+                va="center",
+                color="white" if matrix[i, j] > threshold else INK,
+                fontsize=12,
+            )
+    ax.set_xticks(range(len(class_labels)))
+    ax.set_yticks(range(len(class_labels)))
+    ax.set_xticklabels(class_labels)
+    ax.set_yticklabels(class_labels)
+    ax.set_xlabel("predicted")
+    ax.set_ylabel("actual")
+    ax.set_title("Confusion matrix")
+    return style_axes(ax, despine=())
+
+
+def plot_feature_importance(
+    features: Sequence[str], importances: ArrayLike, ax: plt.Axes
+) -> plt.Axes:
+    """Horizontal bars of the selected ingredient features by their importance.
+
+    The features the classifier kept (the top of the F-test importance ranking),
+    drawn largest at the top so the strongest selected ingredients read first.
+
+    Args:
+        features: Feature names ("Column=Value"), aligned with importances.
+        importances: Importance (F-test score) per feature.
+        ax: Target matplotlib axes.
+
+    Returns:
+        The styled ax.
+    """
+    importances = np.asarray(importances, dtype=float)
+    order = np.argsort(importances)
+    labels = [features[i] for i in order]
+    ax.barh(range(len(labels)), importances[order], color=ACCENT)
+    ax.set_yticks(range(len(labels)))
+    ax.set_yticklabels(labels, fontsize=7)
+    ax.set_xlabel("F-test score")
+    ax.set_title(f"Top {len(labels)} selected features")
     return style_axes(ax)
 
 
