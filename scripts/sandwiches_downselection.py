@@ -1,9 +1,9 @@
 """Sandwich majority-class downselection study (the regression-domain analog).
 
-Recasts the 0-10 Roll-for-Sandwich ratings as a bad-vs-good classification problem
-(positive == the bad sandwiches, rating <= the good/bad cut of 5) and runs the
+Recasts the 0-10 Roll-for-Sandwich ratings as a good-vs-bad classification problem
+(positive == the good sandwiches, rating >= the good/bad cut of 9) and runs the
 same majority-class downselection study as baseball_downselection.py: under a
-fixed budget, how should the kept majority — the "good" sandwiches — be chosen
+fixed budget, how should the kept majority — the "bad" sandwiches — be chosen
 (random, hard near-miss, diversity, density-aware diversity) measured against the
 full-data (as_is) and class-weighting (weighted) baselines, alongside the
 saturation sweeps.
@@ -86,9 +86,9 @@ DOMAIN = "sandwiches"
 #: Evaluation regimes: an optimistic within-menu holdout and a held-out-filling
 #: (scaffold) split that probes generalization to unseen Main ingredients.
 SPLITS = ("random", "scaffold")
-#: Majority ("good" sandwich) budgets to sweep. Tuned to the tiny menu (~170
-#: majority sandwiches in a train pool); clamped to the available majority and
-#: filtered to budgets below the full-data reference at run time.
+#: Majority ("bad" sandwich) budgets to sweep. Tuned to the tiny menu; clamped to
+#: the available majority and filtered to budgets below the full-data reference at
+#: run time.
 BUDGETS = [20, 40, 60, 80, 100, 120, 150]
 #: Dataset fractions for the proportional-scaling saturation sweep.
 FRACTIONS = [0.1, 0.25, 0.5, 0.75, 1.0]
@@ -110,7 +110,7 @@ def classifier_factory(class_weight: float | str | dict | None = None) -> object
     ridge classifier) so the downselection study evaluates that exact model. The
     weighted (H4) baseline passes a numeric class_weight ratio (majority / minority)
     the way XGBoost's scale_pos_weight expects; translate it into the
-    {good: 1, bad: ratio} dict a RidgeClassifier takes so it up-weights the bad
+    {bad: 1, good: ratio} dict a RidgeClassifier takes so it up-weights the good
     (positive) class.
 
     Args:
@@ -156,11 +156,11 @@ def build_splits(cds: Dataset) -> dict:
 
 
 def warn_small_fractions(n_minority: int, split_name: str) -> None:
-    """Flag proportional fractions that leave very few bad training rows."""
+    """Flag proportional fractions that leave very few good training rows."""
     tiny = [f for f in FRACTIONS if max(1, round(n_minority * f)) < 5]
     if tiny:
         logger.warning(
-            f"  [{split_name}] fractions {tiny} keep <5 bad train sandwiches "
+            f"  [{split_name}] fractions {tiny} keep <5 good train sandwiches "
             f"(n_minority={n_minority}); those points are noisy."
         )
 
@@ -168,11 +168,11 @@ def warn_small_fractions(n_minority: int, split_name: str) -> None:
 def selection_example_table(
     cds: Dataset, strategy: str, budget: int, seed: int = RANDOM_SEED
 ) -> pd.DataFrame:
-    """Tidy table of the good sandwiches one strategy keeps at a tiny budget.
+    """Tidy table of the bad sandwiches one strategy keeps at a tiny budget.
 
     The sandwich analog of viz.selection_examples (whose columns are baseball
     kinematics): pulls the six ingredient columns and the rating for each kept
-    majority sandwich, plus its standardized distance to the nearest bad
+    majority sandwich, plus its standardized distance to the nearest good
     example — the same notion of hardness the hard strategy ranks on — so the
     picks can be read and sanity-checked.
 
@@ -216,8 +216,8 @@ def generate() -> None:
     )
     minority = cds.minority_mask()
     logger.info(
-        f"=== sandwiches: {cds.n_samples} sandwiches, {int(minority.sum())} bad "
-        f"(<= {SANDWICH_GOOD_RATING_THRESHOLD:g}) positives ({minority.mean():.1%}) ==="
+        f"=== sandwiches: {cds.n_samples} sandwiches, {int(minority.sum())} good "
+        f"(>= {SANDWICH_GOOD_RATING_THRESHOLD:g}) positives ({minority.mean():.1%}) ==="
     )
 
     # The "what each strategy keeps" tables select from the whole menu and so do
@@ -238,8 +238,8 @@ def generate() -> None:
         warn_small_fractions(n_minority, split_name)
         logger.info(
             f"  [{split_name}] budgets {budgets} (n_seeds={N_SEEDS}); train pool "
-            f"{sp.train_ds.n_samples} ({n_majority} good / {n_minority} bad), "
-            f"test {len(sp.y_test)} ({int(sp.y_test.sum())} bad)"
+            f"{sp.train_ds.n_samples} ({n_majority} bad / {n_minority} good), "
+            f"test {len(sp.y_test)} ({int(sp.y_test.sum())} good)"
         )
 
         tag = {"split": split_name}
@@ -323,9 +323,9 @@ def log_example_tables() -> None:
     """Log the readable per-strategy "what each strategy keeps" tables.
 
     Reads the saved selection_examples frame and prints, per budget-varying
-    strategy, the kept sandwiches sorted by closeness to the bad tail, so
-    the picks can be reasoned about (hard should keep good sandwiches that look
-    almost bad; diversity should reach for unusual recipes).
+    strategy, the kept sandwiches sorted by closeness to the good tail, so
+    the picks can be reasoned about (hard should keep bad sandwiches that look
+    almost good; diversity should reach for unusual recipes).
     """
     path = metrics_path("selection_examples", DOMAIN)
     if not path.exists():
@@ -338,7 +338,7 @@ def log_example_tables() -> None:
         sandwiches.CLEAN_RATING_COL,
         "dist_to_minority",
     ]
-    logger.info(f"What each strategy keeps (budget={EXAMPLE_BUDGET} good sandwiches):")
+    logger.info(f"What each strategy keeps (budget={EXAMPLE_BUDGET} bad sandwiches):")
     for strategy in BUDGET_VARYING:
         sub = examples[examples["strategy"] == strategy]
         if sub.empty:

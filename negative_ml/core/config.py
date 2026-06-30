@@ -62,17 +62,14 @@ XGB_DEFAULTS: dict[str, Any] = {
 }
 
 # --- Domain thresholds ----------------------------------------------------
-# Sandwich ratings are 0-10; "negative" (majority-of-interest) examples are the
-# low-rated sandwiches. See plan.md section 3.3.
-SANDWICH_LOW_RATING_THRESHOLD = 3.0
-SANDWICH_HIGH_RATING_THRESHOLD = 7.0
+# Sandwich ratings are 0-10 and skewed high; the "minority" / class of interest
+# is the rare, high-value "good" sandwich. See plan.md section 3.3.
 
-# Good-vs-bad classification cut: a sandwich is "bad" at or below this rating and
-# "good" above it. The 0-10 midpoint splits the data far more evenly (~26% bad)
-# than the rare low-rated tail at SANDWICH_LOW_RATING_THRESHOLD (~11% below 3), so
-# a good-vs-bad classifier is a better-posed, more learnable problem than scoring
-# the thin negative tail. Ratings of exactly 5 fall on the "bad" side (not above).
-SANDWICH_GOOD_RATING_THRESHOLD = 5.0
+# Good-vs-bad classification cut: a sandwich is "good" at or above this rating and
+# "bad" below it. Good sandwiches are the rare high-value minority and the
+# positive (label 1) class whose AUROC / AUPRC / F1 the study reports. A rating of
+# exactly 9 counts as good.
+SANDWICH_GOOD_RATING_THRESHOLD = 9.0
 
 # --- Sandwich classifier ---------------------------------------------------
 # The sandwich set is tiny (~240 rows), so a single hold-out split is too noisy
@@ -96,36 +93,12 @@ SANDWICH_CLF_TOP_FEATURES = 30
 # linear classifier generalizes better than deep gradient-boosted trees.
 SANDWICH_RIDGE_ALPHA = 1.0
 
-# --- Sandwich EDA / deli-search tunables ----------------------------------
+# --- Sandwich EDA tunables -------------------------------------------------
 # Ingredient values rarer than these counts are excluded from the EDA so each
 # panel stays legible. DISPLAY is the "print the popular ones" cutoff; VIOLIN is
-# the per-ingredient rating-distribution cutoff; DELI is the floor for an
-# ingredient to enter the best/worst combinatorial search.
+# the per-ingredient rating-distribution cutoff.
 SANDWICH_FREQ_THRESHOLD_DISPLAY = 10
 SANDWICH_FREQ_THRESHOLD_VIOLIN = 5
-SANDWICH_FREQ_THRESHOLD_DELI = 5
-# Hard cap on the deli search's Cartesian product. The reference notebook used a
-# count of 3, which enumerates ~29 million sandwiches; the default of 5 keeps it
-# near ~40k. The cap guards against an accidentally low threshold blowing up.
-SANDWICH_DELI_MAX_COMBINATIONS = 200_000
-
-# Ratings are defined on a 0-10 scale, so model predictions are clipped to this
-# range before they are reported (gradient boosting can otherwise extrapolate past
-# the ends on unseen ingredient combinations).
-SANDWICH_RATING_RANGE = (0.0, 10.0)
-
-# XGBoost overrides for the sandwich regressor. The dataset is tiny and very wide
-# (a few hundred sandwiches, hundreds of one-hot ingredient columns), so the
-# baseball-scale XGB_DEFAULTS (300 deep trees) overfit badly; a small, shallow,
-# regularized model generalizes far better here.
-SANDWICH_XGB_PARAMS: dict[str, Any] = {
-    "n_estimators": 200,
-    "max_depth": 3,
-    "learning_rate": 0.05,
-    "subsample": 0.8,
-    "colsample_bytree": 0.6,
-    "reg_lambda": 2.0,
-}
 
 # --- Visualization --------------------------------------------------------
 # Resolution (dots per inch) for every saved figure.

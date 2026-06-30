@@ -1,9 +1,9 @@
 """Good-vs-bad sandwich classifier: a ridge classifier over selected features.
 
-Reframes the 0-10 ratings task (see sandwiches_eda_model.py) as a binary one:
-a sandwich is bad (label 1) when its rating is at or below the good/bad cut
-(SANDWICH_GOOD_RATING_THRESHOLD = 5) and good (label 0) otherwise. Bad is the
-minority class (~26%), the negative example of interest, so it is the positive
+Reframes the 0-10 ratings task (see sandwiches_eda.py) as a binary one: a
+sandwich is good (label 1) when its rating is at or above the good/bad cut
+(SANDWICH_GOOD_RATING_THRESHOLD = 9) and bad (label 0) otherwise. Good is the
+rare high-value minority class, the example of interest, so it is the positive
 label whose AUROC / AUPRC / F1 the study reports.
 
 The model is a two-step pipeline:
@@ -21,7 +21,7 @@ The model is a two-step pipeline:
 Selection is refit inside every cross-validation fold, so the reported metrics
 (AUROC, AUPRC, F1) do not leak the held-out labels into the feature choice.
 
-Plotting is a first-class, independent step (as in sandwiches_eda_model.py).
+Plotting is a first-class, independent step (as in sandwiches_eda.py).
 Generation runs the cross-validation once and persists everything the figures
 need -- the metrics, the ROC curve, the confusion matrix, and the selected
 features -- under results/sandwiches/data/. Plotting then rebuilds every figure
@@ -131,12 +131,12 @@ def cross_validate(X: np.ndarray, labels: np.ndarray):
 
     Args:
         X: The full multi-hot feature matrix.
-        labels: Binary good/bad labels (1 == bad) used to stratify the folds.
+        labels: Binary good/bad labels (1 == good) used to stratify the folds.
 
     Returns:
         (score_repeats, pred_repeats): two lists, each with one out-of-fold array
         per repeat. Scores are the ridge decision function (higher means more
-        likely bad); predictions are hard 0/1 labels.
+        likely good); predictions are hard 0/1 labels.
     """
     score_repeats, pred_repeats = [], []
     for rep in range(SANDWICH_CV_REPEATS):
@@ -163,12 +163,12 @@ def summarize_metrics(
     """Mean cross-validated AUROC, AUPRC, and F1 (with their spread).
 
     AUROC and AUPRC use the decision scores; F1 uses the hard predictions. All are
-    for the positive (bad) class.
+    for the positive (good) class.
 
     Args:
         score_repeats: Out-of-fold decision scores, one array per CV repeat.
         pred_repeats: Out-of-fold hard predictions, one array per CV repeat.
-        labels: Binary good/bad labels (1 == bad).
+        labels: Binary good/bad labels (1 == good).
 
     Returns:
         Mapping with auroc, auprc, f1 and the matching _std spreads.
@@ -197,7 +197,7 @@ def save_selected_features(
 
     Args:
         X: The full multi-hot feature matrix.
-        labels: Binary good/bad labels (1 == bad).
+        labels: Binary good/bad labels (1 == good).
         feature_names: Names for every column of X.
     """
     model = build_model()
@@ -221,23 +221,23 @@ def save_selected_features(
 def generate() -> None:
     """Cross-validate the ridge classifier and persist every plotting artifact.
 
-    Builds the good/bad labels at SANDWICH_GOOD_RATING_THRESHOLD (bad == rating at
-    or below the cut, the positive class), runs the repeated stratified
+    Builds the good/bad labels at SANDWICH_GOOD_RATING_THRESHOLD (good == rating at
+    or above the cut, the positive class), runs the repeated stratified
     cross-validation, and writes the metrics, a representative ROC curve, the
     confusion matrix, and the selected features. Logs AUROC, AUPRC, and F1 against
-    the predict-all-bad baseline.
+    the predict-all-good baseline.
     """
     dataset = sandwiches.load()
     X = dataset.X
     cut = SANDWICH_GOOD_RATING_THRESHOLD
-    # bad (rating <= cut) == 1, good (rating > cut) == 0.
-    labels = (dataset.y <= cut).astype(int)
-    n_bad = int(labels.sum())
-    base_rate = n_bad / len(labels)
+    # good (rating >= cut) == 1, bad (rating < cut) == 0.
+    labels = (dataset.y >= cut).astype(int)
+    n_good = int(labels.sum())
+    base_rate = n_good / len(labels)
     logger.info(
         f"=== sandwiches good-vs-bad: {len(labels)} sandwiches, "
-        f"{n_bad} bad (<= {cut:g}, {base_rate:.0%}), "
-        f"{len(labels) - n_bad} good ==="
+        f"{n_good} good (>= {cut:g}, {base_rate:.0%}), "
+        f"{len(labels) - n_good} bad ==="
     )
 
     score_repeats, pred_repeats = cross_validate(X, labels)
@@ -249,11 +249,11 @@ def generate() -> None:
         f"  AUROC={metrics['auroc']:.3f}+/-{metrics['auroc_std']:.3f}  "
         f"AUPRC={metrics['auprc']:.3f}  F1={metrics['f1']:.3f}"
     )
-    # Honest reference points: bad is the minority (positive) class here.
+    # Honest reference points: good is the minority (positive) class here.
     naive_f1 = 2 * base_rate / (1 + base_rate)
     logger.info(
         f"  (baselines: AUROC chance=0.500, AUPRC chance={base_rate:.3f}, "
-        f"predict-all-bad F1={naive_f1:.3f})"
+        f"predict-all-good F1={naive_f1:.3f})"
     )
     logger.info(f"  wrote {metrics_path.relative_to(REPO_ROOT)}")
 
@@ -266,7 +266,7 @@ def generate() -> None:
     matrix = confusion_matrix(labels, pred_repeats[0], labels=[0, 1])
     conf_path = artifact("classifier_confusion")
     pd.DataFrame(
-        matrix, index=["true_good", "true_bad"], columns=["pred_good", "pred_bad"]
+        matrix, index=["true_bad", "true_good"], columns=["pred_bad", "pred_good"]
     ).to_csv(conf_path)
     logger.info(f"  wrote {conf_path.relative_to(REPO_ROOT)}")
 
@@ -292,7 +292,7 @@ def make_figures() -> None:
 
     conf = pd.read_csv(conf_path, index_col=0)
     fig, ax = plt.subplots(figsize=(4.5, 4))
-    viz.plot_confusion(conf.to_numpy(), ax, class_labels=("good", "bad"))
+    viz.plot_confusion(conf.to_numpy(), ax, class_labels=("bad", "good"))
     fig.tight_layout()
     save_figure(fig, "clf_confusion.png")
 

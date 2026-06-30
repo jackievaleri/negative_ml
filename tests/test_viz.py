@@ -107,7 +107,7 @@ def test_plot_selection_examples_smoke():
 
 
 def test_sandwich_viz_helpers_smoke():
-    """Each sandwich EDA / performance helper draws onto an Axes without error."""
+    """Each sandwich EDA helper draws onto an Axes without error."""
     rng = np.random.default_rng(0)
     ratings = rng.uniform(0, 10, size=40)
     episodes = np.arange(40)
@@ -117,8 +117,6 @@ def test_sandwich_viz_helpers_smoke():
         lambda ax: swviz.plot_rating_distribution(ratings, ax),
         lambda ax: swviz.plot_rating_timeline(episodes, ratings, ax),
         lambda ax: swviz.plot_ingredient_violin(values, ratings, ax, "Cheese"),
-        lambda ax: swviz.plot_predicted_vs_actual(ratings, ratings + 0.5, ax),
-        lambda ax: swviz.plot_best_worst_sandwich("A / B", 9.1, "C / D", 1.2, ax),
     ):
         _, ax = plt.subplots()
         assert draw(ax) is ax

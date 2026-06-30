@@ -1,10 +1,11 @@
-"""Plotting helpers for the sandwich EDA + model-performance figures.
+"""Plotting helpers for the sandwich EDA and classifier figures.
 
 Reproduces the Roll-for-Sandwich exploratory analysis from the reference notebook
-(rating distribution, ratings over time, per-ingredient rating spreads, and a
-predicted-vs-actual check) in the house style. The reference used seaborn with a
-single indigo accent; these helpers redraw the same views with plain matplotlib
-and the shared Dark2 palette so the sandwich figures match the rest of the study.
+(rating distribution, ratings over time, per-ingredient rating spreads) in the
+house style, alongside the good-vs-bad classifier panels (ROC, confusion matrix,
+selected-feature importances). The reference used seaborn with a single indigo
+accent; these helpers redraw the same views with plain matplotlib and the shared
+Dark2 palette so the sandwich figures match the rest of the study.
 
 As in negative_ml.viz.baseball, every function draws onto a caller-supplied
 matplotlib Axes so the same code backs both the reproducible script (saving PNGs)
@@ -19,7 +20,7 @@ from collections.abc import Sequence
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import ArrayLike
-from scipy.stats import gaussian_kde, pearsonr
+from scipy.stats import gaussian_kde
 
 from negative_ml.viz.style import (
     DENSITY_CMAP,
@@ -175,79 +176,13 @@ def plot_ingredient_frequency(
     return style_axes(ax)
 
 
-def plot_predicted_vs_actual(
-    y_true: ArrayLike, y_pred: ArrayLike, ax: plt.Axes, model_name: str = "XGBoost"
-) -> plt.Axes:
-    """Scatter of predicted versus actual rating, annotated with Pearson r.
-
-    The regression analogue of the baseball ROC panel: points hugging the identity
-    line mean the model ranks sandwiches well. Pearson r summarizes the agreement.
-
-    Args:
-        y_true: Actual 0-10 ratings.
-        y_pred: Model-predicted ratings aligned with y_true.
-        ax: Target matplotlib axes.
-        model_name: Model label for the title.
-
-    Returns:
-        The styled ax.
-    """
-    y_true = np.asarray(y_true, dtype=float)
-    y_pred = np.asarray(y_pred, dtype=float)
-    ax.scatter(y_true, y_pred, s=12, color=ACCENT, alpha=0.7, edgecolors="none")
-    ax.plot([0, 10], [0, 10], color=INK, ls="--", lw=1)
-    ax.set_xlim(0, 10.1)
-    ax.set_ylim(0, 10.1)
-    ax.set_xlabel("actual rating")
-    ax.set_ylabel("predicted rating")
-    r = float(pearsonr(y_true, y_pred)[0]) if np.std(y_pred) > 0 else 0.0
-    ax.set_title(f"{model_name}: predicted vs. actual (r = {r:.3f})")
-    return style_axes(ax)
-
-
-def plot_best_worst_sandwich(
-    best_label: str,
-    best_score: float,
-    worst_label: str,
-    worst_score: float,
-    ax: plt.Axes,
-) -> plt.Axes:
-    """Horizontal bars for the highest- and lowest-scoring predicted sandwiches.
-
-    Visual summary of the deli-counter search: the model's idea of the best and
-    worst sandwich it can build from the popular ingredients.
-
-    Args:
-        best_label: Ingredient summary of the best predicted sandwich.
-        best_score: Predicted rating of the best sandwich.
-        worst_label: Ingredient summary of the worst predicted sandwich.
-        worst_score: Predicted rating of the worst sandwich.
-        ax: Target matplotlib axes.
-
-    Returns:
-        The styled ax.
-    """
-    labels = [f"worst\n{worst_label}", f"best\n{best_label}"]
-    scores = [worst_score, best_score]
-    colors = [PALETTE["orange"], PALETTE["teal"]]
-    ax.barh([0, 1], scores, color=colors)
-    for y, score in zip((0, 1), scores):
-        ax.text(score, y, f" {score:.2f}", va="center", fontsize=9)
-    ax.set_yticks([0, 1])
-    ax.set_yticklabels(labels, fontsize=8)
-    ax.set_xlim(0, 10)
-    ax.set_xlabel("predicted rating")
-    ax.set_title("Deli counter: best and worst predicted sandwich")
-    return style_axes(ax)
-
-
 def plot_roc_curves(
     curves: Sequence[tuple[str, ArrayLike, ArrayLike, float]], ax: plt.Axes
 ) -> plt.Axes:
     """Plot one or more good-vs-bad ROC curves, each annotated with its AUROC.
 
     Curves are drawn in Dark2 order against the chance diagonal. The positive
-    class is the bad sandwich (rating at or below the good/bad cut).
+    class is the good sandwich (rating at or above the good/bad cut).
 
     Args:
         curves: One (label, fpr, tpr, auroc) tuple per curve, in the order they
@@ -270,7 +205,7 @@ def plot_roc_curves(
     ax.set_ylim(0, 1)
     ax.set_xlabel("false positive rate")
     ax.set_ylabel("true positive rate")
-    ax.set_title("Good-vs-bad ROC (positive = bad sandwich)")
+    ax.set_title("Good-vs-bad ROC (positive = good sandwich)")
     ax.legend(loc="lower right", fontsize=8)
     return style_axes(ax)
 

@@ -1,4 +1,4 @@
-"""Tests for negative_ml.core.eval (global, top-k, and matched-pair metrics)."""
+"""Tests for negative_ml.core.eval (global and top-k metrics)."""
 
 import numpy as np
 
@@ -44,13 +44,3 @@ def test_compute_metrics_keys():
         "enrichment_factor",
     }
     assert all(isinstance(v, float) for v in metrics.values())
-
-
-def test_matched_pair_accuracy_ranks_pairs():
-    """Pairs are correct when the higher-labeled example scores higher."""
-    y_true = np.array([0, 1, 0, 1])
-    y_score = np.array([0.1, 0.9, 0.8, 0.2])
-    # pair (0,1): label 0<1, score 0.1<0.9 -> correct.
-    # pair (2,3): label 0<1, score 0.8>0.2 -> wrong.
-    pairs = np.array([[0, 1], [2, 3]])
-    assert ev.matched_pair_accuracy(y_score, pairs, y_true) == 0.5

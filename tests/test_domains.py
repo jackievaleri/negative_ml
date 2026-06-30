@@ -3,10 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from negative_ml.core.config import (
-    SANDWICH_GOOD_RATING_THRESHOLD,
-    SANDWICH_LOW_RATING_THRESHOLD,
-)
+from negative_ml.core.config import SANDWICH_GOOD_RATING_THRESHOLD
 from negative_ml.core.dataset import Dataset
 from negative_ml.domains import baseball, sandwiches
 
@@ -161,8 +158,8 @@ def synthetic_sandwiches() -> pd.DataFrame:
 
     Includes a null-ingredient row (dropped by dropna), three repairable rating
     typos (kept after normalize_ratings), an unparseable rating (dropped by
-    validate_ratings), a low-rated minority example, and two single-ingredient
-    matched pairs among the surviving rows.
+    validate_ratings), a high-rated good example (9.5), and a low-rated example
+    (2.0) among the surviving rows.
     """
     rows = [
         # row 0/1: identical except Cheese -> a single-ingredient matched pair.
@@ -228,38 +225,20 @@ def test_encode_ingredients_is_multi_hot_and_reindexes():
     assert (X2[:, -1] == 0).all()
 
 
-def test_matched_pairs_single_ingredient_and_cap():
-    """Single-ingredient pairs are found and the cap is respected deterministically."""
-    ds = sandwiches.featurize(synthetic_sandwiches())
-    pairs = sandwiches.matched_pairs(ds, max_differences=1)
-    # The two engineered single-difference pairs (Cheese and Sauce swaps).
-    assert len(pairs) == 2
-    for i, j in pairs:
-        recipes = ds.meta[sandwiches.INGREDIENT_COLS].to_numpy()
-        assert np.count_nonzero(recipes[i] != recipes[j]) == 1
-    capped = sandwiches.matched_pairs(ds, max_differences=1, max_pairs=1)
-    assert len(capped) == 1
-    # Deterministic subsample (same seed every call).
-    assert (
-        capped.tolist()
-        == sandwiches.matched_pairs(ds, max_differences=1, max_pairs=1).tolist()
-    )
-
-
 def test_minority_mask_selects_low_rated_tail():
-    """The regression minority is the low-rated tail (y <= the low threshold)."""
+    """The regression minority is the low-value tail (y <= threshold)."""
     ds = sandwiches.featurize(synthetic_sandwiches())
-    mask = ds.minority_mask(SANDWICH_LOW_RATING_THRESHOLD)
+    mask = ds.minority_mask(3.0)
     assert ds.y[mask].tolist() == [2.0]
 
 
-def test_to_classification_binarizes_low_rated_tail():
-    """to_classification labels the low-rated tail positive, keeping X/groups/meta."""
+def test_to_classification_labels_good_tier_positive():
+    """to_classification marks the good tier positive, keeping X/groups/meta."""
     ds = sandwiches.featurize(synthetic_sandwiches())
     cds = sandwiches.to_classification(ds)
     assert cds.task == "classification"
-    # Positives are exactly the regression low-rated minority.
-    expected = ds.minority_mask(SANDWICH_LOW_RATING_THRESHOLD).astype(int)
+    # Positives are exactly the good (rating >= cut) sandwiches.
+    expected = (ds.y >= SANDWICH_GOOD_RATING_THRESHOLD).astype(int)
     assert cds.y.tolist() == expected.tolist()
     assert set(cds.y.tolist()) == {0, 1}
     # Features, groups, and meta are carried through untouched.
@@ -268,14 +247,14 @@ def test_to_classification_binarizes_low_rated_tail():
     assert cds.minority_mask().tolist() == expected.astype(bool).tolist()
 
 
-def test_to_classification_good_bad_cut_at_five():
-    """At the good/bad cut, ratings at or below 5 are bad (positive), above are good."""
+def test_to_classification_good_bad_cut_at_nine():
+    """At the good/bad cut, ratings at or above 9 are good (positive), below are bad."""
     ds = sandwiches.featurize(synthetic_sandwiches())
     cds = sandwiches.to_classification(ds, threshold=SANDWICH_GOOD_RATING_THRESHOLD)
-    # Surviving ratings are [2.0, 4.2, 4.6, 4.9, 7.0, 9.5]; only the >5 ones are good.
-    bad = ds.y <= SANDWICH_GOOD_RATING_THRESHOLD
-    assert cds.y.tolist() == bad.astype(int).tolist()
-    assert cds.y.sum() == 4  # 2.0, 4.2, 4.6, 4.9 are bad; 7.0 and 9.5 are good.
+    # Surviving ratings are [9.5, 7.0, 2.0, 4.2, 4.6, 4.9]; only the >=9 ones are good.
+    good = ds.y >= SANDWICH_GOOD_RATING_THRESHOLD
+    assert cds.y.tolist() == good.astype(int).tolist()
+    assert cds.y.sum() == 1  # only 9.5 is good; the rest are bad.
 
 
 def test_prune_rare_features_keeps_well_sampled_columns():

@@ -25,17 +25,12 @@ split.
 from __future__ import annotations
 
 import re
-from itertools import combinations
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from negative_ml.core.config import (
-    RANDOM_SEED,
-    RAW_DATA_DIR,
-    SANDWICH_LOW_RATING_THRESHOLD,
-)
+from negative_ml.core.config import RAW_DATA_DIR, SANDWICH_GOOD_RATING_THRESHOLD
 from negative_ml.core.dataset import Dataset
 
 #: Source workbook, read from data/raw by default (see RAW_DATA_DIR).
@@ -273,8 +268,9 @@ def featurize(frame: pd.DataFrame) -> Dataset:
         frame: The long frame from read_ratings.
 
     Returns:
-        A regression Dataset whose y holds the 0-10 rating; the low-rated tail
-        (y <= SANDWICH_LOW_RATING_THRESHOLD) is the minority of interest.
+        A regression Dataset whose y holds the 0-10 rating; the high-rated good
+        sandwiches (y >= SANDWICH_GOOD_RATING_THRESHOLD) are the minority of
+        interest.
     """
     cleaned = clean_ratings(frame)
     X, feature_names = encode_ingredients(cleaned)
@@ -300,95 +296,38 @@ def load(path: str | Path | None = None) -> Dataset:
 
     Returns:
         A regression Dataset whose y holds the 0-10 rating and whose meta retains
-        the raw ingredient lists. The low-rated tail
-        (y <= SANDWICH_LOW_RATING_THRESHOLD) is the minority of interest.
+        the raw ingredient lists. The high-rated good sandwiches
+        (y >= SANDWICH_GOOD_RATING_THRESHOLD) are the minority of interest.
     """
     return featurize(read_ratings(path))
 
 
 def to_classification(
-    dataset: Dataset, threshold: float = SANDWICH_LOW_RATING_THRESHOLD
+    dataset: Dataset, threshold: float = SANDWICH_GOOD_RATING_THRESHOLD
 ) -> Dataset:
-    """Recast the regression sandwich Dataset as low-rated-vs-rest classification.
+    """Recast the regression sandwich Dataset as good-vs-bad classification.
 
     The shared selection and saturation experiments score a positive (minority)
-    class with predict_proba and classification metrics, so they need a binary
-    label rather than the 0-10 rating. This relabels each sandwich as positive
-    when its rating falls in the rare low-rated tail (rating <= threshold) - the
-    same minority that minority_mask(threshold) selects on the regression Dataset
-    - and negative otherwise, leaving the features, groups, and meta untouched.
-    The result drops straight into the same majority-class downselection pipeline
-    used by the molecule and baseball classification domains.
+    class with classification metrics, so they need a binary label rather than the
+    0-10 rating. This relabels each sandwich as positive when its rating reaches
+    the rare high-value "good" tier (rating >= threshold) and negative otherwise,
+    leaving the features, groups, and meta untouched. The result drops straight
+    into the same majority-class downselection pipeline used by the molecule and
+    baseball classification domains.
 
     Args:
         dataset: A regression sandwich Dataset (see load / featurize).
-        threshold: Rating at or below which a sandwich is the low-rated minority.
+        threshold: Rating at or above which a sandwich is the good minority.
 
     Returns:
-        A classification Dataset whose y is 1 for the low-rated minority and 0
-        for every other sandwich.
+        A classification Dataset whose y is 1 for the good (high-rated) minority
+        and 0 for every other sandwich.
     """
     return Dataset(
         X=dataset.X,
-        y=dataset.minority_mask(threshold).astype(int),
+        y=(dataset.y >= threshold).astype(int),
         task="classification",
         feature_names=dataset.feature_names,
         groups=dataset.groups,
         meta=dataset.meta,
     )
-
-
-def matched_pairs(
-    dataset: Dataset,
-    max_differences: int | None = None,
-    max_pairs: int | None = None,
-) -> np.ndarray:
-    """Find the most-similar sandwich pairs (near-identical recipes).
-
-    Two sandwiches form a matched pair when their six ingredient columns differ in
-    at most max_differences positions but are not identical, so they are
-    near-identical recipes whose ratings can nonetheless diverge. These pairs feed
-    the matched-pair evaluation in negative_ml.core.eval, which checks whether the
-    model ranks the higher-rated sandwich above its near-twin.
-
-    The menu is sparsely explored, so no two real sandwiches differ by only one
-    ingredient. When max_differences is None it therefore adapts to the data: it
-    uses the smallest difference count that yields at least one pair (three of six
-    ingredients in the full dataset), i.e. the most similar pairs actually present.
-    Pass an explicit max_differences (e.g. 1) for data dense enough to have closer
-    pairs.
-
-    Args:
-        dataset: A sandwich Dataset whose meta holds the six INGREDIENT_COLS.
-        max_differences: Largest number of differing ingredient columns allowed in
-            a pair. None adapts to the closest tier present in the data.
-        max_pairs: Optional cap on the number of pairs returned; None for no cap.
-            When the cap is hit, a seeded random subsample is taken so the result
-            is reproducible.
-
-    Returns:
-        Array of shape (n_pairs, 2) of row-index pairs.
-    """
-    if dataset.meta is None:
-        raise ValueError("matched_pairs requires dataset.meta with ingredient columns.")
-    recipes = dataset.meta[INGREDIENT_COLS].to_numpy()
-    index_pairs = list(combinations(range(len(recipes)), 2))
-    diffs = np.array(
-        [np.count_nonzero(recipes[i] != recipes[j]) for i, j in index_pairs],
-        dtype=int,
-    )
-    # Ignore identical recipes (diff 0): with equal features the model cannot rank
-    # them, so they carry no signal for the matched-pair metric.
-    eligible = diffs[diffs > 0]
-    if len(eligible) == 0:
-        return np.empty((0, 2), dtype=int)
-    if max_differences is None:
-        max_differences = int(eligible.min())
-
-    keep = (diffs > 0) & (diffs <= max_differences)
-    found = np.array(index_pairs, dtype=int)[keep].reshape(-1, 2)
-    if max_pairs is not None and len(found) > max_pairs:
-        rng = np.random.default_rng(RANDOM_SEED)
-        chosen = rng.choice(len(found), size=max_pairs, replace=False)
-        found = found[np.sort(chosen)]
-    return found
