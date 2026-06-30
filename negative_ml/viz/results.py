@@ -85,18 +85,26 @@ REFERENCE_STYLE = {
 #: dedicated bar color), never color-coded against strategies, so the selection
 #: "hard" strategy (a color/marker) and the "hard" split (a linestyle)
 #: never collide in one legend.
-SPLIT_LINESTYLE = {"random": "-", "hard": "--", "park": ":", "scaffold": "-."}
+SPLIT_LINESTYLE = {
+    "random": "-",
+    "hard": "--",
+    "park": ":",
+    "scaffold": "-.",
+    "season": (0, (6, 2)),
+}
 SPLIT_COLOR = {
     "random": DARK2[0],
     "hard": DARK2[1],
     "park": DARK2[2],
     "scaffold": DARK2[3],
+    "season": DARK2[4],
 }
 SPLIT_LABEL = {
     "random": "random split (within 2023)",
     "hard": "hard split (2023→2024)",
     "park": "park split (outlier parks held out)",
     "scaffold": "scaffold split (held-out fillings)",
+    "season": "season split (newest season held out)",
 }
 
 

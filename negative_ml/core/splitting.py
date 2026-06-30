@@ -114,3 +114,43 @@ def ballpark_split(
         )
     indices = np.arange(dataset.n_samples)
     return indices[~is_test], indices[is_test]
+
+
+def season_split(
+    dataset: Dataset,
+    seasons: Sequence[str],
+    test_season: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Hold one entire season out of training (a chronological-style shift).
+
+    Every row whose season equals test_season goes to the test set and the rest
+    are training. Like ballpark_split this is a deterministic held-out-group split,
+    but grouped by the show's season rather than a structural family, so the model
+    is scored on a season it never trained on -- the sandwich analog of the
+    baseball chronological cross-season split. The per-row season labels are passed
+    in because they live in the dataset meta, not in groups (which carries the Main
+    filling family used by the scaffold split).
+
+    Args:
+        dataset: Dataset to split (used for its row count to validate alignment).
+        seasons: Per-row season identifier, aligned with the dataset rows.
+        test_season: The season value to hold out entirely for testing.
+
+    Returns:
+        (train_idx, test_idx) integer index arrays.
+
+    Raises:
+        ValueError: If seasons is not aligned with the dataset, or no row matches
+            test_season.
+    """
+    seasons = np.asarray(seasons)
+    if len(seasons) != dataset.n_samples:
+        raise ValueError(
+            f"seasons has {len(seasons)} entries but the dataset has "
+            f"{dataset.n_samples} rows."
+        )
+    is_test = seasons == test_season
+    if not is_test.any():
+        raise ValueError(f"No row has season {test_season!r}.")
+    indices = np.arange(dataset.n_samples)
+    return indices[~is_test], indices[is_test]

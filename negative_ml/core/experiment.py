@@ -23,7 +23,12 @@ import numpy as np
 from negative_ml.core import eval as ev
 from negative_ml.core.config import OUTLIER_BALLPARKS, RANDOM_SEED
 from negative_ml.core.dataset import Dataset
-from negative_ml.core.splitting import ballpark_split, random_split, scaffold_split
+from negative_ml.core.splitting import (
+    ballpark_split,
+    random_split,
+    scaffold_split,
+    season_split,
+)
 
 #: A model factory: (**kwargs) -> unfitted estimator (see models.make_model).
 #: Accepting kwargs lets callers pass e.g. class_weight for the H4 baseline.
@@ -100,6 +105,38 @@ def park_split_from_dataset(
         An EvalSplit whose train pool excludes the held-out parks.
     """
     train_idx, test_idx = ballpark_split(dataset, test_parks=test_parks)
+    return EvalSplit(
+        train_ds=dataset.subset(train_idx),
+        X_test=dataset.X[test_idx],
+        y_test=dataset.y[test_idx],
+        name=name,
+    )
+
+
+def season_split_from_dataset(
+    dataset: Dataset,
+    seasons: Sequence[str],
+    test_season: str,
+    name: str = "season",
+) -> EvalSplit:
+    """Build an EvalSplit that holds one entire season out of training.
+
+    Wraps season_split into an EvalSplit (parallel to park_split_from_dataset): the
+    train pool is every other season and the test set is the held-out season, so
+    this isolates a season distribution shift the way the scaffold split isolates a
+    held-out filling family. The per-row season labels are passed in because they
+    live in the dataset meta rather than in groups.
+
+    Args:
+        dataset: Dataset whose rows align with seasons.
+        seasons: Per-row season identifier aligned with the dataset rows.
+        test_season: The season value to hold out for testing.
+        name: Split-regime label carried into result frames.
+
+    Returns:
+        An EvalSplit whose train pool excludes the held-out season.
+    """
+    train_idx, test_idx = season_split(dataset, seasons, test_season)
     return EvalSplit(
         train_ds=dataset.subset(train_idx),
         X_test=dataset.X[test_idx],

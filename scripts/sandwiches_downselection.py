@@ -8,20 +8,24 @@ fixed budget, how should the kept majority — the "bad" sandwiches — be chose
 full-data (as_is) and class-weighting (weighted) baselines, alongside the
 saturation sweeps.
 
-Two evaluation regimes are compared:
+Three evaluation regimes are compared:
 
     - random: a stratified holdout within the menu (the optimistic baseline).
     - scaffold: entire filling families (the Main ingredient) held out of
       training, the sandwich analog of the molecule scaffold split and the
       baseball park split — a distribution shift where curated majority data is
       expected to pay off.
+    - season: one entire season (SANDWICH_TEST_SEASON) held out of training, the
+      sandwich analog of the baseball chronological cross-season split — train on
+      the earlier seasons, score on the newest. (The workbook's sixth season is an
+      empty placeholder, so S1..S5 are the only populated seasons.)
 
 The headline figure realizes the talk's main result for sandwiches:
 
     y = model performance metric, x = dataset size, color/marker = selection method,
 
-with the split overlaid (solid = random, dash-dot = scaffold) to show whether a
-method's in-distribution gains survive the held-out-fillings split.
+with the split overlaid (solid = random, dash-dot = scaffold, long-dash = season)
+to show whether a method's in-distribution gains survive the held-out splits.
 
 The menu is tiny and very wide (a few hundred sandwiches, hundreds of one-hot
 ingredient columns), so the sweep uses small budgets, the good-vs-bad ridge
@@ -61,9 +65,10 @@ from negative_ml.core.config import (
     SANDWICH_CLF_TOP_FEATURES,
     SANDWICH_GOOD_RATING_THRESHOLD,
     SANDWICH_RIDGE_ALPHA,
+    SANDWICH_TEST_SEASON,
 )
 from negative_ml.core.dataset import Dataset
-from negative_ml.core.experiment import split_from_dataset
+from negative_ml.core.experiment import season_split_from_dataset, split_from_dataset
 from negative_ml.core.selection import BUDGET_VARYING, STRATEGIES
 from negative_ml.domains import sandwiches
 from negative_ml.experiments import saturation as sat
@@ -83,9 +88,10 @@ warnings.filterwarnings("ignore", message="invalid value encountered in divide")
 
 DOMAIN = "sandwiches"
 
-#: Evaluation regimes: an optimistic within-menu holdout and a held-out-filling
-#: (scaffold) split that probes generalization to unseen Main ingredients.
-SPLITS = ("random", "scaffold")
+#: Evaluation regimes: an optimistic within-menu holdout, a held-out-filling
+#: (scaffold) split that probes generalization to unseen Main ingredients, and a
+#: held-out-season split that probes generalization to a whole unseen season.
+SPLITS = ("random", "scaffold", "season")
 #: Majority ("bad" sandwich) budgets to sweep. Tuned to the tiny menu; clamped to
 #: the available majority and filtered to budgets below the full-data reference at
 #: run time.
@@ -144,14 +150,20 @@ def save_frame(df: pd.DataFrame, experiment: str) -> None:
 
 
 def build_splits(cds: Dataset) -> dict:
-    """The two evaluation regimes keyed by name.
+    """The three evaluation regimes keyed by name.
 
     random is a stratified holdout within the menu; scaffold holds entire filling
-    families (the Main ingredient, carried in cds.groups) out of training.
+    families (the Main ingredient, carried in cds.groups) out of training; season
+    holds one entire season (SANDWICH_TEST_SEASON, read from cds.meta) out of
+    training, a chronological-style shift to an unseen season.
     """
+    seasons = cds.meta["Season"].to_numpy()
     return {
         "random": split_from_dataset(cds, name="random"),
         "scaffold": split_from_dataset(cds, scaffold=True, name="scaffold"),
+        "season": season_split_from_dataset(
+            cds, seasons=seasons, test_season=SANDWICH_TEST_SEASON, name="season"
+        ),
     }
 
 
@@ -350,9 +362,9 @@ def plot() -> None:
     """Rebuild every downselection figure from the saved result frames.
 
     Per split: the selection grid and the two-panel saturation figure. Across
-    splits: the strategy overlay (random vs. scaffold) and a proportional-
-    saturation overlay — the figures that show whether in-distribution gains
-    survive the held-out-fillings split.
+    splits: the strategy overlay (random vs. scaffold vs. season) and a
+    proportional-saturation overlay — the figures that show whether
+    in-distribution gains survive the held-out splits.
     """
     log_example_tables()
     selection_df, sat_majority, sat_proportional = read_frames()
@@ -371,12 +383,14 @@ def plot() -> None:
             fname=f"saturation_curve_{split_name}.png",
         )
 
-    # Cross-split overlays: do in-distribution gains survive the scaffold split?
+    # Cross-split overlays: do in-distribution gains survive the harder splits?
     fig, axes = plt.subplots(1, 2, figsize=(15, 5.5))
     for ax, metric in zip(axes, METRICS):
         viz.plot_split_overlay(selection_df, metric, ax, logx=True)
-        ax.set_title(f"{viz.METRIC_LABELS.get(metric, metric)}: random vs. scaffold")
-    fig.suptitle("Selection strategies — random vs. scaffold split", fontsize=14)
+        ax.set_title(f"{viz.METRIC_LABELS.get(metric, metric)}: across splits")
+    fig.suptitle(
+        "Selection strategies — random vs. scaffold vs. season split", fontsize=14
+    )
     fig.tight_layout()
     save_figure(fig, "downselection", "downselection_overlay.png")
 
@@ -392,7 +406,7 @@ def plot() -> None:
                 label=viz.SPLIT_LABEL[split_name],
             )
     ax.set_xscale("log")
-    ax.set_title("Proportional saturation — random vs. scaffold")
+    ax.set_title("Proportional saturation — random vs. scaffold vs. season")
     ax.legend(loc="best")
     save_figure(fig, "saturation", "saturation_overlay.png")
 

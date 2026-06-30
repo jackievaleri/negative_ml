@@ -93,6 +93,14 @@ SANDWICH_CLF_TOP_FEATURES = 30
 # linear classifier generalizes better than deep gradient-boosted trees.
 SANDWICH_RIDGE_ALPHA = 1.0
 
+# Season held out entirely for testing in the sandwich "season" split (the
+# downselection study's third regime, alongside the random and scaffold splits).
+# The workbook's sixth season sheet is an empty placeholder (no ratings entered),
+# so S1..S5 are the only populated seasons; S5, the newest, is held out -- a
+# forward-in-time generalization test (train on the earlier seasons, score on the
+# newest), the sandwich analog of the baseball chronological cross-season split.
+SANDWICH_TEST_SEASON = "S5"
+
 # --- Sandwich EDA tunables -------------------------------------------------
 # Ingredient values rarer than these counts are excluded from the EDA so each
 # panel stays legible. DISPLAY is the "print the popular ones" cutoff; VIOLIN is

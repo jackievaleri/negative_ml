@@ -5,6 +5,7 @@ import numpy as np
 from negative_ml.core.dataset import Dataset
 from negative_ml.core.experiment import (
     cross_dataset_split,
+    season_split_from_dataset,
     split_from_dataset,
 )
 from negative_ml.experiments import saturation, selection
@@ -99,6 +100,19 @@ def test_cross_dataset_split_uses_test_dataset():
     assert np.array_equal(sp.X_test, test.X)
     assert np.array_equal(sp.y_test, test.y)
     assert sp.name == "hard"
+
+
+def test_season_split_from_dataset_holds_out_season():
+    """The season EvalSplit trains on the other seasons, tests on the held-out one."""
+    ds = make_dataset(n=60)
+    seasons = np.where(np.arange(ds.n_samples) % 3 == 0, "S5", "S1")
+    sp = season_split_from_dataset(ds, seasons=seasons, test_season="S5", name="season")
+    n_test = int((seasons == "S5").sum())
+    assert sp.name == "season"
+    assert len(sp.y_test) == n_test
+    assert sp.train_ds.n_samples == ds.n_samples - n_test
+    # The held-out season is absent from the training pool's rows.
+    assert np.array_equal(sp.X_test, ds.X[seasons == "S5"])
 
 
 def test_runners_accept_injected_split():

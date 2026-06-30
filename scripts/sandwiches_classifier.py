@@ -1,4 +1,4 @@
-"""Good-vs-bad sandwich classifier: a ridge classifier over selected features.
+"""Good-vs-bad sandwich classifier: a ridge model and an XGBoost model compared.
 
 Reframes the 0-10 ratings task (see sandwiches_eda.py) as a binary one: a
 sandwich is good (label 1) when its rating is at or above the good/bad cut
@@ -6,26 +6,30 @@ sandwich is good (label 1) when its rating is at or above the good/bad cut
 rare high-value minority class, the example of interest, so it is the positive
 label whose AUROC / AUPRC / F1 the study reports.
 
-The model is a two-step pipeline:
+Two models are cross-validated head to head:
 
-    1. Feature selection: a univariate F-test (ANOVA) feature-importance analysis
-       ranks the hundreds of one-hot ingredient indicators by their linear
-       association with the good/bad label and keeps only the top
-       SANDWICH_CLF_TOP_FEATURES (30). With ~240 rows the full encoding is far too
-       wide; the F-test is the importance measure that matches the linear ridge
-       (gradient-boosted "gain" importance ranks split usefulness, which does not
-       transfer to a linear model and left it below chance here).
-    2. A ridge classifier (an L2-regularized linear classifier) trained on just
-       those selected features.
+    1. Ridge classifier: a two-step pipeline that first ranks the hundreds of
+       one-hot ingredient indicators by a univariate F-test (ANOVA) association
+       with the good/bad label and keeps only the top SANDWICH_CLF_TOP_FEATURES
+       (30), then fits an L2-regularized linear classifier on those. With ~240
+       rows the full encoding is far too wide for a linear model; the F-test is
+       the importance measure that matches it (gradient-boosted "gain" importance
+       ranks split usefulness, which does not transfer to a linear boundary).
+    2. XGBoost: gradient-boosted trees fit on the full multi-hot encoding. Trees
+       do their own splitting-based feature selection, so XGBoost skips the
+       F-test step and sees every ingredient indicator.
 
-Selection is refit inside every cross-validation fold, so the reported metrics
-(AUROC, AUPRC, F1) do not leak the held-out labels into the feature choice.
+Selection (for the ridge) is refit inside every cross-validation fold, so the
+reported metrics (AUROC, AUPRC, F1) do not leak the held-out labels into the
+feature choice. The ridge is scored by its decision function and XGBoost by its
+positive-class probability (both rank the good class via positive_scores), so the
+ranking metrics are comparable across the two models.
 
 Plotting is a first-class, independent step (as in sandwiches_eda.py).
-Generation runs the cross-validation once and persists everything the figures
-need -- the metrics, the ROC curve, the confusion matrix, and the selected
-features -- under results/sandwiches/data/. Plotting then rebuilds every figure
-from those artifacts::
+Generation runs the cross-validation once per model and persists everything the
+figures need -- the per-model metrics, ROC curves, and confusion matrices, plus
+the ridge's selected features -- under results/sandwiches/data/. Plotting then
+rebuilds every figure from those artifacts::
 
     python scripts/sandwiches_classifier.py                 # cross-validate + plot
     python scripts/sandwiches_classifier.py --plot-only      # replot saved artifacts
@@ -39,7 +43,8 @@ from __future__ import annotations
 
 import argparse
 import warnings
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from functools import partial
 
 import matplotlib
 
@@ -56,7 +61,6 @@ from sklearn.metrics import (
     roc_curve,
 )
 from sklearn.model_selection import StratifiedKFold
-from sklearn.pipeline import Pipeline
 
 from negative_ml.core.config import (
     RANDOM_SEED,
@@ -67,8 +71,10 @@ from negative_ml.core.config import (
     SANDWICH_GOOD_RATING_THRESHOLD,
     SANDWICH_RIDGE_ALPHA,
 )
+from negative_ml.core.experiment import positive_scores
 from negative_ml.domains import sandwiches
 from negative_ml.models import feature_selected_ridge_classifier
+from negative_ml.models.xgboost import xgb_classifier
 from negative_ml.runner import data_path, figure_path
 from negative_ml.viz import sandwiches as viz
 from negative_ml.viz.style import save_fig
@@ -105,38 +111,47 @@ def require_artifacts(*paths) -> None:
         )
 
 
-def build_model() -> Pipeline:
-    """Build the good-vs-bad model: top-feature F-test selection then ridge.
+#: The ridge model builder: the feature-selected ridge pipeline (top-feature
+#: F-test selection then an L2 ridge classifier) shared with the downselection
+#: study. A fresh, unfitted pipeline each call lets the cross-validation loop
+#: refit the selection inside every fold.
+RIDGE_BUILDER = partial(
+    feature_selected_ridge_classifier,
+    k=SANDWICH_CLF_TOP_FEATURES,
+    alpha=SANDWICH_RIDGE_ALPHA,
+)
 
-    Thin wrapper over the shared feature_selected_ridge_classifier builder (also
-    used by the downselection study) that bakes in the configured feature count
-    and ridge penalty. A fresh, unfitted pipeline each call lets the
-    cross-validation loop refit the selection inside every fold.
-
-    Returns:
-        An unfitted scikit-learn Pipeline with named steps "select" and "ridge".
-    """
-    return feature_selected_ridge_classifier(
-        k=SANDWICH_CLF_TOP_FEATURES, alpha=SANDWICH_RIDGE_ALPHA
-    )
+#: The good-vs-bad models compared head to head: display name -> a zero-argument
+#: builder returning a fresh, unfitted estimator. Ridge is the feature-selected
+#: linear pipeline; XGBoost is gradient-boosted trees over the full multi-hot
+#: encoding (trees do their own feature selection, so they skip the F-test step).
+MODELS = {
+    "Ridge classifier": RIDGE_BUILDER,
+    "XGBoost": xgb_classifier,
+}
 
 
-def cross_validate(X: np.ndarray, labels: np.ndarray):
-    """Repeated stratified-CV out-of-fold decision scores and hard predictions.
+def cross_validate(
+    model_builder: Callable[[], object], X: np.ndarray, labels: np.ndarray
+):
+    """Repeated stratified-CV out-of-fold scores and hard predictions for one model.
 
     Runs SANDWICH_CV_REPEATS independent runs of SANDWICH_CV_FOLDS-fold stratified
-    cross-validation, refitting the whole pipeline (feature selection included) on
-    each training fold. A single hold-out split is far too noisy on ~240 rows, so
-    averaging over the repeats is what makes the metrics trustworthy.
+    cross-validation, refitting the whole model (feature selection included for the
+    ridge) on each training fold. A single hold-out split is far too noisy on ~240
+    rows, so averaging over the repeats is what makes the metrics trustworthy.
 
     Args:
+        model_builder: A zero-argument callable returning a fresh, unfitted
+            estimator (an entry of MODELS).
         X: The full multi-hot feature matrix.
         labels: Binary good/bad labels (1 == good) used to stratify the folds.
 
     Returns:
         (score_repeats, pred_repeats): two lists, each with one out-of-fold array
-        per repeat. Scores are the ridge decision function (higher means more
-        likely good); predictions are hard 0/1 labels.
+        per repeat. Scores rank the good class (the ridge decision function or the
+        XGBoost positive-class probability, via positive_scores); predictions are
+        hard 0/1 labels.
     """
     score_repeats, pred_repeats = [], []
     for rep in range(SANDWICH_CV_REPEATS):
@@ -146,9 +161,9 @@ def cross_validate(X: np.ndarray, labels: np.ndarray):
         scores = np.full(len(labels), np.nan)
         preds = np.full(len(labels), -1)
         for train_idx, test_idx in splitter.split(X, labels):
-            model = build_model()
+            model = model_builder()
             model.fit(X[train_idx], labels[train_idx])
-            scores[test_idx] = model.decision_function(X[test_idx])
+            scores[test_idx] = positive_scores(model, X[test_idx])
             preds[test_idx] = model.predict(X[test_idx])
         score_repeats.append(scores)
         pred_repeats.append(preds)
@@ -191,16 +206,16 @@ def save_selected_features(
 ) -> None:
     """Fit the pipeline on all data and persist the features it selected.
 
-    Records the SANDWICH_CLF_TOP_FEATURES ingredients the importance analysis kept,
-    with their importances, most important first -- the interpretable payoff of the
-    selection step.
+    Records the SANDWICH_CLF_TOP_FEATURES ingredients the ridge model's importance
+    analysis kept, with their importances, most important first -- the
+    interpretable payoff of the selection step (XGBoost has no such step).
 
     Args:
         X: The full multi-hot feature matrix.
         labels: Binary good/bad labels (1 == good).
         feature_names: Names for every column of X.
     """
-    model = build_model()
+    model = RIDGE_BUILDER()
     model.fit(X, labels)
     selector = model.named_steps["select"]
     support = selector.get_support()
@@ -219,13 +234,14 @@ def save_selected_features(
 
 
 def generate() -> None:
-    """Cross-validate the ridge classifier and persist every plotting artifact.
+    """Cross-validate every model in MODELS and persist every plotting artifact.
 
     Builds the good/bad labels at SANDWICH_GOOD_RATING_THRESHOLD (good == rating at
     or above the cut, the positive class), runs the repeated stratified
-    cross-validation, and writes the metrics, a representative ROC curve, the
-    confusion matrix, and the selected features. Logs AUROC, AUPRC, and F1 against
-    the predict-all-good baseline.
+    cross-validation for each model, and writes the per-model metrics, a
+    representative ROC curve per model, the per-model confusion matrices, and the
+    ridge's selected features (each artifact tagged with a model column). Logs
+    AUROC, AUPRC, and F1 per model against the predict-all-good baseline.
     """
     dataset = sandwiches.load()
     X = dataset.X
@@ -240,15 +256,34 @@ def generate() -> None:
         f"{len(labels) - n_good} bad ==="
     )
 
-    score_repeats, pred_repeats = cross_validate(X, labels)
-    metrics = summarize_metrics(score_repeats, pred_repeats, labels)
+    metrics_rows, roc_frames, conf_frames = [], [], []
+    for name, builder in MODELS.items():
+        score_repeats, pred_repeats = cross_validate(builder, X, labels)
+        metrics = summarize_metrics(score_repeats, pred_repeats, labels)
+        metrics_rows.append({"model": name, **metrics})
+        logger.info(
+            f"  [{name}] AUROC={metrics['auroc']:.3f}+/-{metrics['auroc_std']:.3f}  "
+            f"AUPRC={metrics['auprc']:.3f}  F1={metrics['f1']:.3f}"
+        )
+        # The first repeat is the representative out-of-fold scoring for the figures.
+        fpr, tpr, _ = roc_curve(labels, score_repeats[0])
+        roc_frames.append(pd.DataFrame({"model": name, "fpr": fpr, "tpr": tpr}))
+        # Tidy confusion: two rows (true bad / true good) per model, so the frame
+        # carries every model's matrix under a single model column.
+        matrix = confusion_matrix(labels, pred_repeats[0], labels=[0, 1])
+        conf_frames.append(
+            pd.DataFrame(
+                {
+                    "model": name,
+                    "actual": ["true_bad", "true_good"],
+                    "pred_bad": matrix[:, 0],
+                    "pred_good": matrix[:, 1],
+                }
+            )
+        )
 
     metrics_path = artifact("classifier_metrics")
-    pd.DataFrame([metrics]).to_csv(metrics_path, index=False)
-    logger.info(
-        f"  AUROC={metrics['auroc']:.3f}+/-{metrics['auroc_std']:.3f}  "
-        f"AUPRC={metrics['auprc']:.3f}  F1={metrics['f1']:.3f}"
-    )
+    pd.DataFrame(metrics_rows).to_csv(metrics_path, index=False)
     # Honest reference points: good is the minority (positive) class here.
     naive_f1 = 2 * base_rate / (1 + base_rate)
     logger.info(
@@ -257,42 +292,53 @@ def generate() -> None:
     )
     logger.info(f"  wrote {metrics_path.relative_to(REPO_ROOT)}")
 
-    # The first repeat is the representative out-of-fold scoring for the figures.
-    fpr, tpr, _ = roc_curve(labels, score_repeats[0])
     roc_path = artifact("classifier_roc")
-    pd.DataFrame({"fpr": fpr, "tpr": tpr}).to_csv(roc_path, index=False)
+    pd.concat(roc_frames, ignore_index=True).to_csv(roc_path, index=False)
     logger.info(f"  wrote {roc_path.relative_to(REPO_ROOT)}")
 
-    matrix = confusion_matrix(labels, pred_repeats[0], labels=[0, 1])
     conf_path = artifact("classifier_confusion")
-    pd.DataFrame(
-        matrix, index=["true_bad", "true_good"], columns=["pred_bad", "pred_good"]
-    ).to_csv(conf_path)
+    pd.concat(conf_frames, ignore_index=True).to_csv(conf_path, index=False)
     logger.info(f"  wrote {conf_path.relative_to(REPO_ROOT)}")
 
     save_selected_features(X, labels, dataset.feature_names)
 
 
 def make_figures() -> None:
-    """Rebuild the ROC, confusion, and selected-feature figures from artifacts."""
+    """Rebuild the ROC, confusion, and selected-feature figures from artifacts.
+
+    The ROC figure overlays one curve per model and the confusion figure draws one
+    panel per model, so the two models read side by side; the selected-features
+    figure stays ridge-specific (the F-test selection step is a ridge-only artifact).
+    """
     metrics_path = artifact("classifier_metrics")
     roc_path = artifact("classifier_roc")
     conf_path = artifact("classifier_confusion")
     features_path = artifact("selected_features")
     require_artifacts(metrics_path, roc_path, conf_path, features_path)
 
-    metrics = pd.read_csv(metrics_path).iloc[0]
+    metrics = pd.read_csv(metrics_path).set_index("model")
+    models = metrics.index.tolist()
+
     roc = pd.read_csv(roc_path)
     fig, ax = plt.subplots(figsize=(6, 5))
-    viz.plot_roc_curves(
-        [("Ridge classifier", roc["fpr"], roc["tpr"], metrics["auroc"])], ax
-    )
+    curves = []
+    for name in models:
+        sub = roc[roc["model"] == name]
+        curves.append((name, sub["fpr"], sub["tpr"], metrics.loc[name, "auroc"]))
+    viz.plot_roc_curves(curves, ax)
     fig.tight_layout()
     save_figure(fig, "clf_roc.png")
 
-    conf = pd.read_csv(conf_path, index_col=0)
-    fig, ax = plt.subplots(figsize=(4.5, 4))
-    viz.plot_confusion(conf.to_numpy(), ax, class_labels=("bad", "good"))
+    conf = pd.read_csv(conf_path)
+    fig, axes = plt.subplots(
+        1, len(models), figsize=(4.5 * len(models), 4), squeeze=False
+    )
+    for ax, name in zip(axes[0], models):
+        sub = conf[conf["model"] == name]
+        viz.plot_confusion(
+            sub[["pred_bad", "pred_good"]].to_numpy(), ax, class_labels=("bad", "good")
+        )
+        ax.set_title(name)
     fig.tight_layout()
     save_figure(fig, "clf_confusion.png")
 
