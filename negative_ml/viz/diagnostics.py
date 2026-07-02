@@ -363,6 +363,7 @@ def plot_per_park_rate(
         lw=1,
         label="overall rate",
     )
+    ax.set_xticks(range(len(d["park"])))
     ax.set_xticklabels(d["park"], rotation=90, fontsize=7)
     ax.set_ylabel(f"{label} rate")
     ax.set_ylim(0, None)

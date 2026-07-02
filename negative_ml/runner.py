@@ -26,6 +26,15 @@ DOMAIN_LOADERS = {
     "sandwiches": (sandwiches.load, "regression"),
 }
 
+#: Recast a natively-regression domain into the good-vs-bad classification framing
+#: the selection and saturation experiments require (they rank a positive minority
+#: with AUROC / AUPRC / F1). molecules and baseball are already classification and
+#: need no converter; the sandwich domain is a skewed regression, so its good-vs-bad
+#: view (sandwiches.to_classification) is registered here.
+CLASSIFICATION_VIEW = {
+    "sandwiches": sandwiches.to_classification,
+}
+
 #: Default majority-class budgets / sizes swept per domain (plan.md 4.1/4.2).
 #: Values above a domain's available majority count are clamped at run time.
 DEFAULT_BUDGETS = {
@@ -48,6 +57,29 @@ def load_domain(name: str) -> tuple[Dataset, str]:
         raise ValueError(f"Unknown domain {name!r}; choose from {list(DOMAIN_LOADERS)}")
     loader, task = DOMAIN_LOADERS[name]
     return loader(), task
+
+
+def load_classification_domain(name: str) -> tuple[Dataset, str]:
+    """Load a domain in the classification framing the imbalance experiments use.
+
+    The selection and saturation experiments are classification studies, so a
+    natively-regression domain is recast through its registered CLASSIFICATION_VIEW
+    converter (e.g. the sandwich good-vs-bad view). Domains that are already
+    classification are returned unchanged. This keeps the CLI commands running the
+    same experiment as the reproducible scripts, which convert explicitly.
+
+    Args:
+        name: One of DOMAIN_LOADERS.
+
+    Returns:
+        The loaded classification Dataset and its task string ("classification").
+    """
+    dataset, task = load_domain(name)
+    convert = CLASSIFICATION_VIEW.get(name)
+    if convert is not None:
+        dataset = convert(dataset)
+        task = "classification"
+    return dataset, task
 
 
 def data_path(domain: str, category: str, name: str, suffix: str = ".csv") -> Path:

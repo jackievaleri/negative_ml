@@ -20,7 +20,7 @@ from negative_ml.models import model_factory
 from negative_ml.runner import (
     DEFAULT_BUDGETS,
     DOMAIN_LOADERS,
-    load_domain,
+    load_classification_domain,
     metrics_path,
 )
 
@@ -51,7 +51,7 @@ def prepare(
 @app.command()
 def saturation(domain: str, scaffold: bool = False) -> None:
     """Run the saturation experiment for a domain (plan.md 4.1)."""
-    dataset, task = load_domain(domain)
+    dataset, task = load_classification_domain(domain)
     results = saturation_exp.fix_minority_vary_majority(
         dataset,
         model_factory=model_factory(task),
@@ -73,7 +73,7 @@ def selection(
     Pass --sweep to sweep the per-domain default budgets and emit the
     strategy-vs-size curves; otherwise compare strategies at a single budget.
     """
-    dataset, task = load_domain(domain)
+    dataset, task = load_classification_domain(domain)
     factory = model_factory(task)
     if sweep:
         results = selection_exp.budget_sweep(

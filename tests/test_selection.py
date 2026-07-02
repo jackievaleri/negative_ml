@@ -11,6 +11,7 @@ from negative_ml.core.selection import (
     diversity_selection,
     hard_examples,
     random_undersample,
+    standardize,
 )
 
 
@@ -78,8 +79,6 @@ def test_hard_examples_picks_closest_to_minority():
 
     # Distance (in standardized space) of every majority point to its nearest
     # minority point; the selected set should be the closest budget.
-    from negative_ml.core.selection import standardize
-
     Xz = standardize(ds.X)
     d_maj = np.array(
         [np.min(np.linalg.norm(Xz[minority] - Xz[m], axis=1)) for m in majority]
@@ -96,8 +95,6 @@ def test_hard_examples_picks_closest_to_minority():
 def test_diversity_spreads_out_more_than_random():
     """Farthest-point selection has larger mean pairwise spread than random."""
     ds = imbalanced_dataset()
-    from negative_ml.core.selection import standardize
-
     Xz = standardize(ds.X)
 
     def spread(idx):

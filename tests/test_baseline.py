@@ -54,8 +54,12 @@ def test_zero_variance_feature_is_chance_and_safe():
     assert not np.isnan(p).any()
 
 
-def test_predict_proba_is_valid_and_clipped():
-    """Output is (n, 2), rows sum to 1, and out-of-range inputs clip to [0, 1]."""
+def test_predict_proba_is_valid_and_monotone():
+    """Output is (n, 2), rows sum to 1, stays in [0, 1], and preserves ranking.
+
+    The sigmoid squash keeps out-of-range inputs ordered instead of collapsing them
+    to a tied 0 or 1 the way a linear clip would.
+    """
     X, y = make_xy()
     m = CorrelationModel(0).fit(X, y)
     X_test = X.copy()
@@ -65,3 +69,5 @@ def test_predict_proba_is_valid_and_clipped():
     assert p.shape == (len(X), 2)
     assert np.allclose(p.sum(axis=1), 1.0)
     assert p.min() >= 0.0 and p.max() <= 1.0
+    # A value above the training range still scores above one below it.
+    assert p[0, 1] > p[1, 1]

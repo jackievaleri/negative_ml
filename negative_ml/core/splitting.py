@@ -118,8 +118,8 @@ def ballpark_split(
 
 def season_split(
     dataset: Dataset,
-    seasons: Sequence[str],
     test_season: str,
+    season_col: str = "Season",
 ) -> tuple[np.ndarray, np.ndarray]:
     """Hold one entire season out of training (a chronological-style shift).
 
@@ -127,28 +127,28 @@ def season_split(
     are training. Like ballpark_split this is a deterministic held-out-group split,
     but grouped by the show's season rather than a structural family, so the model
     is scored on a season it never trained on -- the sandwich analog of the
-    baseball chronological cross-season split. The per-row season labels are passed
-    in because they live in the dataset meta, not in groups (which carries the Main
-    filling family used by the scaffold split).
+    baseball chronological cross-season split. The per-row season labels are read
+    from dataset.meta (they live there rather than in groups, which carries the Main
+    filling family used by the scaffold split), so the split is always aligned with
+    the dataset it is drawn from and needs no separate season array.
 
     Args:
-        dataset: Dataset to split (used for its row count to validate alignment).
-        seasons: Per-row season identifier, aligned with the dataset rows.
+        dataset: Dataset to split; its meta must carry the season_col column.
         test_season: The season value to hold out entirely for testing.
+        season_col: Name of the meta column holding each row's season.
 
     Returns:
         (train_idx, test_idx) integer index arrays.
 
     Raises:
-        ValueError: If seasons is not aligned with the dataset, or no row matches
+        ValueError: If dataset.meta lacks season_col, or no row matches
             test_season.
     """
-    seasons = np.asarray(seasons)
-    if len(seasons) != dataset.n_samples:
+    if dataset.meta is None or season_col not in dataset.meta.columns:
         raise ValueError(
-            f"seasons has {len(seasons)} entries but the dataset has "
-            f"{dataset.n_samples} rows."
+            f"season_split requires dataset.meta with a {season_col!r} column."
         )
+    seasons = np.asarray(dataset.meta[season_col])
     is_test = seasons == test_season
     if not is_test.any():
         raise ValueError(f"No row has season {test_season!r}.")

@@ -30,8 +30,17 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from negative_ml.core.config import RAW_DATA_DIR, SANDWICH_GOOD_RATING_THRESHOLD
+from negative_ml.core.config import (
+    RAW_DATA_DIR,
+    SANDWICH_GOOD_RATING_THRESHOLD,
+    SANDWICH_TEST_SEASON,
+)
 from negative_ml.core.dataset import Dataset
+from negative_ml.core.experiment import (
+    EvalSplit,
+    season_split_from_dataset,
+    split_from_dataset,
+)
 
 #: Source workbook, read from data/raw by default (see RAW_DATA_DIR).
 SANDWICH_FILENAME = "RFS Sandwiches.xlsx"
@@ -331,3 +340,27 @@ def to_classification(
         groups=dataset.groups,
         meta=dataset.meta,
     )
+
+
+def build_splits(cds: Dataset) -> dict[str, EvalSplit]:
+    """The three sandwich evaluation regimes keyed by name.
+
+    random is a stratified holdout within the menu; scaffold holds entire filling
+    families (the Main ingredient, carried in cds.groups) out of training; season
+    holds one entire season (SANDWICH_TEST_SEASON, read from cds.meta) out of
+    training, a chronological-style shift to an unseen season. Shared by the
+    sandwich scripts so the regimes are defined once.
+
+    Args:
+        cds: The good-vs-bad classification Dataset (see to_classification).
+
+    Returns:
+        Mapping of split name to its EvalSplit.
+    """
+    return {
+        "random": split_from_dataset(cds, name="random"),
+        "scaffold": split_from_dataset(cds, scaffold=True, name="scaffold"),
+        "season": season_split_from_dataset(
+            cds, test_season=SANDWICH_TEST_SEASON, name="season"
+        ),
+    }

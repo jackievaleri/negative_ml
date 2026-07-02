@@ -17,7 +17,7 @@ only the cached season — keeping with the decoupled generate/plot convention.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -26,7 +26,7 @@ from sklearn.neighbors import NearestNeighbors
 
 from negative_ml.core.config import RANDOM_SEED, VIZ_MAX_POINTS
 from negative_ml.core.dataset import Dataset
-from negative_ml.core.selection import BUDGET_VARYING, STRATEGIES, standardize
+from negative_ml.core.selection import BUDGET_VARYING, STRATEGIES, standardized_features
 from negative_ml.viz.results import STRATEGY_STYLE
 from negative_ml.viz.style import LIGHT_GRAY, PALETTE, style_axes
 
@@ -49,47 +49,73 @@ def nearest_minority_distance(dataset: Dataset, rows: np.ndarray) -> np.ndarray:
     minority = np.where(dataset.minority_mask())[0]
     if len(minority) == 0:
         return np.zeros(len(rows))
-    Xz = standardize(dataset.X)
+    Xz = standardized_features(dataset)
     nn = NearestNeighbors(n_neighbors=1).fit(Xz[minority])
     dist, _ = nn.kneighbors(Xz[np.asarray(rows)])
     return dist.ravel()
+
+
+def baseball_example_columns(dataset: Dataset, idx: np.ndarray) -> pd.DataFrame:
+    """Human-readable batted-ball descriptors for the picked rows.
+
+    The default describe callback for selection_example_table: the three core
+    kinematic features (exit velocity, launch angle, spray angle) and the
+    multiclass outcome for each kept majority ball.
+
+    Args:
+        dataset: The dataset the rows index into; its meta supplies outcomes.
+        idx: Full-dataset row indices of the picked majority balls.
+
+    Returns:
+        Frame with columns [exit_velocity, launch_angle, spray_angle, outcome].
+    """
+    outcome = (
+        dataset.meta["outcome"].to_numpy()[idx]
+        if dataset.meta is not None and "outcome" in dataset.meta
+        else np.array([""] * len(idx))
+    )
+    return pd.DataFrame(
+        {
+            "exit_velocity": dataset.X[idx, 0].round(1),
+            "launch_angle": dataset.X[idx, 1].round(1),
+            "spray_angle": dataset.X[idx, 2].round(1),
+            "outcome": outcome,
+        }
+    )
 
 
 def selection_example_table(
     dataset: Dataset,
     strategy: str,
     budget: int,
+    describe: Callable[[Dataset, np.ndarray], pd.DataFrame] = baseball_example_columns,
     seed: int = RANDOM_SEED,
 ) -> pd.DataFrame:
-    """Tidy table of the majority balls one strategy keeps at a small budget.
+    """Tidy table of the majority examples one strategy keeps at a small budget.
+
+    The common columns (strategy, full-dataset row_index, standardized distance to
+    the nearest minority example) are shared across domains; the domain-specific,
+    human-readable descriptor columns are supplied by the describe callback, so one
+    builder serves the baseball kinematics and the sandwich ingredients alike.
 
     Args:
-        dataset: The (full) dataset to select from; its meta supplies outcomes.
+        dataset: The (full) dataset to select from.
         strategy: Strategy name in negative_ml.core.selection.STRATEGIES.
         budget: Number of majority examples to keep.
+        describe: Callback mapping (dataset, picked indices) to a frame of
+            readable descriptor columns for those rows (baseball kinematics by
+            default).
         seed: Seed forwarded to the (stochastic) strategies.
 
     Returns:
-        Frame with columns [strategy, row_index, exit_velocity, launch_angle,
-        spray_angle, outcome, dist_to_minority], sorted by dist_to_minority.
+        Frame with columns [strategy, row_index, <descriptor columns>,
+        dist_to_minority], sorted by dist_to_minority.
     """
     idx = STRATEGIES[strategy](dataset, budget, seed=seed)
-    outcome = (
-        dataset.meta["outcome"].to_numpy()[idx]
-        if dataset.meta is not None and "outcome" in dataset.meta
-        else np.array([""] * len(idx))
-    )
-    table = pd.DataFrame(
-        {
-            "strategy": strategy,
-            "row_index": idx,
-            "exit_velocity": dataset.X[idx, 0].round(1),
-            "launch_angle": dataset.X[idx, 1].round(1),
-            "spray_angle": dataset.X[idx, 2].round(1),
-            "outcome": outcome,
-            "dist_to_minority": nearest_minority_distance(dataset, idx).round(2),
-        }
-    )
+    table = pd.DataFrame({"strategy": strategy, "row_index": idx})
+    descriptors = describe(dataset, idx).reset_index(drop=True)
+    table = pd.concat([table, descriptors], axis=1)
+    table["dist_to_minority"] = nearest_minority_distance(dataset, idx).round(2)
     return table.sort_values("dist_to_minority").reset_index(drop=True)
 
 
@@ -97,6 +123,7 @@ def selection_examples_frame(
     dataset: Dataset,
     budget: int,
     strategies: Sequence[str] = BUDGET_VARYING,
+    describe: Callable[[Dataset, np.ndarray], pd.DataFrame] = baseball_example_columns,
     seed: int = RANDOM_SEED,
 ) -> pd.DataFrame:
     """Concatenate selection_example_table across strategies into one frame.
@@ -105,13 +132,15 @@ def selection_examples_frame(
         dataset: The dataset to select from.
         budget: Number of majority examples each strategy keeps.
         strategies: Strategy names to include (the budget-varying strategies).
+        describe: Descriptor-column callback forwarded to selection_example_table.
         seed: Seed forwarded to the strategies.
 
     Returns:
         The stacked per-strategy tables.
     """
     frames = [
-        selection_example_table(dataset, s, budget, seed=seed) for s in strategies
+        selection_example_table(dataset, s, budget, describe=describe, seed=seed)
+        for s in strategies
     ]
     return pd.concat(frames, ignore_index=True)
 
@@ -121,6 +150,7 @@ def plot_selection_examples(
     examples: pd.DataFrame,
     strategies: Sequence[str] = BUDGET_VARYING,
     label: str = "home run",
+    budget: int | None = None,
     max_background: int = VIZ_MAX_POINTS,
     seed: int = 0,
 ) -> plt.Figure:
@@ -137,12 +167,16 @@ def plot_selection_examples(
         examples: Frame from selection_examples_frame carrying row_index/strategy.
         strategies: Strategies to panel (one each), in order.
         label: Minority-class display name.
+        budget: Per-strategy budget shown in the figure title. Defaults to the
+            largest per-strategy pick count in examples when not given.
         max_background: Cap on background points drawn per panel.
         seed: Seed for the background subsample.
 
     Returns:
         The created Figure.
     """
+    if budget is None:
+        budget = int(examples.groupby("strategy").size().max())
     ev_, la = dataset.X[:, 0], dataset.X[:, 1]
     minority = dataset.minority_mask()
     rng = np.random.default_rng(seed)
@@ -182,7 +216,7 @@ def plot_selection_examples(
         ax.legend(loc="upper left", fontsize=8, markerscale=1)
         style_axes(ax)
     fig.suptitle(
-        f"What each downselection strategy keeps (budget={len(picks)}, {label}s)",
+        f"What each downselection strategy keeps (budget={budget}, {label}s)",
         fontsize=13,
     )
     fig.tight_layout(rect=(0, 0, 1, 0.97))

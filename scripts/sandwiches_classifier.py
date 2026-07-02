@@ -54,14 +54,13 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 from sklearn.metrics import (
-    average_precision_score,
     confusion_matrix,
     f1_score,
-    roc_auc_score,
     roc_curve,
 )
 from sklearn.model_selection import StratifiedKFold
 
+from negative_ml.core import eval as ev
 from negative_ml.core.config import (
     RANDOM_SEED,
     REPO_ROOT,
@@ -177,8 +176,10 @@ def summarize_metrics(
 ) -> dict[str, float]:
     """Mean cross-validated AUROC, AUPRC, and F1 (with their spread).
 
-    AUROC and AUPRC use the decision scores; F1 uses the hard predictions. All are
-    for the positive (good) class.
+    AUROC and AUPRC (via negative_ml.core.eval, the same metrics every other domain
+    reports) use the decision scores; F1 uses the model's hard predictions, which
+    for the ridge classifier is its own boundary rather than a fixed score cutoff.
+    All are for the positive (good) class.
 
     Args:
         score_repeats: Out-of-fold decision scores, one array per CV repeat.
@@ -188,8 +189,8 @@ def summarize_metrics(
     Returns:
         Mapping with auroc, auprc, f1 and the matching _std spreads.
     """
-    aurocs = [roc_auc_score(labels, s) for s in score_repeats]
-    auprcs = [average_precision_score(labels, s) for s in score_repeats]
+    aurocs = [ev.auroc(labels, s) for s in score_repeats]
+    auprcs = [ev.auprc(labels, s) for s in score_repeats]
     f1s = [f1_score(labels, p, zero_division=0) for p in pred_repeats]
     return {
         "auroc": float(np.mean(aurocs)),

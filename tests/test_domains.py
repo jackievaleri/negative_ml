@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from negative_ml.core.config import SANDWICH_GOOD_RATING_THRESHOLD
 from negative_ml.core.dataset import Dataset
@@ -10,8 +11,6 @@ from negative_ml.domains import baseball, sandwiches
 
 def test_dataset_validates_shapes():
     """Constructing a Dataset with mismatched X/y lengths raises."""
-    import pytest
-
     with pytest.raises(ValueError):
         Dataset(X=np.zeros((3, 2)), y=np.zeros(2), task="classification")
 
@@ -136,8 +135,6 @@ def test_featurize_respects_target():
 
 def test_featurize_unknown_target_raises():
     """An unknown binary target fails loudly rather than labeling everything 0."""
-    import pytest
-
     with pytest.raises(ValueError):
         baseball.featurize(synthetic_statcast(), binary=True, target="grand_slam")
 
@@ -146,8 +143,6 @@ def test_seasons_registry_and_load_season_dates():
     """SEASONS covers 2023/2024 and 2024 reuses the default (cached) dates."""
     assert set(baseball.SEASONS) >= {2023, 2024}
     assert baseball.SEASONS[2024] == (baseball.DEFAULT_START, baseball.DEFAULT_END)
-
-    import pytest
 
     with pytest.raises(ValueError):
         baseball.load_season(1999)

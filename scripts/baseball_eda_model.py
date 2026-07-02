@@ -42,12 +42,6 @@ from loguru import logger
 
 from negative_ml.core import eval as ev
 from negative_ml.core.config import REPO_ROOT
-from negative_ml.core.dataset import Dataset
-from negative_ml.core.experiment import (
-    cross_dataset_split,
-    park_split_from_dataset,
-    split_from_dataset,
-)
 from negative_ml.domains import baseball
 from negative_ml.experiments.negative_control import run_negative_control
 from negative_ml.models import model_factory
@@ -77,15 +71,6 @@ def save_figure(fig: plt.Figure, category: str, name: str) -> None:
 def artifact(category: str, name: str, suffix: str = ".csv"):
     """Standard data-artifact path under results/baseball/data/<category>/."""
     return data_path(DOMAIN, category, name, suffix)
-
-
-def build_splits(ds_train: Dataset, ds_test: Dataset) -> dict:
-    """Random (within-2023), hard (2023->2024), and park-holdout splits."""
-    return {
-        "random": split_from_dataset(ds_train, name="random"),
-        "hard": cross_dataset_split(ds_train, ds_test, name="hard"),
-        "park": park_split_from_dataset(ds_train, name="park"),
-    }
 
 
 def generate() -> None:
@@ -120,7 +105,7 @@ def generate() -> None:
             )
         )
 
-        splits = build_splits(ds_train, ds_test)
+        splits = baseball.build_splits(ds_train, ds_test)
 
         # Feature correlations and covariate shift depend only on X (identical
         # across targets), so compute them once on the first target.
@@ -279,7 +264,7 @@ def make_performance_figures() -> None:
 
 
 def make_negative_control_figures() -> None:
-    """Per-target negative-control bars (AUROC + AUPRC), random vs. hard split."""
+    """Per-target negative-control bars (AUROC + AUPRC), across splits."""
     nc_path = metrics_path("negative_control", "baseball")
     require_artifacts(nc_path)
     nc = pd.read_csv(nc_path)
@@ -354,7 +339,7 @@ def make_leakage_figures() -> None:
     # Train vs. test feature distributions per split (raw values re-loaded).
     shared = baseball.load_season(TRAIN_YEAR, target="home_run")
     shared_test = baseball.load_season(TEST_YEAR, target="home_run")
-    for split_name, sp in build_splits(shared, shared_test).items():
+    for split_name, sp in baseball.build_splits(shared, shared_test).items():
         fig = diag.plot_train_test_distributions(
             sp.train_ds.X,
             sp.X_test,

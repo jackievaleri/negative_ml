@@ -56,20 +56,18 @@ import matplotlib
 
 matplotlib.use("Agg")  # headless: write PNGs without a display
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from loguru import logger
 
 from negative_ml.core.config import (
-    RANDOM_SEED,
     REPO_ROOT,
     SANDWICH_CLF_TOP_FEATURES,
     SANDWICH_GOOD_RATING_THRESHOLD,
     SANDWICH_RIDGE_ALPHA,
-    SANDWICH_TEST_SEASON,
 )
 from negative_ml.core.dataset import Dataset
-from negative_ml.core.experiment import season_split_from_dataset, split_from_dataset
-from negative_ml.core.selection import BUDGET_VARYING, STRATEGIES
+from negative_ml.core.selection import BUDGET_VARYING
 from negative_ml.domains import sandwiches
 from negative_ml.experiments import saturation as sat
 from negative_ml.experiments import selection as sel
@@ -114,21 +112,18 @@ def classifier_factory(class_weight: float | str | dict | None = None) -> object
     Uses the same feature_selected_ridge_classifier pipeline as
     sandwiches_classifier.py (top-SANDWICH_CLF_TOP_FEATURES F-test selection then a
     ridge classifier) so the downselection study evaluates that exact model. The
-    weighted (H4) baseline passes a numeric class_weight ratio (majority / minority)
-    the way XGBoost's scale_pos_weight expects; translate it into the
-    {bad: 1, good: ratio} dict a RidgeClassifier takes so it up-weights the good
-    (positive) class.
+    weighted (H4) baseline forwards a numeric up-weight ratio (majority / minority);
+    the ridge builder owns translating that into the sklearn class_weight it needs,
+    so no domain-specific conversion happens here.
 
     Args:
         class_weight: None for the unweighted strategies, or the numeric up-weight
-            ratio the weighted baseline forwards (other scikit-learn class_weight
-            values, e.g. "balanced", are passed through unchanged).
+            ratio the weighted baseline forwards (sklearn class_weight values such
+            as "balanced" or a dict also pass straight through the builder).
 
     Returns:
         A fresh unfitted ridge-classifier pipeline.
     """
-    if isinstance(class_weight, (int, float)):
-        class_weight = {0: 1.0, 1: float(class_weight)}
     return feature_selected_ridge_classifier(
         k=SANDWICH_CLF_TOP_FEATURES,
         alpha=SANDWICH_RIDGE_ALPHA,
@@ -149,24 +144,6 @@ def save_frame(df: pd.DataFrame, experiment: str) -> None:
     logger.info(f"  wrote {path.relative_to(REPO_ROOT)}")
 
 
-def build_splits(cds: Dataset) -> dict:
-    """The three evaluation regimes keyed by name.
-
-    random is a stratified holdout within the menu; scaffold holds entire filling
-    families (the Main ingredient, carried in cds.groups) out of training; season
-    holds one entire season (SANDWICH_TEST_SEASON, read from cds.meta) out of
-    training, a chronological-style shift to an unseen season.
-    """
-    seasons = cds.meta["Season"].to_numpy()
-    return {
-        "random": split_from_dataset(cds, name="random"),
-        "scaffold": split_from_dataset(cds, scaffold=True, name="scaffold"),
-        "season": season_split_from_dataset(
-            cds, seasons=seasons, test_season=SANDWICH_TEST_SEASON, name="season"
-        ),
-    }
-
-
 def warn_small_fractions(n_minority: int, split_name: str) -> None:
     """Flag proportional fractions that leave very few good training rows."""
     tiny = [f for f in FRACTIONS if max(1, round(n_minority * f)) < 5]
@@ -177,42 +154,25 @@ def warn_small_fractions(n_minority: int, split_name: str) -> None:
         )
 
 
-def selection_example_table(
-    cds: Dataset, strategy: str, budget: int, seed: int = RANDOM_SEED
-) -> pd.DataFrame:
-    """Tidy table of the bad sandwiches one strategy keeps at a tiny budget.
+def sandwich_example_columns(cds: Dataset, idx: np.ndarray) -> pd.DataFrame:
+    """Ingredient + rating descriptors for the picked bad sandwiches.
 
-    The sandwich analog of viz.selection_examples (whose columns are baseball
-    kinematics): pulls the six ingredient columns and the rating for each kept
-    majority sandwich, plus its standardized distance to the nearest good
-    example — the same notion of hardness the hard strategy ranks on — so the
-    picks can be read and sanity-checked.
+    The sandwich describe callback for selviz.selection_example_table (whose default
+    columns are baseball kinematics): pulls the six ingredient columns and the
+    rating for each kept majority sandwich, so the picks can be read and
+    sanity-checked. The shared builder attaches the standardized distance to the
+    nearest good example.
 
     Args:
-        cds: The (full) classification Dataset to select from; its meta supplies
-            the ingredient columns and ratings.
-        strategy: Strategy name in negative_ml.core.selection.STRATEGIES.
-        budget: Number of majority sandwiches to keep.
-        seed: Seed forwarded to the (stochastic) strategies.
+        cds: The (full) classification Dataset; its meta supplies the ingredient
+            columns and ratings.
+        idx: Full-dataset row indices of the picked bad sandwiches.
 
     Returns:
-        Frame with columns [strategy, <ingredient columns>, Clean_Rating,
-        dist_to_minority], sorted by dist_to_minority.
+        Frame with the six ingredient columns and Clean_Rating for those rows.
     """
-    idx = STRATEGIES[strategy](cds, budget, seed=seed)
     cols = sandwiches.INGREDIENT_COLS + [sandwiches.CLEAN_RATING_COL]
-    table = cds.meta.iloc[idx][cols].reset_index(drop=True)
-    table.insert(0, "strategy", strategy)
-    table["dist_to_minority"] = selviz.nearest_minority_distance(cds, idx).round(2)
-    return table.sort_values("dist_to_minority").reset_index(drop=True)
-
-
-def selection_examples_frame(cds: Dataset, budget: int) -> pd.DataFrame:
-    """Stack selection_example_table across the budget-varying strategies."""
-    frames = [
-        selection_example_table(cds, strategy, budget) for strategy in BUDGET_VARYING
-    ]
-    return pd.concat(frames, ignore_index=True)
+    return cds.meta.iloc[idx][cols].reset_index(drop=True)
 
 
 def generate() -> None:
@@ -234,10 +194,15 @@ def generate() -> None:
 
     # The "what each strategy keeps" tables select from the whole menu and so do
     # not depend on the split; build them once.
-    save_frame(selection_examples_frame(cds, EXAMPLE_BUDGET), "selection_examples")
+    save_frame(
+        selviz.selection_examples_frame(
+            cds, EXAMPLE_BUDGET, describe=sandwich_example_columns
+        ),
+        "selection_examples",
+    )
 
     selection_frames, sat_frames, sat_prop_frames = [], [], []
-    for split_name, sp in build_splits(cds).items():
+    for split_name, sp in sandwiches.build_splits(cds).items():
         if len(set(sp.y_test.tolist())) < 2:
             logger.warning(
                 f"  [{split_name}] held-out test set is single-class; "

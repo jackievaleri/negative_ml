@@ -1,6 +1,7 @@
 """Tests for the experiment runners (saturation, selection)."""
 
 import numpy as np
+import pandas as pd
 
 from negative_ml.core.dataset import Dataset
 from negative_ml.core.experiment import (
@@ -104,9 +105,15 @@ def test_cross_dataset_split_uses_test_dataset():
 
 def test_season_split_from_dataset_holds_out_season():
     """The season EvalSplit trains on the other seasons, tests on the held-out one."""
-    ds = make_dataset(n=60)
-    seasons = np.where(np.arange(ds.n_samples) % 3 == 0, "S5", "S1")
-    sp = season_split_from_dataset(ds, seasons=seasons, test_season="S5", name="season")
+    base = make_dataset(n=60)
+    seasons = np.where(np.arange(base.n_samples) % 3 == 0, "S5", "S1")
+    ds = Dataset(
+        X=base.X,
+        y=base.y,
+        task="classification",
+        meta=pd.DataFrame({"Season": seasons}),
+    )
+    sp = season_split_from_dataset(ds, test_season="S5", name="season")
     n_test = int((seasons == "S5").sum())
     assert sp.name == "season"
     assert len(sp.y_test) == n_test

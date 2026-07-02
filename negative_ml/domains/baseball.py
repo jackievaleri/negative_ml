@@ -33,6 +33,7 @@ meta.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -41,6 +42,12 @@ from pybaseball import statcast
 
 from negative_ml.core.config import RAW_DATA_DIR
 from negative_ml.core.dataset import Dataset
+from negative_ml.core.experiment import (
+    EvalSplit,
+    cross_dataset_split,
+    park_split_from_dataset,
+    split_from_dataset,
+)
 
 # Default Statcast pull: the full 2024 MLB regular season.
 DEFAULT_START = "2024-03-20"
@@ -146,12 +153,16 @@ def load(
     return featurize(events, binary=binary, target=target)
 
 
+@lru_cache(maxsize=None)
 def load_season(year: int, target: str = "home_run", binary: bool = True) -> Dataset:
     """Load a full MLB season by year (see SEASONS).
 
     Convenience wrapper over load that resolves a season's date range, so
     callers say load_season(2023, target="triple") rather than repeating the
-    Statcast start/end dates.
+    Statcast start/end dates. The result is memoized per (year, target, binary):
+    a single script run asks for the same season several times (across EDA,
+    performance, leakage, and downselection figures), and each call would
+    otherwise re-read the season parquet and re-featurize it from scratch.
 
     Args:
         year: Season year present in SEASONS (2023 or 2024).
@@ -159,7 +170,7 @@ def load_season(year: int, target: str = "home_run", binary: bool = True) -> Dat
         binary: Binary target-vs-rest framing if True, else 5-class.
 
     Returns:
-        The featurized Dataset for that season.
+        The featurized Dataset for that season (shared across repeat calls).
     """
     if year not in SEASONS:
         raise ValueError(
@@ -167,6 +178,29 @@ def load_season(year: int, target: str = "home_run", binary: bool = True) -> Dat
         )
     start, end = SEASONS[year]
     return load(binary=binary, start=start, end=end, target=target)
+
+
+def build_splits(ds_train: Dataset, ds_test: Dataset) -> dict[str, EvalSplit]:
+    """The three baseball evaluation regimes keyed by name.
+
+    random is a stratified holdout within the training season; hard trains on the
+    full training season and tests on the full held-out season (a chronological
+    cross-season shift); park holds the quirky outlier ballparks (carried in
+    ds_train.groups) entirely out of training (a park-factor shift). Shared by
+    every baseball script so the regimes are defined once.
+
+    Args:
+        ds_train: The training-season Dataset (its groups hold the ballpark).
+        ds_test: The held-out-season Dataset used for the hard split.
+
+    Returns:
+        Mapping of split name to its EvalSplit.
+    """
+    return {
+        "random": split_from_dataset(ds_train, name="random"),
+        "hard": cross_dataset_split(ds_train, ds_test, name="hard"),
+        "park": park_split_from_dataset(ds_train, name="park"),
+    }
 
 
 def fetch_statcast(start: str, end: str) -> pd.DataFrame:

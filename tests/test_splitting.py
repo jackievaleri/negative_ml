@@ -1,6 +1,7 @@
 """Tests for negative_ml.core.splitting (random, scaffold, ballpark, season)."""
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from negative_ml.core.dataset import Dataset
@@ -77,36 +78,36 @@ def test_ballpark_split_unknown_parks_raise():
         ballpark_split(ds, test_parks=["NYY"])
 
 
-def seasoned_dataset() -> tuple[Dataset, np.ndarray]:
-    """A tiny dataset with a per-row season label (carried separately from groups)."""
+def seasoned_dataset() -> Dataset:
+    """A tiny dataset whose meta carries a per-row season label."""
     seasons = np.array(["S1", "S2", "S1", "S3", "S2", "S3"])
-    ds = Dataset(
+    return Dataset(
         X=np.arange(12).reshape(6, 2),
         y=np.array([0, 1, 0, 1, 0, 1]),
         task="classification",
+        meta=pd.DataFrame({"Season": seasons}),
     )
-    return ds, seasons
 
 
 def test_season_split_holds_out_named_season():
     """Every row in the held-out season lands in test; everything else in train."""
-    ds, seasons = seasoned_dataset()
-    train_idx, test_idx = season_split(ds, seasons, test_season="S2")
+    ds = seasoned_dataset()
+    train_idx, test_idx = season_split(ds, test_season="S2")
     assert sorted(test_idx) == [1, 4]  # the two S2 rows
     assert sorted(train_idx) == [0, 2, 3, 5]
-    assert set(seasons[test_idx]) == {"S2"}
+    assert set(np.asarray(ds.meta["Season"])[test_idx]) == {"S2"}
     assert set(train_idx).isdisjoint(test_idx)
 
 
 def test_season_split_unknown_season_raises():
     """A season that matches no row fails loudly instead of emptying the test set."""
-    ds, seasons = seasoned_dataset()
+    ds = seasoned_dataset()
     with pytest.raises(ValueError):
-        season_split(ds, seasons, test_season="S9")
+        season_split(ds, test_season="S9")
 
 
-def test_season_split_misaligned_seasons_raise():
-    """Season labels that do not line up with the dataset rows fail loudly."""
-    ds, _ = seasoned_dataset()
+def test_season_split_requires_season_meta():
+    """A dataset without the season meta column fails loudly instead of guessing."""
+    ds = Dataset(X=np.zeros((4, 2)), y=np.zeros(4), task="classification")
     with pytest.raises(ValueError):
-        season_split(ds, np.array(["S1", "S2"]), test_season="S1")
+        season_split(ds, test_season="S1")

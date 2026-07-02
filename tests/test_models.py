@@ -1,22 +1,21 @@
 """Tests for negative_ml's machine learning models."""
 
 import numpy as np
+import pytest
+from sklearn.linear_model import LogisticRegression, Ridge, RidgeClassifier
 
 from negative_ml.models import make_model
+from negative_ml.models.baseline import CorrelationModel
 
 
 def test_make_model_rejects_unknown_kind():
     """An unsupported model family raises rather than silently degrading."""
-    import pytest
-
     with pytest.raises(ValueError):
         make_model("classification", kind="randomforest")
 
 
 def test_correlation_kind_builds_baseline():
     """kind='correlation' returns the single-feature negative-control estimator."""
-    from negative_ml.models.baseline import CorrelationModel
-
     model = make_model("classification", kind="correlation", feature_index=2)
     assert isinstance(model, CorrelationModel)
     assert model.feature_index == 2
@@ -55,8 +54,6 @@ def test_regressor_is_available():
 
 def test_logistic_kind_builds_balanced_classifier():
     """kind='logistic' builds a fitable LogisticRegression and forwards class_weight."""
-    from sklearn.linear_model import LogisticRegression
-
     rng = np.random.default_rng(0)
     X = rng.normal(size=(120, 4))
     y = (X[:, 0] > 0).astype(int)
@@ -73,8 +70,6 @@ def test_logistic_kind_builds_balanced_classifier():
 
 def test_ridge_kind_builds_regressor():
     """kind='ridge' builds a fitable Ridge regressor for the regression task."""
-    from sklearn.linear_model import Ridge
-
     rng = np.random.default_rng(0)
     X = rng.normal(size=(60, 3))
     y = X[:, 0] * 2.0
@@ -86,8 +81,6 @@ def test_ridge_kind_builds_regressor():
 
 def test_ridge_kind_builds_classifier():
     """kind='ridge' builds a fitable RidgeClassifier for the classification task."""
-    from sklearn.linear_model import RidgeClassifier
-
     rng = np.random.default_rng(0)
     X = rng.normal(size=(120, 4))
     y = (X[:, 0] > 0).astype(int)
@@ -102,7 +95,5 @@ def test_ridge_kind_builds_classifier():
 
 def test_logistic_kind_rejects_regression_task():
     """kind='logistic' is classification-only and rejects the regression task."""
-    import pytest
-
     with pytest.raises(ValueError):
         make_model("regression", kind="logistic")
