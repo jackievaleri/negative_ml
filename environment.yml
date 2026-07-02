@@ -26,6 +26,7 @@ dependencies:
 - seaborn
 - xgboost
 # Utilities
+- loguru
 - pyprojroot
 - python-dotenv
 # CLI development

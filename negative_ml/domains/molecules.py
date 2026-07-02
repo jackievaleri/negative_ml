@@ -4,11 +4,11 @@
 ~97% inactive (majority) and ~3% active (minority). Molecules are featurized
 with chemical fingerprints for the XGBoost model (the GNN variant is out of
 scope here). Scaffold information is extracted so that
-:func:`negative_ml.splitting.scaffold_split` can hold out entire structural
+negative_ml.core.splitting.scaffold_split can hold out entire structural
 families to test generalization under distribution shift.
 
-Heavy chem dependencies (``rdkit``) are imported lazily inside the functions
-so that simply importing this module stays cheap.
+The loaders here are stubs; the chem dependency (rdkit) is imported at the top
+of this module once they are implemented.
 """
 
 from __future__ import annotations
@@ -17,20 +17,20 @@ from pathlib import Path
 
 import numpy as np
 
-from negative_ml.domains.base import Dataset
+from negative_ml.core.dataset import Dataset
 
 
 def load(path: str | Path | None = None) -> Dataset:
-    """Load the antibacterial screening dataset as a classification ``Dataset``.
+    """Load the antibacterial screening dataset as a classification Dataset.
 
     Args:
         path: Path to the raw screening file (SMILES + activity label). Defaults
-            to ``data/raw`` per :mod:`negative_ml.config`.
+            to data/raw per negative_ml.core.config.
 
     Returns:
-        A ``Dataset`` with fingerprint features, binary activity labels
-        (1 == active), Bemis-Murcko scaffold ids in ``groups``, and the raw
-        SMILES/identifiers in ``meta``.
+        A Dataset with fingerprint features, binary activity labels
+        (1 == active), Bemis-Murcko scaffold ids in groups, and the raw
+        SMILES/identifiers in meta.
     """
     raise NotImplementedError
 
@@ -48,7 +48,7 @@ def compute_fingerprints(
         n_bits: Length of the folded bit vector.
 
     Returns:
-        Binary fingerprint matrix, shape ``(len(smiles), n_bits)``.
+        Binary fingerprint matrix, shape (len(smiles), n_bits).
     """
     raise NotImplementedError
 

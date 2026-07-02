@@ -19,6 +19,19 @@ quiet = false
 whitelist-regex = []
 color = true
 
+[tool.pydoclint]
+# Validate Google-style docstrings against their signatures. The codebase uses
+# Google style throughout (see AGENTS.md), where Args/Returns/Raises sections
+# are optional. Enforce that documented arguments match the signature, but do
+# not require a Raises section for every raise or an __init__ docstring to be
+# merged into the class.
+style = "google"
+arg-type-hints-in-docstring = false
+check-return-types = false
+check-yield-types = false
+skip-checking-raises = true
+allow-init-docstring = true
+
 [tool.pytest.ini_options]
 addopts = "-v --cov --cov-report term-missing"
 testpaths = [
@@ -52,15 +65,14 @@ dependencies = [
     "numpy",
     "xgboost",
     "typer",
+    "loguru",
+    "pybaseball",
 ]
 readme = "README.md"
 
 [project.optional-dependencies]
 molecules = [
     "rdkit",
-]
-baseball = [
-    "pybaseball",
 ]
 tests = [
     "pytest"

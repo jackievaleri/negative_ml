@@ -1,8 +1,8 @@
 """Custom CLI for negative_ml — the single entry point for every experiment.
 
 Typer app exposing the experiment runners. The heavy lifting lives in
-:mod:`negative_ml.experiments`; these commands just parse arguments, load a
-domain (via :mod:`negative_ml.runner`), build a model, run the experiment, and
+negative_ml.experiments; these commands just parse arguments, load a
+domain (via negative_ml.runner), build a model, run the experiment, and
 write results. See https://typer.tiangolo.com for the framework.
 
     negative_ml prepare --all
@@ -16,8 +16,13 @@ import typer
 
 from negative_ml.experiments import saturation as saturation_exp
 from negative_ml.experiments import selection as selection_exp
-from negative_ml.models import make_model
-from negative_ml.runner import DOMAIN_LOADERS, load_domain, results_path
+from negative_ml.models import model_factory
+from negative_ml.runner import (
+    DEFAULT_BUDGETS,
+    DOMAIN_LOADERS,
+    load_domain,
+    metrics_path,
+)
 
 app = typer.Typer(help="Class-imbalance experiments across three domains.")
 
@@ -36,7 +41,7 @@ def prepare(
     domain: str = typer.Argument(None),
     all_domains: bool = typer.Option(False, "--all"),
 ) -> None:
-    """Fetch and cache featurized data for one domain or ``--all`` (plan.md 3)."""
+    """Fetch and cache featurized data for one domain or --all (plan.md 3)."""
     names = list(DOMAIN_LOADERS) if all_domains else [domain]
     for name in names:
         loader, _ = DOMAIN_LOADERS[name]
@@ -49,24 +54,43 @@ def saturation(domain: str, scaffold: bool = False) -> None:
     dataset, task = load_domain(domain)
     results = saturation_exp.fix_minority_vary_majority(
         dataset,
-        model_factory=lambda: make_model(task),
-        majority_sizes=[],  # TODO: fill in budgets per domain
+        model_factory=model_factory(task),
+        majority_sizes=DEFAULT_BUDGETS[domain],
         scaffold_split=scaffold,
     )
-    results.to_csv(results_path("saturation", domain), index=False)
+    results.to_csv(metrics_path("saturation", domain), index=False)
 
 
 @app.command()
-def selection(domain: str, budget: int, scaffold: bool = False) -> None:
-    """Run the fixed-budget selection comparison for a domain (plan.md 4.2)."""
+def selection(
+    domain: str,
+    budget: int = 0,
+    sweep: bool = False,
+    scaffold: bool = False,
+) -> None:
+    """Run the fixed-budget selection comparison for a domain (plan.md 4.2).
+
+    Pass --sweep to sweep the per-domain default budgets and emit the
+    strategy-vs-size curves; otherwise compare strategies at a single budget.
+    """
     dataset, task = load_domain(domain)
-    results = selection_exp.compare_strategies(
-        dataset,
-        model_factory=lambda: make_model(task),
-        budget=budget,
-        scaffold_split=scaffold,
-    )
-    results.to_csv(results_path("selection", domain), index=False)
+    factory = model_factory(task)
+    if sweep:
+        results = selection_exp.budget_sweep(
+            dataset,
+            model_factory=factory,
+            budgets=DEFAULT_BUDGETS[domain],
+            scaffold_split=scaffold,
+        )
+    else:
+        results = selection_exp.compare_strategies(
+            dataset,
+            model_factory=factory,
+            budget=budget,
+            scaffold_split=scaffold,
+            include_weighted=True,
+        )
+    results.to_csv(metrics_path("selection", domain), index=False)
 
 
 if __name__ == "__main__":

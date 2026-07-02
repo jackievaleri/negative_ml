@@ -1,18 +1,23 @@
-"""Shared wiring for the CLI experiment commands.
+"""Shared wiring for the CLI experiment commands and reproducible scripts.
 
 Maps a domain name to its loader and ML task, and standardizes where result
-frames are written, so :mod:`negative_ml.cli` stays a thin argument-parsing
+frames and figures are written, so negative_ml.cli stays a thin argument-parsing
 layer. Lives inside the package (rather than next to the entry points) so it is
-importable as ``negative_ml.runner`` from anywhere.
+importable as negative_ml.runner from anywhere.
+
+Outputs are organized by domain and artifact type under results/:
+
+    results/<domain>/data/<category>/<name>     - saved data (csv, npz)
+    results/<domain>/figures/<category>/<name>  - saved figures (png)
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from negative_ml.config import RESULTS_DIR
+from negative_ml.core.config import RESULTS_DIR
+from negative_ml.core.dataset import Dataset
 from negative_ml.domains import baseball, molecules, sandwiches
-from negative_ml.domains.base import Dataset
 
 #: Map a CLI domain name to its loader and ML task.
 DOMAIN_LOADERS = {
@@ -21,15 +26,23 @@ DOMAIN_LOADERS = {
     "sandwiches": (sandwiches.load, "regression"),
 }
 
+#: Default majority-class budgets / sizes swept per domain (plan.md 4.1/4.2).
+#: Values above a domain's available majority count are clamped at run time.
+DEFAULT_BUDGETS = {
+    "molecules": [250, 500, 1000, 2000, 4000, 8000],
+    "baseball": [250, 500, 1000, 2000, 4000, 8000, 16000],
+    "sandwiches": [50, 100, 200, 400, 800],
+}
+
 
 def load_domain(name: str) -> tuple[Dataset, str]:
-    """Load a domain ``Dataset`` and return ``(dataset, task)``.
+    """Load a domain Dataset and return (dataset, task).
 
     Args:
-        name: One of :data:`DOMAIN_LOADERS`.
+        name: One of DOMAIN_LOADERS.
 
     Returns:
-        The loaded ``Dataset`` and its task string.
+        The loaded Dataset and its task string.
     """
     if name not in DOMAIN_LOADERS:
         raise ValueError(f"Unknown domain {name!r}; choose from {list(DOMAIN_LOADERS)}")
@@ -37,15 +50,47 @@ def load_domain(name: str) -> tuple[Dataset, str]:
     return loader(), task
 
 
-def results_path(experiment: str, domain: str) -> Path:
-    """Standard output path for an experiment's results frame.
+def data_path(domain: str, category: str, name: str, suffix: str = ".csv") -> Path:
+    """Standard path for a saved data artifact, creating parent directories.
 
     Args:
-        experiment: Experiment name (e.g. ``"saturation"``).
-        domain: Domain name (e.g. ``"molecules"``).
+        domain: Domain name (e.g. "baseball").
+        category: Artifact type (e.g. "predictions", "metrics", "grids").
+        name: Artifact stem without the extension.
+        suffix: File extension, including the dot (".csv" by default).
 
     Returns:
-        Path under ``results/`` (the directory is created if needed).
+        Path under results/<domain>/data/<category>/.
     """
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    return RESULTS_DIR / f"{experiment}_{domain}.csv"
+    path = RESULTS_DIR / domain / "data" / category / f"{name}{suffix}"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def metrics_path(experiment: str, domain: str) -> Path:
+    """Standard path for an experiment's results frame under data/metrics.
+
+    Args:
+        experiment: Experiment name (e.g. "saturation", "selection").
+        domain: Domain name (e.g. "baseball").
+
+    Returns:
+        Path to results/<domain>/data/metrics/<experiment>.csv.
+    """
+    return data_path(domain, "metrics", experiment, ".csv")
+
+
+def figure_path(domain: str, category: str, name: str) -> Path:
+    """Standard path for a saved figure, creating parent directories.
+
+    Args:
+        domain: Domain name (e.g. "baseball").
+        category: Figure group (e.g. "eda", "performance", "saturation").
+        name: Figure filename including the .png extension.
+
+    Returns:
+        Path under results/<domain>/figures/<category>/.
+    """
+    path = RESULTS_DIR / domain / "figures" / category / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path

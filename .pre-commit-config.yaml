@@ -1,16 +1,12 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v6.0.0
     hooks:
       - id: check-yaml
       - id: end-of-file-fixer
       - id: trailing-whitespace
-  - repo: https://github.com/kynan/nbstripout
-    rev: 0.6.1
-    hooks:
-      - id: nbstripout
   - repo: https://github.com/econchick/interrogate
-    rev: 1.5.0
+    rev: 1.7.0
     hooks:
       - id: interrogate
         args: [-c, pyproject.toml]
@@ -18,7 +14,7 @@ repos:
         # v81. Pin setuptools below that so the hook env keeps pkg_resources.
         additional_dependencies: ["setuptools<81"]
   - repo: https://github.com/jsh9/pydoclint
-    rev: 0.3.8
+    rev: 0.8.7
     hooks:
       - id: pydoclint
         args:
@@ -26,7 +22,7 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff is the sole linter + formatter (replaces black/isort/flake8/pylint).
     # >=0.1.9 for the `[tool.ruff.lint]` table and the `ruff-format` hook.
-    rev: v0.1.9
+    rev: v0.15.19
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix, --exclude, nbconvert_config.py]
