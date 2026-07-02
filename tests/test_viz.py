@@ -9,6 +9,7 @@ import pandas as pd
 
 from negative_ml.core.dataset import Dataset
 from negative_ml.viz import diagnostics as diag
+from negative_ml.viz import sandwiches as swviz
 from negative_ml.viz import selection_examples as selviz
 from negative_ml.viz.results import METRIC_YLIM, apply_metric_ylim
 
@@ -103,3 +104,47 @@ def test_plot_selection_examples_smoke():
     fig = selviz.plot_selection_examples(ds, examples, label="home run")
     assert fig is not None
     plt.close("all")
+
+
+def test_sandwich_viz_helpers_smoke():
+    """Each sandwich EDA helper draws onto an Axes without error."""
+    rng = np.random.default_rng(0)
+    ratings = rng.uniform(0, 10, size=40)
+    episodes = np.arange(40)
+    values = rng.choice(["Swiss", "Cheddar", "Brie"], size=40)
+
+    for draw in (
+        lambda ax: swviz.plot_rating_distribution(ratings, ax),
+        lambda ax: swviz.plot_rating_timeline(episodes, ratings, ax),
+        lambda ax: swviz.plot_ingredient_violin(values, ratings, ax, "Cheese"),
+    ):
+        _, ax = plt.subplots()
+        assert draw(ax) is ax
+    _, ax = plt.subplots()
+    counts = [("Swiss", 18), ("Cheddar", 12), ("Brie", 10)]
+    assert swviz.plot_ingredient_frequency(counts, ax, "Cheese") is ax
+    plt.close("all")
+
+
+def test_sandwich_classification_viz_helpers_smoke():
+    """The good-vs-bad classifier viz helpers draw onto an Axes without error."""
+    fpr = np.array([0.0, 0.5, 1.0])
+    tpr = np.array([0.0, 0.7, 1.0])
+    _, ax = plt.subplots()
+    assert swviz.plot_roc_curves([("Ridge classifier", fpr, tpr, 0.58)], ax) is ax
+
+    _, ax = plt.subplots()
+    matrix = np.array([[40, 17], [12, 30]])
+    assert swviz.plot_confusion(matrix, ax, class_labels=("bad", "good")) is ax
+
+    _, ax = plt.subplots()
+    features = ["Sauce=Ketchup", "Bread=Rye", "Main=Ham"]
+    importances = np.array([0.21, 0.15, 0.09])
+    assert swviz.plot_feature_importance(features, importances, ax) is ax
+    plt.close("all")
+
+
+def test_sandwich_to_float():
+    """to_float coerces numbers and maps non-numeric values to NaN."""
+    assert swviz.to_float("3.5") == 3.5
+    assert np.isnan(swviz.to_float("not a number"))

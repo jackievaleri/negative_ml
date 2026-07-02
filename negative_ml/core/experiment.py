@@ -19,11 +19,17 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
+from scipy.special import expit
 
 from negative_ml.core import eval as ev
 from negative_ml.core.config import OUTLIER_BALLPARKS, RANDOM_SEED
 from negative_ml.core.dataset import Dataset
-from negative_ml.core.splitting import ballpark_split, random_split, scaffold_split
+from negative_ml.core.splitting import (
+    ballpark_split,
+    random_split,
+    scaffold_split,
+    season_split,
+)
 
 #: A model factory: (**kwargs) -> unfitted estimator (see models.make_model).
 #: Accepting kwargs lets callers pass e.g. class_weight for the H4 baseline.
@@ -108,6 +114,39 @@ def park_split_from_dataset(
     )
 
 
+def season_split_from_dataset(
+    dataset: Dataset,
+    test_season: str,
+    season_col: str = "Season",
+    name: str = "season",
+) -> EvalSplit:
+    """Build an EvalSplit that holds one entire season out of training.
+
+    Wraps season_split into an EvalSplit (parallel to park_split_from_dataset): the
+    train pool is every other season and the test set is the held-out season, so
+    this isolates a season distribution shift the way the scaffold split isolates a
+    held-out filling family. The per-row season labels are read from the dataset's
+    own meta (they live there rather than in groups, which carries the scaffold
+    family), so the split stays aligned with the dataset and needs no side array.
+
+    Args:
+        dataset: Dataset whose meta carries the per-row season column.
+        test_season: The season value to hold out for testing.
+        season_col: Name of the meta column holding each row's season.
+        name: Split-regime label carried into result frames.
+
+    Returns:
+        An EvalSplit whose train pool excludes the held-out season.
+    """
+    train_idx, test_idx = season_split(dataset, test_season, season_col)
+    return EvalSplit(
+        train_ds=dataset.subset(train_idx),
+        X_test=dataset.X[test_idx],
+        y_test=dataset.y[test_idx],
+        name=name,
+    )
+
+
 def cross_dataset_split(
     train_dataset: Dataset,
     test_dataset: Dataset,
@@ -143,6 +182,31 @@ def resolve_split(
     return split_from_dataset(dataset, scaffold=scaffold, seed=seed)
 
 
+def positive_scores(model: object, X: np.ndarray) -> np.ndarray:
+    """Positive-class scores in [0, 1] from a fitted classifier.
+
+    Returns predict_proba for the positive class when the estimator exposes it.
+    Otherwise the decision_function margin is squashed through a logistic sigmoid,
+    which is strictly monotonic (so the rank-based AUROC and AUPRC are unchanged)
+    and maps the classifier's own boundary at margin 0 to a score of 0.5. This lets
+    estimators without calibrated probabilities (e.g. a RidgeClassifier pipeline)
+    flow through the same experiment plumbing as the XGBoost models, including the
+    F1 metric: compute_metrics binarizes at DEFAULT_THRESHOLD (0.5), which now
+    matches the estimator's hard predictions instead of thresholding an unbounded
+    margin at an arbitrary cutoff.
+
+    Args:
+        model: A fitted classifier exposing predict_proba or decision_function.
+        X: Features to score.
+
+    Returns:
+        A 1-D array of positive-class scores in [0, 1] aligned with X.
+    """
+    if hasattr(model, "predict_proba"):
+        return model.predict_proba(X)[:, 1]
+    return expit(np.asarray(model.decision_function(X), dtype=float))
+
+
 def fit_score(
     train_ds: Dataset,
     train_rows: np.ndarray,
@@ -167,5 +231,4 @@ def fit_score(
     rows = np.asarray(train_rows)
     model = model_factory(**model_kwargs)
     model.fit(train_ds.X[rows], train_ds.y[rows])
-    y_score = model.predict_proba(X_test)[:, 1]
-    return ev.compute_metrics(y_test, y_score)
+    return ev.compute_metrics(y_test, positive_scores(model, X_test))

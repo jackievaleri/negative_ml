@@ -24,7 +24,7 @@ from sklearn.metrics import (
 )
 
 from negative_ml.core import eval as ev
-from negative_ml.core.config import VIZ_MAX_POINTS
+from negative_ml.core.config import DEFAULT_THRESHOLD, VIZ_MAX_POINTS
 from negative_ml.core.dataset import Dataset
 from negative_ml.viz.style import (
     DARK2,
@@ -224,7 +224,7 @@ def plot_confusion(
     y_true: ArrayLike,
     y_score: ArrayLike,
     ax: plt.Axes,
-    threshold: float = 0.5,
+    threshold: float = DEFAULT_THRESHOLD,
     pos_label: str = "HR",
 ) -> plt.Axes:
     """Confusion matrix at a probability threshold.

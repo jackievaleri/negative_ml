@@ -41,8 +41,8 @@ under a fixed budget*, and *how performance changes as we vary that budget*.
 ## 3. Datasets
 
 Three deliberately different domains are used so the same question can be tested
-across a classification problem, a structured-geometry problem, and a regression
-problem.
+across a large-scale screening problem, a structured-geometry problem, and a tiny,
+sparsely sampled combinatorial problem.
 
 ### 3.1 Antibacterial Screening — Core Case Study
 
@@ -84,7 +84,7 @@ reproduce that approach and compare it to other majority-class selection
 strategies. Serves as a geometric, intuitive example for a general data science
 audience.
 
-### 3.3 "Roll for Sandwich" Ratings — Skewed Regression, Sparse Combinatorics
+### 3.3 "Roll for Sandwich" Ratings — Good-vs-Bad Classification, Sparse Combinatorics
 
 - Ingredient combinations (bread, meat, cheese, toppings, roughage, etc.)
 - Human rating from 0–10
@@ -92,12 +92,14 @@ audience.
 - Only ~11% rated below 3
 - Large space of possible combinations, sparsely explored
 
-This reframes the central question in a **regression** setting where "negative"
-examples are low-rated sandwiches:
+The 0–10 ratings are recast as a **good-vs-bad classification** problem: a
+sandwich is "good" when its rating is at or above 9 and "bad" otherwise. The
+ratings skew high, but a 9-or-10 is uncommon, so the **good** sandwiches are the
+rare, high-value minority and the positive class of interest:
 
-- Do we need many high-scoring examples to learn a useful ranking model?
-- Could active selection have reduced the number of highly rated sandwiches
-  that had to be tasted?
+- Do we need many bad (majority) examples to learn to pick out the good ones?
+- Could active selection have reduced the number of sandwiches that had to be
+  tasted?
 
 A cross-domain example for intuition rather than deep technical focus.
 
@@ -160,10 +162,9 @@ majority-class data improves generalization under distribution shift:
 **Matched pairs across domains.** A recurring evaluation idea: pairs of examples
 that are highly similar in features but differ in outcome. In chemistry, matched
 molecular pairs differing by a small structural change that flips activity. In
-sandwiches, nearly identical ingredient sets with different ratings. In baseball,
-batted balls with similar exit velocity and launch angle but different outcomes.
-Performance on these pairs measures whether a model captures meaningful decision
-boundaries rather than broad class separation.
+baseball, batted balls with similar exit velocity and launch angle but different
+outcomes. Performance on these pairs measures whether a model captures meaningful
+decision boundaries rather than broad class separation.
 
 ### 4.4 Active Learning Simulation (Budget Analysis) — Bonus
 
@@ -254,13 +255,14 @@ geometry is intuitive: rare but desirable events like home runs occupy small
 regions of feature space. This dataset lets us examine majority-class selection
 strategies such as retaining "near-miss" examples that lie close to rare events.
 
-**3) "Roll for Sandwich" ratings (skewed regression, sparse combinatorics).**
+**3) "Roll for Sandwich" ratings (good-vs-bad classification, sparse combinatorics).**
 Ingredient combinations (bread, meat, cheese, toppings) and a human rating from
 0–10. Roughly half of sandwiches score above 7, while very low scores are rare
 (only ~11% have scores < 3). The space of possible combinations is large and
-sparsely explored. This is a regression setting where "negative" examples are
-low-rated sandwiches, and the question becomes whether many excellent example
-sandwiches are necessary to learn a useful ranking model.
+sparsely explored. The ratings are recast as good-vs-bad classification (good =
+rating ≥ 9), so the rare excellent sandwiches are the high-value minority, and the
+question becomes whether many bad (majority) examples are necessary to learn to
+pick out the good ones.
 
 Across all three datasets, I run two main experiments. First, **saturation
 experiments**: hold the minority or high-value examples fixed, and gradually
@@ -270,11 +272,8 @@ examples but vary how they are chosen — random undersampling, hard examples ne
 the decision boundary, and diversity-oriented selection that maximizes coverage
 of feature space.
 
-Evaluation includes global metrics such as AUROC, AUPRC, and F1. We also use
-**matched pairs**: pairs of examples that are highly similar in features but
-differ in outcome, measuring whether a model captures meaningful decision
-boundaries rather than broad class separation. I also report top-k metrics
-(precision@k / enrichment) to reflect practical decision-making scenarios.
+Evaluation includes global metrics such as AUROC, AUPRC, and F1, alongside top-k
+metrics (precision@k / enrichment) to reflect practical decision-making scenarios.
 
 **Bonus (ongoing):** a brief extension to active learning — if we can choose
 which examples to label next, can we reach similar performance with fewer

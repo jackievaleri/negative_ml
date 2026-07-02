@@ -47,6 +47,29 @@ def standardize(X: np.ndarray) -> np.ndarray:
     return (X - mu) / sd
 
 
+def standardized_features(dataset: Dataset) -> np.ndarray:
+    """Z-scored feature matrix for a dataset, cached on the dataset instance.
+
+    Every distance-based selection strategy standardizes the same full feature
+    matrix, and a single compare_strategies call runs several strategies across
+    seeds and budgets on one fixed training pool. Caching the z-scores on the
+    Dataset the first time avoids recomputing them on every strategy call; the
+    cache is keyed to the exact array, so a fresh subset (which builds a new
+    Dataset) recomputes its own.
+
+    Args:
+        dataset: Dataset whose features to standardize.
+
+    Returns:
+        The z-scored feature matrix (the same array is returned on repeat calls).
+    """
+    cached = getattr(dataset, "_standardized_X", None)
+    if cached is None or cached.shape != dataset.X.shape:
+        cached = standardize(dataset.X)
+        dataset._standardized_X = cached
+    return cached
+
+
 def clamp(budget: int | None, n_available: int) -> int:
     """Clamp a requested budget to [0, n_available]."""
     if budget is None:
@@ -108,7 +131,7 @@ def hard_examples(
         # No boundary to measure against; fall back to a deterministic head.
         return np.sort(majority[:k])
 
-    Xz = standardize(dataset.X)
+    Xz = standardized_features(dataset)
     nn = NearestNeighbors(n_neighbors=HARDNESS_N_NEIGHBORS).fit(Xz[minority])
     dist, _ = nn.kneighbors(Xz[majority])
     dist = dist.ravel()
@@ -145,7 +168,7 @@ def diversity_selection(
     if k >= len(pool):
         return np.sort(pool)
 
-    Xz = standardize(dataset.X)[pool]
+    Xz = standardized_features(dataset)[pool]
     n = len(pool)
     # Greedy k-center: start from a random point, repeatedly add the point
     # farthest from the current selection (vectorized min-distance update).
@@ -180,7 +203,7 @@ def density_aware_diversity(
     if k >= len(majority):
         return np.sort(majority)
 
-    Xz = standardize(dataset.X)[majority]
+    Xz = standardized_features(dataset)[majority]
     km = MiniBatchKMeans(n_clusters=k, random_state=seed, n_init=KMEANS_N_INIT)
     labels = km.fit_predict(Xz)
     centers = km.cluster_centers_

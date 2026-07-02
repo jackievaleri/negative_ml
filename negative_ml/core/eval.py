@@ -1,15 +1,10 @@
 """Evaluation metrics for the imbalance study (plan.md 4.3).
 
-Three families of metrics, all collected by compute_metrics:
+Two families of metrics, all collected by compute_metrics:
 
     A) Global discrimination - AUROC, AUPRC, F1 at a threshold.
     B) Early retrieval / top-k - precision@k, enrichment factor (the practical
        "we only act on the top predictions" scenario).
-    C) Matched pairs - for highly similar examples with different outcomes, does
-       the model rank them correctly? This probes whether the model captures a
-       meaningful decision boundary rather than broad class separation.
-
-(Activity-cliff identification is intentionally out of scope for now.)
 """
 
 from __future__ import annotations
@@ -88,42 +83,3 @@ def enrichment_factor(y_true: np.ndarray, y_score: np.ndarray, k: int) -> float:
     if base_rate == 0.0:
         return 0.0
     return precision_at_k(y_true, y_score, k) / base_rate
-
-
-# --- C) Matched pairs -----------------------------------------------------
-def matched_pair_accuracy(
-    y_score: np.ndarray,
-    pairs: np.ndarray,
-    y_true: np.ndarray,
-) -> float:
-    """Fraction of similar-but-different-outcome pairs ranked in the right order.
-
-    For each (i, j) pair the higher-labeled example should receive the higher
-    score; ties in the score count as incorrect. Pairs with equal labels are
-    skipped (they have no defined correct order).
-
-    Args:
-        y_score: Model scores for all examples.
-        pairs: (n_pairs, 2) row-index pairs (see e.g.
-            negative_ml.domains.sandwiches.matched_pairs).
-        y_true: Ground-truth labels/targets, used to define the correct order
-            within each pair.
-
-    Returns:
-        Fraction of decided pairs ranked in the correct order (0.0 if no pair
-        has a defined order).
-    """
-    y_score = np.asarray(y_score)
-    y_true = np.asarray(y_true)
-    pairs = np.asarray(pairs)
-    if len(pairs) == 0:
-        return 0.0
-
-    i, j = pairs[:, 0], pairs[:, 1]
-    label_diff = y_true[i] - y_true[j]
-    score_diff = y_score[i] - y_score[j]
-    decided = label_diff != 0
-    if not np.any(decided):
-        return 0.0
-    correct = np.sign(score_diff[decided]) == np.sign(label_diff[decided])
-    return float(np.mean(correct))

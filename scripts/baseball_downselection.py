@@ -47,11 +47,6 @@ import pandas as pd
 from loguru import logger
 
 from negative_ml.core.config import REPO_ROOT
-from negative_ml.core.experiment import (
-    cross_dataset_split,
-    park_split_from_dataset,
-    split_from_dataset,
-)
 from negative_ml.domains import baseball
 from negative_ml.experiments import saturation as sat
 from negative_ml.experiments import selection as sel
@@ -92,20 +87,6 @@ def save_frame(df: pd.DataFrame, experiment: str) -> None:
     logger.info(f"  wrote {path.relative_to(REPO_ROOT)}")
 
 
-def build_splits(ds_train, ds_test):
-    """The three evaluation regimes keyed by name.
-
-    random is a stratified holdout within 2023; hard trains on 2023 and tests on
-    2024 (season shift); park holds quirky outlier ballparks out of training
-    within 2023 (park-factor shift).
-    """
-    return {
-        "random": split_from_dataset(ds_train, name="random"),
-        "hard": cross_dataset_split(ds_train, ds_test, name="hard"),
-        "park": park_split_from_dataset(ds_train, name="park"),
-    }
-
-
 def warn_small_fractions(n_minority: int, target: str, split_name: str) -> None:
     """Flag proportional fractions that leave very few minority training rows."""
     tiny = [f for f in FRACTIONS if max(1, round(n_minority * f)) < 5]
@@ -144,7 +125,7 @@ def generate() -> None:
             f"{ds_test.n_samples:,} balls, {int(ds_test.y.sum()):,} {target}"
         )
 
-        for split_name, sp in build_splits(ds_train, ds_test).items():
+        for split_name, sp in baseball.build_splits(ds_train, ds_test).items():
             n_majority = int(sp.train_ds.majority_mask().sum())
             n_minority = int(sp.train_ds.minority_mask().sum())
             budgets = [b for b in BUDGETS if b < n_majority]
@@ -262,7 +243,9 @@ def make_example_figures() -> None:
                 continue
             logger.info(f"  [{strat}]\n{sub[cols].to_string(index=False)}")
         ds = baseball.load_season(TRAIN_YEAR, target=target)
-        fig = selviz.plot_selection_examples(ds, ex_t, label=target.replace("_", " "))
+        fig = selviz.plot_selection_examples(
+            ds, ex_t, label=target.replace("_", " "), budget=EXAMPLE_BUDGET
+        )
         save_figure(fig, "downselection", f"downselection_examples_{target}.png")
 
 
@@ -270,7 +253,7 @@ def plot() -> None:
     """Rebuild every downselection figure from the saved result frames.
 
     Per (target, split): the selection grid and the two-panel saturation figure.
-    Per target: the strategy split-overlay (random vs. hard) and a proportional-
+    Per target: the strategy split-overlay (random/hard/park) and a proportional-
     saturation split-overlay — the figures that show whether in-distribution gains
     survive the cross-season jump.
     """
@@ -303,10 +286,10 @@ def plot() -> None:
                 fname=f"saturation_curve_{target}_{split_name}.png",
             )
 
-        # Per-target overlays (random vs. hard on one axes).
+        # Per-target overlays (random/hard/park on one axes).
         fig, ax = plt.subplots(figsize=(8.5, 5.5))
         viz.plot_split_overlay(sel_t, "auprc", ax, logx=True)
-        ax.set_title(f"AUPRC vs. size — random vs. hard split ({target})")
+        ax.set_title(f"AUPRC vs. size — across splits ({target})")
         save_figure(fig, "downselection", f"downselection_overlay_{target}.png")
 
         fig, ax = plt.subplots(figsize=(8, 5.5))
@@ -321,7 +304,7 @@ def plot() -> None:
                     d, "auprc", ax, color=color, label=viz.SPLIT_LABEL[split_name]
                 )
         ax.set_xscale("log")
-        ax.set_title(f"Proportional saturation — random vs. hard ({target})")
+        ax.set_title(f"Proportional saturation — across splits ({target})")
         ax.legend(loc="best")
         save_figure(fig, "saturation", f"saturation_overlay_{target}.png")
 

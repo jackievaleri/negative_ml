@@ -18,6 +18,7 @@ dependencies:
 # Standard PyData stack
 - matplotlib
 - numpy
+- openpyxl
 - pandas
 - pyarrow
 - rdkit

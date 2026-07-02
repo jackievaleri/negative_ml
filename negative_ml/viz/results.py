@@ -85,12 +85,26 @@ REFERENCE_STYLE = {
 #: dedicated bar color), never color-coded against strategies, so the selection
 #: "hard" strategy (a color/marker) and the "hard" split (a linestyle)
 #: never collide in one legend.
-SPLIT_LINESTYLE = {"random": "-", "hard": "--", "park": ":"}
-SPLIT_COLOR = {"random": DARK2[0], "hard": DARK2[1], "park": DARK2[2]}
+SPLIT_LINESTYLE = {
+    "random": "-",
+    "hard": "--",
+    "park": ":",
+    "scaffold": "-.",
+    "season": (0, (6, 2)),
+}
+SPLIT_COLOR = {
+    "random": DARK2[0],
+    "hard": DARK2[1],
+    "park": DARK2[2],
+    "scaffold": DARK2[3],
+    "season": DARK2[4],
+}
 SPLIT_LABEL = {
     "random": "random split (within 2023)",
     "hard": "hard split (2023→2024)",
     "park": "park split (outlier parks held out)",
+    "scaffold": "scaffold split (held-out fillings)",
+    "season": "season split (newest season held out)",
 }
 
 
@@ -281,12 +295,15 @@ def plot_split_overlay(
     x: str = "n_train",
     logx: bool = True,
 ) -> plt.Axes:
-    """Overlay the same strategy curves for the random vs. hard split.
+    """Overlay the same strategy curves across every evaluation split present.
 
-    Strategy is encoded by color (reusing STRATEGY_STYLE) and the
-    split by linestyle (solid = random, dashed = hard), so the two
-    dimensions read independently. Answers "do selection strategies that look
-    good in-distribution still help when generalizing to next season?".
+    Strategy is encoded by color (reusing STRATEGY_STYLE) and the split by
+    linestyle (see SPLIT_LINESTYLE, e.g. solid = random, dashed = hard), so the
+    two dimensions read independently. Answers "do selection strategies that look
+    good in-distribution still help when generalizing to a harder split?". The
+    title lists whichever splits actually appear in df, so it stays honest for the
+    baseball (random/hard/park) and sandwich (random/scaffold/season) regimes
+    alike.
 
     Args:
         df: Long-format frame carrying a split column alongside strategy,
@@ -325,7 +342,8 @@ def plot_split_overlay(
     ax.set_xlabel(f"training set size ({x})")
     ax.set_ylabel(METRIC_LABELS.get(metric, metric))
     apply_metric_ylim(ax, metric)
-    ax.set_title(f"{METRIC_LABELS.get(metric, metric)}: random vs. hard split")
+    split_names = " vs. ".join(present_splits) if present_splits else "splits"
+    ax.set_title(f"{METRIC_LABELS.get(metric, metric)}: {split_names} split")
 
     # Two independent legends: strategy (color) and split (linestyle).
     strat_handles = [

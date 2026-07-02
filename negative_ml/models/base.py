@@ -11,6 +11,11 @@ from collections.abc import Callable
 from typing import Any, Protocol
 
 from negative_ml.models.baseline import CorrelationModel
+from negative_ml.models.linear import (
+    logistic_classifier,
+    ridge_classifier,
+    ridge_regressor,
+)
 from negative_ml.models.xgboost import xgb_classifier, xgb_regressor
 
 
@@ -36,10 +41,17 @@ def make_model(
 
     Args:
         task: "classification" or "regression".
-        kind: Model family — "xgboost" (default) or "correlation" (the
-            single-feature negative control, which requires a feature_index).
+        kind: Model family — "xgboost" (default), "ridge" (the L2-regularized
+            linear model behind the good-vs-bad sandwich classifier; a
+            RidgeClassifier for classification and a Ridge regressor for
+            regression), "logistic" (an alternative linear classifier exposing
+            probabilities), or "correlation" (the single-feature negative control,
+            which requires a feature_index).
         class_weight: Optional class weighting to test the "weighting can
             substitute for data" hypothesis (H4) without deleting examples.
+            Forwarded to scikit-learn directly for the logistic classifier
+            (including the string "balanced"); a numeric value becomes XGBoost's
+            scale_pos_weight.
         **params: Extra hyper-parameters forwarded to the estimator.
 
     Returns:
@@ -47,9 +59,21 @@ def make_model(
     """
     if kind == "correlation":
         return CorrelationModel(feature_index=params["feature_index"])
+    if kind == "logistic":
+        if task != "classification":
+            raise ValueError(
+                f"kind='logistic' is a classifier; task must be 'classification', "
+                f"got {task!r}."
+            )
+        return logistic_classifier(class_weight=class_weight, **params)
+    if kind == "ridge":
+        if task == "classification":
+            return ridge_classifier(class_weight=class_weight, **params)
+        return ridge_regressor(**params)
     if kind != "xgboost":
         raise ValueError(
-            f"Unsupported model kind {kind!r}; expected 'xgboost' or 'correlation'."
+            f"Unsupported model kind {kind!r}; expected 'xgboost', 'logistic', "
+            "'ridge', or 'correlation'."
         )
 
     if task == "classification":

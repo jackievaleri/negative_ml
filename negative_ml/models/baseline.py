@@ -17,6 +17,7 @@ negative_ml.core.experiment.fit_score like any other model.
 from __future__ import annotations
 
 import numpy as np
+from scipy.special import expit
 
 
 class CorrelationModel:
@@ -36,7 +37,7 @@ class CorrelationModel:
         self.feature_index = int(feature_index)
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "CorrelationModel":
-        """Store the feature's correlation sign and its signed training range."""
+        """Store the feature's correlation sign and its signed training moments."""
         col = np.asarray(X, dtype=float)[:, self.feature_index]
         y = np.asarray(y, dtype=float)
         if col.std() == 0 or y.std() == 0:
@@ -46,20 +47,22 @@ class CorrelationModel:
         self.corr_ = 0.0 if np.isnan(corr) else corr
         self.sign_ = 1.0 if self.corr_ >= 0 else -1.0
         signed = self.sign_ * col
-        self.lo_ = float(signed.min())
-        self.hi_ = float(signed.max())
+        self.mean_ = float(signed.mean())
+        std = float(signed.std())
+        self.scale_ = std if std > 0 else 1.0
         return self
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        """Return (n, 2) pseudo-probabilities; column 1 is the scaled feature.
+        """Return (n, 2) pseudo-probabilities; column 1 is the squashed feature.
 
-        Out-of-range test values are clipped to [0, 1] so the output stays a
-        valid probability even when the test feature exceeds the training range.
+        The oriented feature is z-scored by its training mean / std and passed
+        through a logistic sigmoid. The sigmoid is strictly monotonic, so the
+        ranking (and hence AUROC / AUPRC) is preserved even for test values beyond
+        the training range -- unlike a linear clip, which would collapse all
+        out-of-range values to a tied 0.0 or 1.0 and distort the ranking under
+        distribution shift. A constant training feature (zero std) maps every row
+        to 0.5.
         """
         signed = self.sign_ * np.asarray(X, dtype=float)[:, self.feature_index]
-        span = self.hi_ - self.lo_
-        if span == 0:
-            p1 = np.full(len(signed), 0.5)
-        else:
-            p1 = np.clip((signed - self.lo_) / span, 0.0, 1.0)
+        p1 = expit((signed - self.mean_) / self.scale_)
         return np.column_stack([1.0 - p1, p1])
