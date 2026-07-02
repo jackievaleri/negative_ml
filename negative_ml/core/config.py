@@ -61,6 +61,24 @@ XGB_DEFAULTS: dict[str, Any] = {
     "n_jobs": -1,
 }
 
+# --- Antibacterial GNN saturation study -----------------------------------
+# Precomputed graph-neural-network results for the gonorrhea antibacterial screen
+# (the core case study, plan.md 3.1), one tidy frame per class-balance regime, read
+# from PROCESSED_DATA_DIR. proportional holds the actives (positives) to ~3% of the
+# dataset as the negative count grows; disproportional trains on the full active
+# pool at every negative budget, so the class ratio grows more skewed with size.
+MOLECULE_GNN_RESULT_FILES = {
+    "proportional": "try_different_negative_datasets_model_class_proportional.csv",
+    "disproportional": (
+        "try_different_negative_datasets_model_class_disproportional.csv"
+    ),
+}
+
+# Size of the full active (positive) pool in the gonorrhea screen. The
+# disproportional frame records only the negative count (all positives are always
+# included), so this recovers its total training size as negatives + positives.
+MOLECULE_GNN_N_POSITIVES = 1017
+
 # --- Domain thresholds ----------------------------------------------------
 # Sandwich ratings are 0-10 and skewed high; the "minority" / class of interest
 # is the rare, high-value "good" sandwich. See plan.md section 3.3.
