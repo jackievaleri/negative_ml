@@ -341,6 +341,19 @@ def plot() -> None:
         fig = viz.plot_selection_grid(sel_s, metrics=METRICS)
         fig.suptitle(f"Majority-class selection — {split_name} split", fontsize=14)
         save_figure(fig, "downselection", f"downselection_grid_{split_name}.png")
+
+        sel_s_no_dd = sel_s[sel_s["strategy"] != "density_diversity"]
+        fig = viz.plot_selection_grid(sel_s_no_dd, metrics=METRICS)
+        fig.suptitle(
+            f"Majority-class selection — {split_name} split (no density-diversity)",
+            fontsize=14,
+        )
+        save_figure(
+            fig,
+            "downselection",
+            f"downselection_grid_{split_name}_no_density_diversity.png",
+        )
+
         plot_saturation_panels(
             sat_majority[sat_majority["split"] == split_name],
             sat_proportional[sat_proportional["split"] == split_name],
@@ -348,16 +361,27 @@ def plot() -> None:
             fname=f"saturation_curve_{split_name}.png",
         )
 
-    # Cross-split overlays: do in-distribution gains survive the harder splits?
+    # Cross-split overlays: random and season only (scaffold omitted).
+    overlay_df = selection_df[selection_df["split"].isin(["random", "season"])]
     fig, axes = plt.subplots(1, 2, figsize=(15, 5.5))
     for ax, metric in zip(axes, METRICS):
-        viz.plot_split_overlay(selection_df, metric, ax, logx=True)
+        viz.plot_split_overlay(overlay_df, metric, ax, logx=True)
         ax.set_title(f"{viz.METRIC_LABELS.get(metric, metric)}: across splits")
-    fig.suptitle(
-        "Selection strategies — random vs. scaffold vs. season split", fontsize=14
-    )
+    fig.suptitle("Selection strategies — random vs. season split", fontsize=14)
     fig.tight_layout()
     save_figure(fig, "downselection", "downselection_overlay.png")
+
+    overlay_df_no_dd = overlay_df[overlay_df["strategy"] != "density_diversity"]
+    fig, axes = plt.subplots(1, 2, figsize=(15, 5.5))
+    for ax, metric in zip(axes, METRICS):
+        viz.plot_split_overlay(overlay_df_no_dd, metric, ax, logx=True)
+        ax.set_title(f"{viz.METRIC_LABELS.get(metric, metric)}: across splits")
+    fig.suptitle(
+        "Selection strategies — random vs. season split (no density-diversity)",
+        fontsize=14,
+    )
+    fig.tight_layout()
+    save_figure(fig, "downselection", "downselection_overlay_no_density_diversity.png")
 
     fig, ax = plt.subplots(figsize=(8, 5.5))
     for split_name in splits_present:

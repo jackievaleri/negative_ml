@@ -91,6 +91,7 @@ SPLIT_LINESTYLE = {
     "park": ":",
     "scaffold": "-.",
     "season": (0, (6, 2)),
+    "time": "--",
 }
 SPLIT_COLOR = {
     "random": DARK2[0],
@@ -98,6 +99,7 @@ SPLIT_COLOR = {
     "park": DARK2[2],
     "scaffold": DARK2[3],
     "season": DARK2[4],
+    "time": DARK2[1],
 }
 SPLIT_LABEL = {
     "random": "random split (within 2023)",
@@ -105,6 +107,7 @@ SPLIT_LABEL = {
     "park": "park split (outlier parks held out)",
     "scaffold": "scaffold split (held-out fillings)",
     "season": "season split (newest season held out)",
+    "time": "time split (easy/med/hard validation)",
 }
 
 
