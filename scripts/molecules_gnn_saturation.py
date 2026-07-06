@@ -43,15 +43,14 @@ import argparse
 import matplotlib
 
 matplotlib.use("Agg")  # headless: write PNGs without a display
-import matplotlib.pyplot as plt
 import pandas as pd
 from loguru import logger
 
 from negative_ml.core.config import REPO_ROOT
 from negative_ml.domains import molecules
-from negative_ml.runner import figure_path, metrics_path
+from negative_ml.runner import metrics_path
+from negative_ml.script_io import save_figure
 from negative_ml.viz import molecules as viz
-from negative_ml.viz.style import save_fig
 
 DOMAIN = "molecules"
 #: Name of the single combined result frame written under data/metrics.
@@ -60,12 +59,6 @@ EXPERIMENT = "gnn_saturation"
 METRICS = ["auroc", "auprc"]
 #: Test sets to build the two-panel figures for, hardest first.
 TEST_SETS = ["restricted_similarity", "random_holdout"]
-
-
-def save_figure(fig: plt.Figure, name: str) -> None:
-    """Save a figure under the molecules saturation category and log it."""
-    path = save_fig(fig, figure_path(DOMAIN, "saturation", name))
-    logger.info(f"  wrote {path.relative_to(REPO_ROOT)}")
 
 
 def generate() -> None:
@@ -115,10 +108,12 @@ def plot() -> None:
     for test_set in TEST_SETS:
         for metric in METRICS:
             fig = viz.plot_saturation_panels(df, metric, test_set)
-            save_figure(fig, f"gnn_selection_{test_set}_{metric}.png")
+            save_figure(
+                fig, "saturation", f"gnn_selection_{test_set}_{metric}.png", DOMAIN
+            )
 
     fig = viz.plot_test_set_contrast(df, metric="auroc")
-    save_figure(fig, "gnn_test_set_contrast_auroc.png")
+    save_figure(fig, "saturation", "gnn_test_set_contrast_auroc.png", DOMAIN)
 
 
 def main() -> None:

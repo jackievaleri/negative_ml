@@ -45,11 +45,11 @@ from negative_ml.core.config import REPO_ROOT
 from negative_ml.domains import baseball
 from negative_ml.experiments.negative_control import run_negative_control
 from negative_ml.models import model_factory
-from negative_ml.runner import data_path, figure_path, metrics_path
+from negative_ml.runner import data_path, metrics_path
+from negative_ml.script_io import require_artifacts, save_figure
 from negative_ml.viz import baseball as viz
 from negative_ml.viz import diagnostics as diag
 from negative_ml.viz import results as rviz
-from negative_ml.viz.style import save_fig
 
 DOMAIN = "baseball"
 
@@ -60,12 +60,6 @@ TRAIN_YEAR, TEST_YEAR = 2023, 2024
 #: Evaluation regimes built per target: random (within-2023 holdout), hard
 #: (2023->2024 season shift), and park (quirky outlier ballparks held out).
 SPLITS = ("random", "hard", "park")
-
-
-def save_figure(fig: plt.Figure, category: str, name: str) -> None:
-    """Save a figure under the given baseball figure category and log it."""
-    path = save_fig(fig, figure_path(DOMAIN, category, name))
-    logger.info(f"  wrote {path.relative_to(REPO_ROOT)}")
 
 
 def artifact(category: str, name: str, suffix: str = ".csv"):
@@ -183,15 +177,15 @@ def make_eda_figures() -> None:
 
     fig, ax = plt.subplots(figsize=(7, 4))
     viz.plot_class_balance(shared.meta, ax)
-    save_figure(fig, "eda", "eda_class_balance.png")
+    save_figure(fig, "eda", "eda_class_balance.png", DOMAIN)
 
     fig, ax = plt.subplots(figsize=(8, 6))
     viz.plot_exit_velo_launch_angle(shared, ax)
-    save_figure(fig, "eda", "eda_exit_velo_launch_angle.png")
+    save_figure(fig, "eda", "eda_exit_velo_launch_angle.png", DOMAIN)
 
     fig, ax = plt.subplots(figsize=(7, 4))
     viz.plot_spray_distribution(shared, ax)
-    save_figure(fig, "eda", "eda_spray_angle.png")
+    save_figure(fig, "eda", "eda_spray_angle.png", DOMAIN)
 
     for target in TARGETS:
         ds = baseball.load_season(TRAIN_YEAR, target=target)
@@ -199,18 +193,7 @@ def make_eda_figures() -> None:
         viz.plot_minority_density(
             ds, ax, label=viz.target_label(target), color=viz.OUTCOME_COLORS[target]
         )
-        save_figure(fig, "eda", f"eda_density_{target}.png")
-
-
-def require_artifacts(*paths) -> None:
-    """Raise a clear "run generation first" error if any artifact is missing."""
-    missing = [p for p in paths if not p.exists()]
-    if missing:
-        names = ", ".join(p.name for p in missing)
-        raise FileNotFoundError(
-            f"Missing model artifacts ({names}); run generation first "
-            "(run: python scripts/baseball_eda_model.py --generate-only)."
-        )
+        save_figure(fig, "eda", f"eda_density_{target}.png", DOMAIN)
 
 
 def make_performance_figures() -> None:
@@ -221,7 +204,7 @@ def make_performance_figures() -> None:
         label = viz.target_label(target)
         for split_name in SPLITS:
             pred_path = artifact("predictions", f"predictions_{target}_{split_name}")
-            require_artifacts(pred_path)
+            require_artifacts("baseball_eda_model.py", pred_path)
             preds = pd.read_csv(pred_path)
             y_test = preds["y_true"].to_numpy()
             y_score = preds["y_score"].to_numpy()
@@ -231,22 +214,29 @@ def make_performance_figures() -> None:
             viz.plot_pr(y_test, y_score, axes[1])
             fig.suptitle(f"{label} — {split_name} split", fontsize=13)
             fig.tight_layout()
-            save_figure(fig, "performance", f"perf_roc_pr_{target}_{split_name}.png")
+            save_figure(
+                fig, "performance", f"perf_roc_pr_{target}_{split_name}.png", DOMAIN
+            )
 
             fig, ax = plt.subplots(figsize=(5.5, 5))
             viz.plot_confusion(y_test, y_score, ax, pos_label=pos_label)
-            save_figure(fig, "performance", f"perf_confusion_{target}_{split_name}.png")
+            save_figure(
+                fig, "performance", f"perf_confusion_{target}_{split_name}.png", DOMAIN
+            )
 
             fig, ax = plt.subplots(figsize=(7, 5))
             viz.plot_precision_at_k(y_test, y_score, ax)
             save_figure(
-                fig, "performance", f"perf_precision_at_k_{target}_{split_name}.png"
+                fig,
+                "performance",
+                f"perf_precision_at_k_{target}_{split_name}.png",
+                DOMAIN,
             )
 
         # Importance + probability surface characterize the in-distribution model.
         imp_path = artifact("metrics", f"feature_importance_{target}")
         grid_path = artifact("grids", f"probability_grid_{target}", ".npz")
-        require_artifacts(imp_path, grid_path)
+        require_artifacts("baseball_eda_model.py", imp_path, grid_path)
         importances = pd.read_csv(imp_path)
         grid = np.load(grid_path)
 
@@ -254,19 +244,21 @@ def make_performance_figures() -> None:
         viz.plot_feature_importance_values(
             importances["feature"], importances["importance"], ax
         )
-        save_figure(fig, "performance", f"perf_feature_importance_{target}.png")
+        save_figure(fig, "performance", f"perf_feature_importance_{target}.png", DOMAIN)
 
         fig, ax = plt.subplots(figsize=(8, 6))
         viz.plot_probability_surface(
             grid["ev_lin"], grid["la_lin"], grid["proba"], ax, label=label
         )
-        save_figure(fig, "performance", f"perf_probability_heatmap_{target}.png")
+        save_figure(
+            fig, "performance", f"perf_probability_heatmap_{target}.png", DOMAIN
+        )
 
 
 def make_negative_control_figures() -> None:
     """Per-target negative-control bars (AUROC + AUPRC), across splits."""
     nc_path = metrics_path("negative_control", "baseball")
-    require_artifacts(nc_path)
+    require_artifacts("baseball_eda_model.py", nc_path)
     nc = pd.read_csv(nc_path)
 
     logger.info("Negative-control figures:")
@@ -283,7 +275,7 @@ def make_negative_control_figures() -> None:
             fontsize=13,
         )
         fig.tight_layout()
-        save_figure(fig, "negative_control", f"neg_control_{target}.png")
+        save_figure(fig, "negative_control", f"neg_control_{target}.png", DOMAIN)
 
 
 def make_feature_relationship_figures() -> None:
@@ -291,7 +283,7 @@ def make_feature_relationship_figures() -> None:
     logger.info("Feature-relationship figures:")
     pearson_path = artifact("metrics", "feature_corr_pearson")
     spearman_path = artifact("metrics", "feature_corr_spearman")
-    require_artifacts(pearson_path, spearman_path)
+    require_artifacts("baseball_eda_model.py", pearson_path, spearman_path)
     pearson = pd.read_csv(pearson_path, index_col=0)
     spearman = pd.read_csv(spearman_path, index_col=0)
 
@@ -300,7 +292,7 @@ def make_feature_relationship_figures() -> None:
     diag.plot_correlation_heatmap(spearman, axes[1], title="Spearman correlation")
     fig.suptitle("Feature correlations (linear vs. monotonic)", fontsize=13)
     fig.tight_layout()
-    save_figure(fig, "eda", "eda_feature_correlation.png")
+    save_figure(fig, "eda", "eda_feature_correlation.png", DOMAIN)
 
     # The pair matrix needs raw feature values: re-load the cached season.
     shared = baseball.load_season(TRAIN_YEAR, target="home_run")
@@ -311,7 +303,7 @@ def make_feature_relationship_figures() -> None:
         shared.minority_mask(),
         minority_label="home run",
     )
-    save_figure(fig, "eda", "eda_feature_pair_matrix.png")
+    save_figure(fig, "eda", "eda_feature_pair_matrix.png", DOMAIN)
 
 
 def make_leakage_figures() -> None:
@@ -320,7 +312,7 @@ def make_leakage_figures() -> None:
     shift_path = metrics_path("covariate_shift", "baseball")
     park_path = metrics_path("per_park_rate", "baseball")
     corr_path = metrics_path("label_correlation", "baseball")
-    require_artifacts(shift_path, park_path, corr_path)
+    require_artifacts("baseball_eda_model.py", shift_path, park_path, corr_path)
     shift = pd.read_csv(shift_path)
     park = pd.read_csv(park_path)
     label_corr = pd.read_csv(corr_path)
@@ -334,7 +326,7 @@ def make_leakage_figures() -> None:
         diag.plot_covariate_shift(shift[shift["split"] == split_name], ax)
         ax.set_title(f"Covariate shift — {split_name} split")
     fig.tight_layout()
-    save_figure(fig, "leakage", "leakage_covariate_shift.png")
+    save_figure(fig, "leakage", "leakage_covariate_shift.png", DOMAIN)
 
     # Train vs. test feature distributions per split (raw values re-loaded).
     shared = baseball.load_season(TRAIN_YEAR, target="home_run")
@@ -346,7 +338,7 @@ def make_leakage_figures() -> None:
             shared.feature_names,
             test_label=f"test ({split_name})",
         )
-        save_figure(fig, "leakage", f"leakage_distributions_{split_name}.png")
+        save_figure(fig, "leakage", f"leakage_distributions_{split_name}.png", DOMAIN)
 
     # Per-park positive rate and the leakage smell-test, per target.
     for target in TARGETS:
@@ -355,7 +347,7 @@ def make_leakage_figures() -> None:
             fig, ax = plt.subplots(figsize=(11, 4.5))
             diag.plot_per_park_rate(pr, ax, label=viz.target_label(target))
             fig.tight_layout()
-            save_figure(fig, "leakage", f"leakage_per_park_rate_{target}.png")
+            save_figure(fig, "leakage", f"leakage_per_park_rate_{target}.png", DOMAIN)
         lc = label_corr[label_corr["target"] == target]
         if not lc.empty:
             fig, ax = plt.subplots(figsize=(8, 4.5))
@@ -365,7 +357,7 @@ def make_leakage_figures() -> None:
                 "(leakage smell-test)"
             )
             fig.tight_layout()
-            save_figure(fig, "leakage", f"leakage_label_corr_{target}.png")
+            save_figure(fig, "leakage", f"leakage_label_corr_{target}.png", DOMAIN)
 
 
 def plot() -> None:

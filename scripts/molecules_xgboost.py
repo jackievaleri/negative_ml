@@ -50,18 +50,21 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from negative_ml.core.config import (
-    MOLECULE_TRAIN_STEM,
-    REPO_ROOT,
-)
+from negative_ml.core.config import MOLECULE_TRAIN_STEM
 from negative_ml.core.experiment import fit_score
 from negative_ml.domains import molecules
 from negative_ml.experiments import saturation as sat
 from negative_ml.experiments import selection as sel
 from negative_ml.models import model_factory
-from negative_ml.runner import figure_path, metrics_path
+from negative_ml.script_io import (
+    plot_saturation_panels,
+    read_result_frames,
+    save_figure,
+    save_frame,
+    warn_small_fractions,
+)
 from negative_ml.viz import results as viz
-from negative_ml.viz.style import DARK2, save_fig, style_axes
+from negative_ml.viz.style import DARK2, style_axes
 
 DOMAIN = "molecules"
 
@@ -81,29 +84,6 @@ XGB_N_ESTIMATORS = 100
 METRICS = ["auroc", "auprc", "f1", "precision_at_k"]
 #: Evaluation splits in display order.
 SPLITS = ["random", "time"]
-
-
-def save_figure(fig: plt.Figure, category: str, name: str) -> None:
-    """Save a figure under the given molecules figure category and log it."""
-    path = save_fig(fig, figure_path(DOMAIN, category, name))
-    logger.info(f"  wrote {path.relative_to(REPO_ROOT)}")
-
-
-def save_frame(df: pd.DataFrame, experiment: str) -> None:
-    """Write a combined result frame to its standard path and log it."""
-    path = metrics_path(experiment, DOMAIN)
-    df.to_csv(path, index=False)
-    logger.info(f"  wrote {path.relative_to(REPO_ROOT)}")
-
-
-def warn_small_fractions(n_minority: int, featurization: str, split_name: str) -> None:
-    """Flag proportional fractions that leave very few minority training rows."""
-    tiny = [f for f in FRACTIONS if max(1, round(n_minority * f)) < 5]
-    if tiny:
-        logger.warning(
-            f"  [{featurization}/{split_name}] fractions {tiny} keep <5 train "
-            f"actives (n_minority={n_minority:,}); those points are noisy."
-        )
 
 
 def generate() -> None:
@@ -142,7 +122,13 @@ def generate() -> None:
             n_majority = int(sp.train_ds.majority_mask().sum())
             n_minority = int(sp.train_ds.minority_mask().sum())
             budgets = [b for b in BUDGETS if b < n_majority]
-            warn_small_fractions(n_minority, featurization, split_name)
+            warn_small_fractions(
+                FRACTIONS,
+                n_minority,
+                "train actives",
+                split_name,
+                context_key=featurization,
+            )
             logger.info(
                 f"  [{split_name}] test {len(sp.y_test):,} molecules, "
                 f"{int(sp.y_test.sum()):,} active; budgets {budgets} "
@@ -187,11 +173,13 @@ def generate() -> None:
             )
 
     benchmark_df = pd.DataFrame(benchmark_rows)
-    save_frame(benchmark_df, "xgboost_benchmark")
+    save_frame(benchmark_df, "xgboost_benchmark", DOMAIN)
     selection_df = pd.concat(selection_frames, ignore_index=True)
-    save_frame(selection_df, "selection")
-    save_frame(pd.concat(sat_frames, ignore_index=True), "saturation")
-    save_frame(pd.concat(sat_prop_frames, ignore_index=True), "saturation_proportional")
+    save_frame(selection_df, "selection", DOMAIN)
+    save_frame(pd.concat(sat_frames, ignore_index=True), "saturation", DOMAIN)
+    save_frame(
+        pd.concat(sat_prop_frames, ignore_index=True), "saturation_proportional", DOMAIN
+    )
 
     logger.info("Full-data XGBoost benchmark (featurization x split):")
     bench_cols = ["featurization", "split", *METRICS]
@@ -205,24 +193,6 @@ def generate() -> None:
         METRICS
     ].mean()
     logger.info("\n" + summary.to_string(float_format=lambda v: f"{v:.4f}"))
-
-
-def read_frames() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Read the four combined result frames, with a clear "generate first" error."""
-    paths = {
-        "xgboost_benchmark": metrics_path("xgboost_benchmark", DOMAIN),
-        "selection": metrics_path("selection", DOMAIN),
-        "saturation": metrics_path("saturation", DOMAIN),
-        "saturation_proportional": metrics_path("saturation_proportional", DOMAIN),
-    }
-    missing = [p for p in paths.values() if not p.exists()]
-    if missing:
-        names = ", ".join(p.name for p in missing)
-        raise FileNotFoundError(
-            f"Missing result frames ({names}); run generation first "
-            "(run: python scripts/molecules_xgboost.py --generate-only)."
-        )
-    return tuple(pd.read_csv(p) for p in paths.values())
 
 
 def plot_benchmark(benchmark_df: pd.DataFrame) -> None:
@@ -269,29 +239,7 @@ def plot_benchmark(benchmark_df: pd.DataFrame) -> None:
         style_axes(ax)
     fig.suptitle("Full-data XGBoost by featurization", fontsize=14)
     fig.tight_layout(rect=(0, 0, 1, 0.96))
-    save_figure(fig, "performance", "xgboost_benchmark.png")
-
-
-def plot_saturation_panels(
-    satm: pd.DataFrame, satp: pd.DataFrame, title: str, fname: str
-) -> None:
-    """Two-panel saturation figure (fix-minority | proportional) for one slice."""
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-    viz.plot_saturation_curve(
-        satm, "auprc", axes[0], color=DARK2[0], label="fix minority"
-    )
-    axes[0].set_xscale("log")
-    axes[0].set_title("Fix minority, vary majority")
-    axes[0].legend(loc="best")
-    viz.plot_saturation_curve(
-        satp, "auprc", axes[1], color=DARK2[1], label="proportional"
-    )
-    axes[1].set_xscale("log")
-    axes[1].set_title("Scale total proportionally")
-    axes[1].legend(loc="best")
-    fig.suptitle(title, fontsize=13)
-    fig.tight_layout()
-    save_figure(fig, "saturation", fname)
+    save_figure(fig, "performance", "xgboost_benchmark.png", DOMAIN)
 
 
 def plot() -> None:
@@ -302,7 +250,11 @@ def plot() -> None:
     split-overlay (random vs. time) and a proportional-saturation split-overlay —
     the figures that show whether in-distribution gains survive the time split.
     """
-    benchmark_df, selection_df, sat_majority, sat_proportional = read_frames()
+    benchmark_df, selection_df, sat_majority, sat_proportional = read_result_frames(
+        ["xgboost_benchmark", "selection", "saturation", "saturation_proportional"],
+        DOMAIN,
+        "molecules_xgboost.py",
+    )
     plot_benchmark(benchmark_df)
 
     featurizations = list(dict.fromkeys(selection_df["featurization"]))
@@ -325,6 +277,7 @@ def plot() -> None:
                 fig,
                 "downselection",
                 f"downselection_grid_{featurization}_{split_name}.png",
+                DOMAIN,
             )
             sel_fs_no_dd = sel_fs[sel_fs["strategy"] != "density_diversity"]
             fig = viz.plot_selection_grid(sel_fs_no_dd, metrics=METRICS)
@@ -336,26 +289,33 @@ def plot() -> None:
                 fig,
                 "downselection",
                 f"downselection_grid_{featurization}_{split_name}_no_dd.png",
+                DOMAIN,
             )
             plot_saturation_panels(
                 satm_f[satm_f["split"] == split_name],
                 satp_f[satp_f["split"] == split_name],
                 title=f"Saturation: AUPRC vs. size — {featurization} ({split_name})",
                 fname=f"saturation_curve_{featurization}_{split_name}.png",
+                domain=DOMAIN,
             )
 
         # Per-featurization overlays (random vs. time on one axes).
         fig, ax = plt.subplots(figsize=(8.5, 5.5))
         viz.plot_split_overlay(sel_f, "auprc", ax, logx=True)
         ax.set_title(f"AUPRC vs. size — across splits ({featurization})")
-        save_figure(fig, "downselection", f"downselection_overlay_{featurization}.png")
+        save_figure(
+            fig, "downselection", f"downselection_overlay_{featurization}.png", DOMAIN
+        )
 
         fig, ax = plt.subplots(figsize=(8.5, 5.5))
         sel_f_no_dd = sel_f[sel_f["strategy"] != "density_diversity"]
         viz.plot_split_overlay(sel_f_no_dd, "auprc", ax, logx=True)
         ax.set_title(f"AUPRC vs. size — across splits ({featurization})")
         save_figure(
-            fig, "downselection", f"downselection_overlay_{featurization}_no_dd.png"
+            fig,
+            "downselection",
+            f"downselection_overlay_{featurization}_no_dd.png",
+            DOMAIN,
         )
 
         fig, ax = plt.subplots(figsize=(8, 5.5))
@@ -372,7 +332,9 @@ def plot() -> None:
         ax.set_xscale("log")
         ax.set_title(f"Proportional saturation — across splits ({featurization})")
         ax.legend(loc="best")
-        save_figure(fig, "saturation", f"saturation_overlay_{featurization}.png")
+        save_figure(
+            fig, "saturation", f"saturation_overlay_{featurization}.png", DOMAIN
+        )
 
 
 def main() -> None:
