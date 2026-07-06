@@ -73,8 +73,7 @@ BUDGETS = [250, 500, 1000, 2000, 4000, 8000]
 #: Dataset fractions for the proportional-scaling saturation sweep (extended to
 #: very small fractions to resolve the low-data regime).
 FRACTIONS = [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]
-# TODO: restore N_SEEDS = 3 for final runs; 1 seed gives no error bars
-N_SEEDS = 1
+N_SEEDS = 3
 # TODO: restore XGB_N_ESTIMATORS = 300 for final runs
 XGB_N_ESTIMATORS = 100
 #: Metrics reported in the headline grid and summary (the full panel, including
@@ -327,6 +326,17 @@ def plot() -> None:
                 "downselection",
                 f"downselection_grid_{featurization}_{split_name}.png",
             )
+            sel_fs_no_dd = sel_fs[sel_fs["strategy"] != "density_diversity"]
+            fig = viz.plot_selection_grid(sel_fs_no_dd, metrics=METRICS)
+            fig.suptitle(
+                f"Majority-class selection — {featurization} ({split_name} split)",
+                fontsize=14,
+            )
+            save_figure(
+                fig,
+                "downselection",
+                f"downselection_grid_{featurization}_{split_name}_no_dd.png",
+            )
             plot_saturation_panels(
                 satm_f[satm_f["split"] == split_name],
                 satp_f[satp_f["split"] == split_name],
@@ -339,6 +349,14 @@ def plot() -> None:
         viz.plot_split_overlay(sel_f, "auprc", ax, logx=True)
         ax.set_title(f"AUPRC vs. size — across splits ({featurization})")
         save_figure(fig, "downselection", f"downselection_overlay_{featurization}.png")
+
+        fig, ax = plt.subplots(figsize=(8.5, 5.5))
+        sel_f_no_dd = sel_f[sel_f["strategy"] != "density_diversity"]
+        viz.plot_split_overlay(sel_f_no_dd, "auprc", ax, logx=True)
+        ax.set_title(f"AUPRC vs. size — across splits ({featurization})")
+        save_figure(
+            fig, "downselection", f"downselection_overlay_{featurization}_no_dd.png"
+        )
 
         fig, ax = plt.subplots(figsize=(8, 5.5))
         for split_name in SPLITS:
@@ -359,6 +377,7 @@ def plot() -> None:
 
 def main() -> None:
     """Parse flags and run generation and/or plotting."""
+    global FEATURIZATIONS
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
@@ -367,7 +386,17 @@ def main() -> None:
     group.add_argument(
         "--generate-only", action="store_true", help="run sweeps, write no figures"
     )
+    parser.add_argument(
+        "--featurizations",
+        nargs="+",
+        choices=FEATURIZATIONS,
+        default=None,
+        help="subset of featurizations to run (default: all)",
+    )
     args = parser.parse_args()
+
+    if args.featurizations:
+        FEATURIZATIONS = args.featurizations
 
     if not args.plot_only:
         generate()
