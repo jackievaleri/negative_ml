@@ -79,6 +79,28 @@ MOLECULE_GNN_RESULT_FILES = {
 # included), so this recovers its total training size as negatives + positives.
 MOLECULE_GNN_N_POSITIVES = 1017
 
+# --- Antibacterial XGBoost featurization study ----------------------------
+# Directory and file stems for the gonorrhea screen used by the XGBoost study.
+# Each stem has a paired <stem>.csv (Name/SMILES/hit) and <stem>.npz (the
+# precomputed RDKit descriptor matrix under the "features" key), row-aligned.
+# Training is on MOLECULE_TRAIN_STEM; the model is evaluated on two held-out
+# files (the same test sets the gonorrhea GNN uses): a random 20% holdout and a
+# time-split validation set graded easy/medium/hard.
+GONORRHEA_RAW_DIR = RAW_DATA_DIR / "gonorrhoeae"
+MOLECULE_TRAIN_STEM = "TRAIN_03_19_2022"
+MOLECULE_TEST_RANDOM_STEM = "TEST_03_19_2022"
+MOLECULE_TEST_TIME_STEM = "cleaned_easy_med_hard_val_sets_800k_10_03_2022"
+
+# Morgan (ECFP-like) fingerprint geometry: radius 2 is ECFP4, folded to a
+# MORGAN_N_BITS-long bit vector. Used for the "morgan" and "both" featurizations.
+MORGAN_RADIUS = 2
+MORGAN_N_BITS = 2048
+
+# The three molecule featurizations compared under the same XGBoost model:
+# "rdkit" (the 200 precomputed descriptors), "morgan" (fingerprint bits), and
+# "both" (descriptors concatenated with fingerprint bits).
+MOLECULE_FEATURIZATIONS = ("rdkit", "morgan", "both")
+
 # --- Domain thresholds ----------------------------------------------------
 # Sandwich ratings are 0-10 and skewed high; the "minority" / class of interest
 # is the rare, high-value "good" sandwich. See plan.md section 3.3.

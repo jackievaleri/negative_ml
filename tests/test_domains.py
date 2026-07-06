@@ -4,9 +4,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from negative_ml.core.config import SANDWICH_GOOD_RATING_THRESHOLD
+from negative_ml.core.config import MORGAN_N_BITS, SANDWICH_GOOD_RATING_THRESHOLD
 from negative_ml.core.dataset import Dataset
-from negative_ml.domains import baseball, sandwiches
+from negative_ml.domains import baseball, molecules, sandwiches
 
 
 def test_dataset_validates_shapes():
@@ -266,3 +266,87 @@ def test_prune_rare_features_keeps_well_sampled_columns():
     keep = sandwiches.prune_rare_features(X, min_count=2)
     assert keep.tolist() == [True, False, True]
     assert X[:, keep].shape == (3, 2)
+
+
+# --- Molecule (antibacterial screen) featurization ------------------------
+def test_compute_fingerprints_shape_and_invalid_zero_row():
+    """Morgan fingerprints are (n, n_bits) uint8; unparseable SMILES are zeros."""
+    fps = molecules.compute_fingerprints(["c1ccccc1", "CCO", "not-a-smiles"], n_bits=64)
+    assert fps.shape == (3, 64)
+    assert fps.dtype == np.uint8
+    assert fps[0].sum() > 0  # a real molecule sets some bits
+    assert fps[2].sum() == 0  # the unparseable SMILES is an all-zero row
+
+
+def test_bemis_murcko_scaffolds_group_and_invalid():
+    """Molecules sharing a scaffold share an id; unparseable SMILES get an empty id."""
+    scaffolds = molecules.bemis_murcko_scaffolds(
+        ["c1ccccc1CC(=O)O", "c1ccccc1CCN", "CCO", "not-a-smiles"]
+    )
+    assert scaffolds[0] == scaffolds[1]  # both reduce to the benzene scaffold
+    assert scaffolds[2] == ""  # ethanol has no ring system
+    assert scaffolds[3] == ""  # unparseable SMILES
+
+
+def test_load_rdkit_descriptors_imputes_non_finite(tmp_path):
+    """Descriptor loading zero-fills NaN and leaves the finite values intact."""
+    features = np.array([[1.0, np.nan], [2.0, 3.0]])
+    path = tmp_path / "descriptors.npz"
+    np.savez(path, features=features)
+    out = molecules.load_rdkit_descriptors(path)
+    assert np.isfinite(out).all()
+    assert out[0, 0] == 1.0
+    assert out[0, 1] == 0.0  # NaN imputed to zero
+
+
+def test_featurize_modes_widths_and_names(tmp_path):
+    """Each featurization yields the expected width and feature-name prefix."""
+    features = np.zeros((2, 5))
+    path = tmp_path / "s.npz"
+    np.savez(path, features=features)
+    smiles = ["c1ccccc1", "CCO"]
+
+    Xr, names_r = molecules.featurize(smiles, path, "rdkit")
+    assert Xr.shape == (2, 5) and names_r[0] == "rdkit_0"
+
+    Xm, names_m = molecules.featurize(smiles, path, "morgan")
+    assert Xm.shape == (2, MORGAN_N_BITS) and names_m[0] == "morgan_0"
+
+    Xb, names_b = molecules.featurize(smiles, path, "both")
+    assert Xb.shape == (2, 5 + MORGAN_N_BITS)
+    assert names_b[0] == "rdkit_0" and names_b[5] == "morgan_0"
+
+
+def test_featurize_rejects_unknown_and_misaligned(tmp_path):
+    """featurize fails loudly on an unknown mode or a misaligned descriptor matrix."""
+    path = tmp_path / "s.npz"
+    np.savez(path, features=np.zeros((3, 4)))
+    with pytest.raises(ValueError):
+        molecules.featurize(["c1ccccc1"], path, "fancy")
+    with pytest.raises(ValueError):
+        # One SMILES but three descriptor rows -> not row-aligned.
+        molecules.featurize(["c1ccccc1"], path, "rdkit")
+
+
+def test_load_screen_builds_aligned_classification_dataset(tmp_path):
+    """load_screen pairs csv + npz into an aligned classification Dataset."""
+    smiles = ["c1ccccc1CC(=O)O", "CCO", "c1ccccc1CCN"]
+    frame = pd.DataFrame(
+        {"Name": ["a", "b", "c"], "SMILES": smiles, "hit": [1.0, 0.0, 1.0]}
+    )
+    frame.to_csv(tmp_path / "MINI.csv", index=False)
+    np.savez(tmp_path / "MINI.npz", features=np.arange(12, dtype=float).reshape(3, 4))
+
+    ds = molecules.load_screen("MINI", featurization="both", raw_dir=tmp_path)
+    assert ds.task == "classification"
+    assert ds.n_samples == 3
+    assert ds.y.tolist() == [1, 0, 1]
+    assert ds.X.shape == (3, 4 + MORGAN_N_BITS)
+    assert ds.groups[0] == ds.groups[2]  # both share the benzene scaffold
+    assert ds.meta is not None
+
+
+def test_load_screen_missing_files_raises(tmp_path):
+    """A missing paired file is reported rather than failing obscurely later."""
+    with pytest.raises(FileNotFoundError):
+        molecules.load_screen("NOPE", raw_dir=tmp_path)
