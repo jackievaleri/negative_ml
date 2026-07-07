@@ -148,6 +148,41 @@ SANDWICH_TEST_SEASON = "S5"
 SANDWICH_FREQ_THRESHOLD_DISPLAY = 10
 SANDWICH_FREQ_THRESHOLD_VIOLIN = 5
 
+# --- Active learning ------------------------------------------------------
+# Number of query batches per active-learning simulation run.
+AL_N_BATCHES = 5
+# Number of seeds (initial labeled set draws) per (acquisition, neg_composition).
+AL_N_SEEDS = 3
+# Molecules: 384 * 4; baseball: 1000 at-bats; sandwiches: 10 sandwiches.
+AL_BATCH_SIZES: dict[str, int] = {
+    "molecules": 1536,
+    "baseball": 1000,
+    "sandwiches": 10,
+}
+# Positives seeded into the initial labeled set (ensures a trainable start).
+AL_INIT_POSITIVES: dict[str, int] = {
+    "molecules": 100,
+    "baseball": 200,
+    "sandwiches": 5,
+}
+# Negatives seeded into the initial labeled set alongside the positives.
+AL_INIT_NEGATIVES: dict[str, int] = {
+    "molecules": 100,
+    "baseball": 200,
+    "sandwiches": 10,
+}
+# Budget cap when sub-selecting negatives from the labeled set each AL round.
+# Mirrors the budgets used in the existing downselection scripts.
+AL_NEG_BUDGETS: dict[str, int] = {
+    "molecules": 2000,
+    "baseball": 2000,
+    "sandwiches": 20,
+}
+# Negative-composition strategies evaluated at each AL round.
+AL_NEG_COMPOSITIONS: tuple[str, ...] = ("as_is", "random", "hard", "diversity")
+# Acquisition strategy names (two substantive + random baseline).
+AL_ACQUISITIONS: tuple[str, ...] = ("uncertainty", "diversity_uncertainty", "random")
+
 # --- Visualization --------------------------------------------------------
 # Resolution (dots per inch) for every saved figure.
 FIGURE_DPI = 300
