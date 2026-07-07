@@ -37,8 +37,6 @@ baseball script). Figures are written under results/baseball/figures/.
 
 from __future__ import annotations
 
-import argparse
-
 import matplotlib
 
 matplotlib.use("Agg")  # headless: write PNGs without a display
@@ -47,20 +45,22 @@ import pandas as pd
 from loguru import logger
 
 from negative_ml.domains import baseball
-from negative_ml.experiments import saturation as sat
-from negative_ml.experiments import selection as sel
 from negative_ml.models import model_factory
 from negative_ml.runner import metrics_path
 from negative_ml.script_io import (
+    log_mean_metrics,
+    plot_proportional_saturation_overlay,
     plot_saturation_panels,
     read_result_frames,
+    run_downselection_sweeps,
+    run_script,
     save_figure,
     save_frame,
+    save_sweep_frames,
     warn_small_fractions,
 )
 from negative_ml.viz import results as viz
 from negative_ml.viz import selection_examples as selviz
-from negative_ml.viz.style import DARK2
 
 DOMAIN = "baseball"
 
@@ -125,48 +125,20 @@ def generate() -> None:
             )
 
             tag = {"target": target, "split": split_name}
-            selection_frames.append(
-                sel.budget_sweep(
-                    ds_train,
-                    classifier_factory,
-                    budgets=budgets,
-                    n_seeds=N_SEEDS,
-                    include_weighted=True,
-                    split=sp,
-                ).assign(**tag)
+            sel_f, sat_f, satp_f = run_downselection_sweeps(
+                ds_train, classifier_factory, budgets, FRACTIONS, N_SEEDS, sp, tag
             )
-            sat_frames.append(
-                sat.fix_minority_vary_majority(
-                    ds_train,
-                    classifier_factory,
-                    majority_sizes=budgets,
-                    n_seeds=N_SEEDS,
-                    split=sp,
-                ).assign(**tag)
-            )
-            sat_prop_frames.append(
-                sat.scale_total_proportional(
-                    ds_train,
-                    classifier_factory,
-                    fractions=FRACTIONS,
-                    n_seeds=N_SEEDS,
-                    split=sp,
-                ).assign(**tag)
-            )
+            selection_frames.append(sel_f)
+            sat_frames.append(sat_f)
+            sat_prop_frames.append(satp_f)
 
-    selection_df = pd.concat(selection_frames, ignore_index=True)
-    save_frame(selection_df, "selection", DOMAIN)
-    save_frame(pd.concat(sat_frames, ignore_index=True), "saturation", DOMAIN)
-    save_frame(
-        pd.concat(sat_prop_frames, ignore_index=True), "saturation_proportional", DOMAIN
+    selection_df = save_sweep_frames(
+        selection_frames, sat_frames, sat_prop_frames, DOMAIN
     )
     save_frame(
         pd.concat(example_frames, ignore_index=True), "selection_examples", DOMAIN
     )
-
-    logger.info("Mean metrics by target / split / strategy (over budgets & seeds):")
-    summary = selection_df.groupby(["target", "split", "strategy"])[METRICS].mean()
-    logger.info("\n" + summary.to_string(float_format=lambda v: f"{v:.4f}"))
+    log_mean_metrics(selection_df, ["target", "split", "strategy"], METRICS)
 
 
 def make_example_figures() -> None:
@@ -258,39 +230,18 @@ def plot() -> None:
         ax.set_title(f"AUPRC vs. size — across splits ({target})")
         save_figure(fig, "downselection", f"downselection_overlay_{target}.png", DOMAIN)
 
-        fig, ax = plt.subplots(figsize=(8, 5.5))
-        for split_name, color in (
-            ("random", DARK2[0]),
-            ("hard", DARK2[1]),
-            ("park", DARK2[2]),
-        ):
-            d = satp_t[satp_t["split"] == split_name]
-            if not d.empty:
-                viz.plot_saturation_curve(
-                    d, "auprc", ax, color=color, label=viz.SPLIT_LABEL[split_name]
-                )
-        ax.set_xscale("log")
-        ax.set_title(f"Proportional saturation — across splits ({target})")
-        ax.legend(loc="best")
-        save_figure(fig, "saturation", f"saturation_overlay_{target}.png", DOMAIN)
+        plot_proportional_saturation_overlay(
+            satp_t,
+            ("random", "hard", "park"),
+            f"Proportional saturation — across splits ({target})",
+            f"saturation_overlay_{target}.png",
+            DOMAIN,
+        )
 
 
 def main() -> None:
     """Parse flags and run generation and/or plotting."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument(
-        "--plot-only", action="store_true", help="rebuild figures from saved frames"
-    )
-    group.add_argument(
-        "--generate-only", action="store_true", help="run sweeps, write no figures"
-    )
-    args = parser.parse_args()
-
-    if not args.plot_only:
-        generate()
-    if not args.generate_only:
-        plot()
+    run_script(generate, plot, __doc__)
 
 
 if __name__ == "__main__":

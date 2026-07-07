@@ -30,8 +30,6 @@ results/baseball/figures/ and the test-set metric panels are printed.
 
 from __future__ import annotations
 
-import argparse
-
 import matplotlib
 
 matplotlib.use("Agg")  # headless: write PNGs without a display
@@ -46,7 +44,7 @@ from negative_ml.domains import baseball
 from negative_ml.experiments.negative_control import run_negative_control
 from negative_ml.models import model_factory
 from negative_ml.runner import data_path, metrics_path
-from negative_ml.script_io import require_artifacts, save_figure
+from negative_ml.script_io import require_artifacts, run_script, save_figure
 from negative_ml.viz import baseball as viz
 from negative_ml.viz import diagnostics as diag
 from negative_ml.viz import results as rviz
@@ -371,20 +369,7 @@ def plot() -> None:
 
 def main() -> None:
     """Parse flags and run generation and/or plotting."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument(
-        "--plot-only", action="store_true", help="rebuild figures from saved artifacts"
-    )
-    group.add_argument(
-        "--generate-only", action="store_true", help="train + save, write no figures"
-    )
-    args = parser.parse_args()
-
-    if not args.plot_only:
-        generate()
-    if not args.generate_only:
-        plot()
+    run_script(generate, plot, __doc__)
 
 
 if __name__ == "__main__":

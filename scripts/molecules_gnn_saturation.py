@@ -38,8 +38,6 @@ under results/molecules/figures/saturation/.
 
 from __future__ import annotations
 
-import argparse
-
 import matplotlib
 
 matplotlib.use("Agg")  # headless: write PNGs without a display
@@ -49,7 +47,7 @@ from loguru import logger
 from negative_ml.core.config import REPO_ROOT
 from negative_ml.domains import molecules
 from negative_ml.runner import metrics_path
-from negative_ml.script_io import save_figure
+from negative_ml.script_io import run_script, save_figure
 from negative_ml.viz import molecules as viz
 
 DOMAIN = "molecules"
@@ -118,20 +116,7 @@ def plot() -> None:
 
 def main() -> None:
     """Parse flags and run generation and/or plotting."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument(
-        "--plot-only", action="store_true", help="rebuild figures from the saved frame"
-    )
-    group.add_argument(
-        "--generate-only", action="store_true", help="tidy inputs, write no figures"
-    )
-    args = parser.parse_args()
-
-    if not args.plot_only:
-        generate()
-    if not args.generate_only:
-        plot()
+    run_script(generate, plot, __doc__)
 
 
 if __name__ == "__main__":

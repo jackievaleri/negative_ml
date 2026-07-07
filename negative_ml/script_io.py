@@ -1,11 +1,14 @@
 """Shared I/O and plot helpers for the reproducible experiment scripts.
 
-Centralizes the domain-aware save/load utilities and the saturation-panel
-figure that would otherwise be copy-pasted across each domain script.
+Centralizes the domain-aware save/load utilities, the standard generate/plot
+CLI scaffold, the downselection sweep runner, and the saturation-panel figures
+that would otherwise be copy-pasted across each domain script.
 """
 
 from __future__ import annotations
 
+import argparse
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -13,6 +16,8 @@ import pandas as pd
 from loguru import logger
 
 from negative_ml.core.config import REPO_ROOT
+from negative_ml.experiments import saturation as sat
+from negative_ml.experiments import selection as sel
 from negative_ml.runner import figure_path, metrics_path
 from negative_ml.viz import results as viz
 from negative_ml.viz.style import DARK2, save_fig
@@ -151,4 +156,154 @@ def plot_saturation_panels(
     axes[1].legend(loc="best")
     fig.suptitle(title, fontsize=13)
     fig.tight_layout()
+    save_figure(fig, "saturation", fname, domain)
+
+
+def run_script(
+    generate: Callable[[], None], plot: Callable[[], None], doc: str
+) -> None:
+    """Parse --plot-only / --generate-only flags and dispatch to generate/plot.
+
+    Args:
+        generate: Zero-argument callable that runs experiments and saves frames.
+        plot: Zero-argument callable that rebuilds figures from saved frames.
+        doc: Module docstring to pass as the argparse description.
+    """
+    parser = argparse.ArgumentParser(description=doc)
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--plot-only", action="store_true", help="rebuild figures from saved frames"
+    )
+    group.add_argument(
+        "--generate-only", action="store_true", help="run sweeps, write no figures"
+    )
+    args = parser.parse_args()
+    if not args.plot_only:
+        generate()
+    if not args.generate_only:
+        plot()
+
+
+def run_downselection_sweeps(
+    ds: object,
+    classifier_factory: Callable,
+    budgets: list[int],
+    fractions: list[float],
+    n_seeds: int,
+    split: object,
+    tag: dict,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Run budget + saturation sweeps for one (variant, split) condition.
+
+    Args:
+        ds: The full training Dataset for this condition.
+        classifier_factory: Zero-argument callable returning a fresh classifier.
+        budgets: Majority-class budget sizes to sweep.
+        fractions: Dataset fractions for proportional saturation sweep.
+        n_seeds: Number of random seeds per sweep point.
+        split: ExperimentSplit for this condition.
+        tag: Columns to attach to every returned row (e.g. target and split).
+
+    Returns:
+        (selection_frame, sat_frame, sat_prop_frame): one tidy DataFrame per sweep.
+    """
+    selection = sel.budget_sweep(
+        ds,
+        classifier_factory,
+        budgets=budgets,
+        n_seeds=n_seeds,
+        include_weighted=True,
+        split=split,
+    ).assign(**tag)
+    sat_majority = sat.fix_minority_vary_majority(
+        ds,
+        classifier_factory,
+        majority_sizes=budgets,
+        n_seeds=n_seeds,
+        split=split,
+    ).assign(**tag)
+    sat_proportional = sat.scale_total_proportional(
+        ds,
+        classifier_factory,
+        fractions=fractions,
+        n_seeds=n_seeds,
+        split=split,
+    ).assign(**tag)
+    return selection, sat_majority, sat_proportional
+
+
+def save_sweep_frames(
+    sel_frames: list[pd.DataFrame],
+    sat_frames: list[pd.DataFrame],
+    sat_prop_frames: list[pd.DataFrame],
+    domain: str,
+) -> pd.DataFrame:
+    """Concatenate and save the three standard downselection result frames.
+
+    Args:
+        sel_frames: Per-condition selection frames to concatenate.
+        sat_frames: Per-condition fix-minority saturation frames.
+        sat_prop_frames: Per-condition proportional saturation frames.
+        domain: Domain name (e.g. "baseball").
+
+    Returns:
+        The concatenated selection DataFrame (for immediate summary logging).
+    """
+    selection_df = pd.concat(sel_frames, ignore_index=True)
+    save_frame(selection_df, "selection", domain)
+    save_frame(pd.concat(sat_frames, ignore_index=True), "saturation", domain)
+    save_frame(
+        pd.concat(sat_prop_frames, ignore_index=True),
+        "saturation_proportional",
+        domain,
+    )
+    return selection_df
+
+
+def log_mean_metrics(
+    df: pd.DataFrame, group_cols: list[str], metrics: list[str]
+) -> None:
+    """Log mean metric values grouped by the given columns.
+
+    Args:
+        df: The tidy result DataFrame (typically the selection frame).
+        group_cols: Columns to group by (e.g. ["target", "split", "strategy"]).
+        metrics: Metric columns to aggregate.
+    """
+    groups_str = " / ".join(group_cols)
+    logger.info(f"Mean metrics by {groups_str} (over budgets & seeds):")
+    summary = df.groupby(group_cols)[metrics].mean()
+    logger.info("\n" + summary.to_string(float_format=lambda v: f"{v:.4f}"))
+
+
+def plot_proportional_saturation_overlay(
+    satp: pd.DataFrame,
+    splits: Sequence[str],
+    title: str,
+    fname: str,
+    domain: str,
+) -> None:
+    """AUPRC proportional-saturation overlay across splits, saved as one figure.
+
+    Args:
+        satp: The scale-total-proportional saturation frame (all splits combined).
+        splits: Split names to draw, in order (omits any with no data).
+        title: Figure title.
+        fname: Output filename relative to the domain saturation figure dir.
+        domain: Domain name (for routing to the right results directory).
+    """
+    fig, ax = plt.subplots(figsize=(8, 5.5))
+    for split_name in splits:
+        d = satp[satp["split"] == split_name]
+        if not d.empty:
+            viz.plot_saturation_curve(
+                d,
+                "auprc",
+                ax,
+                color=viz.SPLIT_COLOR[split_name],
+                label=viz.SPLIT_LABEL[split_name],
+            )
+    ax.set_xscale("log")
+    ax.set_title(title)
+    ax.legend(loc="best")
     save_figure(fig, "saturation", fname, domain)

@@ -53,14 +53,16 @@ from loguru import logger
 from negative_ml.core.config import MOLECULE_TRAIN_STEM
 from negative_ml.core.experiment import fit_score
 from negative_ml.domains import molecules
-from negative_ml.experiments import saturation as sat
-from negative_ml.experiments import selection as sel
 from negative_ml.models import model_factory
 from negative_ml.script_io import (
+    log_mean_metrics,
+    plot_proportional_saturation_overlay,
     plot_saturation_panels,
     read_result_frames,
+    run_downselection_sweeps,
     save_figure,
     save_frame,
+    save_sweep_frames,
     warn_small_fractions,
 )
 from negative_ml.viz import results as viz
@@ -143,42 +145,17 @@ def generate() -> None:
             )
             benchmark_rows.append({**tag, "n_train": int(len(train_rows)), **metrics})
 
-            selection_frames.append(
-                sel.budget_sweep(
-                    ds_train,
-                    classifier_factory,
-                    budgets=budgets,
-                    n_seeds=N_SEEDS,
-                    include_weighted=True,
-                    split=sp,
-                ).assign(**tag)
+            sel_f, sat_f, satp_f = run_downselection_sweeps(
+                ds_train, classifier_factory, budgets, FRACTIONS, N_SEEDS, sp, tag
             )
-            sat_frames.append(
-                sat.fix_minority_vary_majority(
-                    ds_train,
-                    classifier_factory,
-                    majority_sizes=budgets,
-                    n_seeds=N_SEEDS,
-                    split=sp,
-                ).assign(**tag)
-            )
-            sat_prop_frames.append(
-                sat.scale_total_proportional(
-                    ds_train,
-                    classifier_factory,
-                    fractions=FRACTIONS,
-                    n_seeds=N_SEEDS,
-                    split=sp,
-                ).assign(**tag)
-            )
+            selection_frames.append(sel_f)
+            sat_frames.append(sat_f)
+            sat_prop_frames.append(satp_f)
 
     benchmark_df = pd.DataFrame(benchmark_rows)
     save_frame(benchmark_df, "xgboost_benchmark", DOMAIN)
-    selection_df = pd.concat(selection_frames, ignore_index=True)
-    save_frame(selection_df, "selection", DOMAIN)
-    save_frame(pd.concat(sat_frames, ignore_index=True), "saturation", DOMAIN)
-    save_frame(
-        pd.concat(sat_prop_frames, ignore_index=True), "saturation_proportional", DOMAIN
+    selection_df = save_sweep_frames(
+        selection_frames, sat_frames, sat_prop_frames, DOMAIN
     )
 
     logger.info("Full-data XGBoost benchmark (featurization x split):")
@@ -186,13 +163,7 @@ def generate() -> None:
     logger.info(
         "\n" + benchmark_df[bench_cols].to_string(index=False, float_format="%.4f")
     )
-    logger.info(
-        "Mean metrics by featurization / split / strategy (over budgets & seeds):"
-    )
-    summary = selection_df.groupby(["featurization", "split", "strategy"])[
-        METRICS
-    ].mean()
-    logger.info("\n" + summary.to_string(float_format=lambda v: f"{v:.4f}"))
+    log_mean_metrics(selection_df, ["featurization", "split", "strategy"], METRICS)
 
 
 def plot_benchmark(benchmark_df: pd.DataFrame) -> None:
@@ -318,22 +289,12 @@ def plot() -> None:
             DOMAIN,
         )
 
-        fig, ax = plt.subplots(figsize=(8, 5.5))
-        for split_name in SPLITS:
-            d = satp_f[satp_f["split"] == split_name]
-            if not d.empty:
-                viz.plot_saturation_curve(
-                    d,
-                    "auprc",
-                    ax,
-                    color=viz.SPLIT_COLOR[split_name],
-                    label=viz.SPLIT_LABEL[split_name],
-                )
-        ax.set_xscale("log")
-        ax.set_title(f"Proportional saturation — across splits ({featurization})")
-        ax.legend(loc="best")
-        save_figure(
-            fig, "saturation", f"saturation_overlay_{featurization}.png", DOMAIN
+        plot_proportional_saturation_overlay(
+            satp_f,
+            SPLITS,
+            f"Proportional saturation — across splits ({featurization})",
+            f"saturation_overlay_{featurization}.png",
+            DOMAIN,
         )
 
 
