@@ -44,7 +44,16 @@ from negative_ml.core.experiment import EvalSplit, cross_dataset_split
 
 
 def _fp_cache_path(stem: str, radius: int, n_bits: int) -> Path:
-    """Return the .npy cache path for a Morgan fingerprint matrix."""
+    """Return the .npy cache path for a Morgan fingerprint matrix.
+
+    Args:
+        stem: File stem identifying the screening dataset.
+        radius: Morgan radius used to compute the fingerprints.
+        n_bits: Length of the folded bit vector.
+
+    Returns:
+        Path to the .npy cache file under PROCESSED_DATA_DIR/fingerprint_cache.
+    """
     cache_dir = PROCESSED_DATA_DIR / "fingerprint_cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir / f"{stem}_r{radius}_b{n_bits}.npy"

@@ -22,19 +22,12 @@ matplotlib.use("Agg")  # headless: write PNGs without a display
 import matplotlib.pyplot as plt
 from loguru import logger
 
-from negative_ml.core.config import REPO_ROOT, SANDWICH_FREQ_THRESHOLD_VIOLIN
+from negative_ml.core.config import SANDWICH_FREQ_THRESHOLD_VIOLIN
 from negative_ml.domains import sandwiches
-from negative_ml.runner import figure_path
+from negative_ml.script_io import save_figure
 from negative_ml.viz import sandwiches as viz
-from negative_ml.viz.style import save_fig
 
 DOMAIN = "sandwiches"
-
-
-def save_figure(fig: plt.Figure, name: str) -> None:
-    """Save an EDA figure under the sandwich eda figure category and log it."""
-    path = save_fig(fig, figure_path(DOMAIN, "eda", name))
-    logger.info(f"  wrote {path.relative_to(REPO_ROOT)}")
 
 
 def make_eda_figures() -> None:
@@ -48,11 +41,11 @@ def make_eda_figures() -> None:
 
     fig, ax = plt.subplots(figsize=(6, 4))
     viz.plot_rating_distribution(ds.y, ax)
-    save_figure(fig, "eda_rating_distribution.png")
+    save_figure(fig, "eda", "eda_rating_distribution.png", DOMAIN)
 
     fig, ax = plt.subplots(figsize=(6, 4))
     viz.plot_rating_timeline(ds.meta["Episode"], ds.y, ax)
-    save_figure(fig, "eda_rating_timeline.png")
+    save_figure(fig, "eda", "eda_rating_timeline.png", DOMAIN)
 
     frequent = sandwiches.ingredient_value_counts(frame, SANDWICH_FREQ_THRESHOLD_VIOLIN)
     for col in sandwiches.INGREDIENT_COLS:
@@ -65,7 +58,9 @@ def make_eda_figures() -> None:
             sub[col].to_numpy(), sub["Clean_Rating"].to_numpy(), ax, col
         )
         fig.tight_layout()
-        save_figure(fig, f"eda_rating_by_{col.lower().replace(' ', '_')}.png")
+        save_figure(
+            fig, "eda", f"eda_rating_by_{col.lower().replace(' ', '_')}.png", DOMAIN
+        )
 
 
 def main() -> None:

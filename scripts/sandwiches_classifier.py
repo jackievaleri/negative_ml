@@ -41,7 +41,6 @@ cross-validated metrics are printed.
 
 from __future__ import annotations
 
-import argparse
 import warnings
 from collections.abc import Callable, Sequence
 from functools import partial
@@ -74,9 +73,9 @@ from negative_ml.core.experiment import positive_scores
 from negative_ml.domains import sandwiches
 from negative_ml.models import feature_selected_ridge_classifier
 from negative_ml.models.xgboost import xgb_classifier
-from negative_ml.runner import data_path, figure_path
+from negative_ml.runner import data_path
+from negative_ml.script_io import require_artifacts, run_script, save_figure
 from negative_ml.viz import sandwiches as viz
-from negative_ml.viz.style import save_fig
 
 # Within a CV fold a rare one-hot ingredient can be absent from the training rows,
 # leaving its column constant; f_classif then scores it NaN (with a divide
@@ -88,26 +87,9 @@ warnings.filterwarnings("ignore", message="invalid value encountered in divide")
 DOMAIN = "sandwiches"
 
 
-def save_figure(fig: plt.Figure, name: str) -> None:
-    """Save a figure under the sandwich classification figure category and log it."""
-    path = save_fig(fig, figure_path(DOMAIN, "classification", name))
-    logger.info(f"  wrote {path.relative_to(REPO_ROOT)}")
-
-
 def artifact(name: str):
     """Standard classifier data-artifact path under results/sandwiches/data/metrics/."""
     return data_path(DOMAIN, "metrics", name, ".csv")
-
-
-def require_artifacts(*paths) -> None:
-    """Raise a clear "run generation first" error if any artifact is missing."""
-    missing = [p for p in paths if not p.exists()]
-    if missing:
-        names = ", ".join(p.name for p in missing)
-        raise FileNotFoundError(
-            f"Missing classifier artifacts ({names}); run generation first "
-            "(run: python scripts/sandwiches_classifier.py --generate-only)."
-        )
 
 
 #: The ridge model builder: the feature-selected ridge pipeline (top-feature
@@ -315,7 +297,13 @@ def make_figures() -> None:
     roc_path = artifact("classifier_roc")
     conf_path = artifact("classifier_confusion")
     features_path = artifact("selected_features")
-    require_artifacts(metrics_path, roc_path, conf_path, features_path)
+    require_artifacts(
+        "sandwiches_classifier.py",
+        metrics_path,
+        roc_path,
+        conf_path,
+        features_path,
+    )
 
     metrics = pd.read_csv(metrics_path).set_index("model")
     models = metrics.index.tolist()
@@ -328,7 +316,7 @@ def make_figures() -> None:
         curves.append((name, sub["fpr"], sub["tpr"], metrics.loc[name, "auroc"]))
     viz.plot_roc_curves(curves, ax)
     fig.tight_layout()
-    save_figure(fig, "clf_roc.png")
+    save_figure(fig, "classification", "clf_roc.png", DOMAIN)
 
     conf = pd.read_csv(conf_path)
     fig, axes = plt.subplots(
@@ -341,7 +329,7 @@ def make_figures() -> None:
         )
         ax.set_title(name)
     fig.tight_layout()
-    save_figure(fig, "clf_confusion.png")
+    save_figure(fig, "classification", "clf_confusion.png", DOMAIN)
 
     features = pd.read_csv(features_path)
     fig, ax = plt.subplots(figsize=(7, 7))
@@ -349,7 +337,7 @@ def make_figures() -> None:
         features["feature"].tolist(), features["importance"].to_numpy(), ax
     )
     fig.tight_layout()
-    save_figure(fig, "clf_selected_features.png")
+    save_figure(fig, "classification", "clf_selected_features.png", DOMAIN)
 
 
 def plot() -> None:
@@ -360,22 +348,7 @@ def plot() -> None:
 
 def main() -> None:
     """Parse flags and run cross-validation and/or plotting."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument(
-        "--plot-only", action="store_true", help="rebuild figures from saved artifacts"
-    )
-    group.add_argument(
-        "--generate-only",
-        action="store_true",
-        help="cross-validate + save, write no figures",
-    )
-    args = parser.parse_args()
-
-    if not args.plot_only:
-        generate()
-    if not args.generate_only:
-        plot()
+    run_script(generate, plot, __doc__)
 
 
 if __name__ == "__main__":
