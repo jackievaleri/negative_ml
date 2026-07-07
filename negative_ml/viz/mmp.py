@@ -186,9 +186,9 @@ def plot_mmp_examples(
 ) -> plt.Figure:
     """Table figure showing example matched pairs with per-strategy model scores.
 
-    Each row is one matched pair; columns show domain-specific descriptors for
-    both members plus per-strategy scores. Score cells are colored green when the
-    positive was ranked above the negative (correct) and red otherwise.
+    Each pair occupies two rows (positive then negative); descriptor and score
+    columns each hold a single value. Score cells on the positive row are colored
+    green when the model ranked the positive above the negative, red otherwise.
 
     Args:
         pairs: Top n_examples pairs from find_matched_pairs (idx_pos, idx_neg, dist).
@@ -203,55 +203,74 @@ def plot_mmp_examples(
     """
     top = pairs.head(n_examples).reset_index(drop=True)
     strategies = list(scored_by_strategy.keys())
+    desc_keys = list(describe(dataset, int(top["idx_pos"].iloc[0])).index)
+    strat_labels = [STRATEGY_LABELS.get(s, s) for s in strategies]
+    col_labels = ["pair", "dist", "label"] + desc_keys + strat_labels
 
-    # Build display rows
+    # Alternating pair background colors
+    pair_bg = ["#f5f5f5", "white"]
+
     table_rows: list[list[str]] = []
     cell_colors: list[list[str]] = []
-    for _, pair_row in top.iterrows():
+
+    for pair_num, (_, pair_row) in enumerate(top.iterrows()):
         ip = int(pair_row["idx_pos"])
         ig = int(pair_row["idx_neg"])
         dist = float(pair_row["dist"])
+        bg = pair_bg[pair_num % 2]
 
         desc_pos = describe(dataset, ip)
         desc_neg = describe(dataset, ig)
 
-        # One display row per pair: dist | pos descriptor | neg descriptor | scores
-        row_strs: list[str] = [f"{dist:.2f}"]
-        colors: list[str] = ["#f5f5f5"]
-
-        for key in desc_pos.index:
-            vp = desc_pos.get(key, "")
-            vg = desc_neg.get(key, "")
-            row_strs.append(f"+: {vp}\n−: {vg}")
-            colors.append("white")
-
+        # Gather scores for this pair from each strategy
+        score_pos_vals: list[str] = []
+        score_neg_vals: list[str] = []
+        score_colors: list[str] = []
         for strat in strategies:
             scored = scored_by_strategy.get(strat)
             if scored is None:
-                row_strs.append("n/a")
-                colors.append("white")
+                score_pos_vals.append("n/a")
+                score_neg_vals.append("n/a")
+                score_colors.append(bg)
                 continue
             match = scored[scored["idx_pos"] == ip]
             if match.empty:
-                row_strs.append("n/a")
-                colors.append("white")
+                score_pos_vals.append("n/a")
+                score_neg_vals.append("n/a")
+                score_colors.append(bg)
                 continue
             r = match.iloc[0]
-            correct = bool(r["correct"])
-            cell = f"+:{r['score_pos']:.2f}\n−:{r['score_neg']:.2f}"
-            row_strs.append(cell)
-            colors.append("#d4edda" if correct else "#f8d7da")
+            score_pos_vals.append(f"{r['score_pos']:.2f}")
+            score_neg_vals.append(f"{r['score_neg']:.2f}")
+            score_colors.append("#d4edda" if bool(r["correct"]) else "#f8d7da")
 
-        table_rows.append(row_strs)
-        cell_colors.append(colors)
+        # Positive row
+        pos_row = (
+            [str(pair_num + 1), f"{dist:.2f}", "+"]
+            + [str(desc_pos.get(k, "")) for k in desc_keys]
+            + score_pos_vals
+        )
+        pos_colors = [bg, bg, "#e8f5e9"] + [bg] * len(desc_keys) + score_colors
 
-    desc_keys = list(describe(dataset, int(top["idx_pos"].iloc[0])).index)
-    col_labels = ["dist"] + desc_keys + [STRATEGY_LABELS.get(s, s) for s in strategies]
+        # Negative row
+        neg_row = (
+            ["", "", "−"]
+            + [str(desc_neg.get(k, "")) for k in desc_keys]
+            + score_neg_vals
+        )
+        neg_colors = (
+            [bg, bg, "#fdecea"] + [bg] * len(desc_keys) + [bg] * len(strategies)
+        )
+
+        table_rows.append(pos_row)
+        cell_colors.append(pos_colors)
+        table_rows.append(neg_row)
+        cell_colors.append(neg_colors)
 
     n_rows = len(table_rows)
     n_cols = len(col_labels)
-    fig_h = max(3, 0.6 * n_rows + 1.5)
-    fig_w = max(8, 1.5 * n_cols)
+    fig_h = max(4, 0.35 * n_rows + 1.5)
+    fig_w = max(10, 1.4 * n_cols)
     fig, ax = plt.subplots(figsize=(fig_w, fig_h))
     ax.axis("off")
 
@@ -260,14 +279,15 @@ def plot_mmp_examples(
         colLabels=col_labels,
         cellColours=cell_colors,
         loc="center",
-        cellLoc="center",
+        cellLoc="left",
     )
     tbl.auto_set_font_size(False)
-    tbl.set_fontsize(7)
+    tbl.set_fontsize(7.5)
     tbl.auto_set_column_width(list(range(n_cols)))
 
     ax.set_title(
-        f"Matched-pair examples (n={n_rows}) — green=correct, red=incorrect",
+        f"Matched-pair examples (n={n_rows // 2} pairs)"
+        " — score cells: green=correct, red=incorrect",
         pad=10,
         fontsize=9,
     )
