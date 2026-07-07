@@ -49,15 +49,14 @@ from negative_ml.models import model_factory
 from negative_ml.runner import metrics_path
 from negative_ml.script_io import (
     log_mean_metrics,
+    plot_downselection_split_figures,
     plot_proportional_saturation_overlay,
-    plot_saturation_panels,
     read_result_frames,
-    run_downselection_sweeps,
     run_script,
+    run_splits_sweep,
     save_figure,
     save_frame,
     save_sweep_frames,
-    warn_small_fractions,
 )
 from negative_ml.viz import results as viz
 from negative_ml.viz import selection_examples as selviz
@@ -108,29 +107,19 @@ def generate() -> None:
             f"{ds_test.n_samples:,} balls, {int(ds_test.y.sum()):,} {target}"
         )
 
-        for split_name, sp in baseball.build_splits(ds_train, ds_test).items():
-            n_majority = int(sp.train_ds.majority_mask().sum())
-            n_minority = int(sp.train_ds.minority_mask().sum())
-            budgets = [b for b in BUDGETS if b < n_majority]
-            warn_small_fractions(
-                FRACTIONS,
-                n_minority,
-                f"train {target}s",
-                split_name,
-                context_key=target,
-            )
-            logger.info(
-                f"  [{split_name}] budgets {budgets} (n_seeds={N_SEEDS}); "
-                f"train pool {sp.train_ds.n_samples:,}"
-            )
-
-            tag = {"target": target, "split": split_name}
-            sel_f, sat_f, satp_f = run_downselection_sweeps(
-                ds_train, classifier_factory, budgets, FRACTIONS, N_SEEDS, sp, tag
-            )
-            selection_frames.append(sel_f)
-            sat_frames.append(sat_f)
-            sat_prop_frames.append(satp_f)
+        sel_fs, sat_fs, satp_fs = run_splits_sweep(
+            baseball.build_splits(ds_train, ds_test),
+            ds_train,
+            classifier_factory,
+            BUDGETS,
+            FRACTIONS,
+            N_SEEDS,
+            base_tag={"target": target},
+            minority_label=f"train {target}s",
+        )
+        selection_frames.extend(sel_fs)
+        sat_frames.extend(sat_fs)
+        sat_prop_frames.extend(satp_fs)
 
     selection_df = save_sweep_frames(
         selection_frames, sat_frames, sat_prop_frames, DOMAIN
@@ -201,28 +190,16 @@ def plot() -> None:
         satp_t = sat_proportional[sat_proportional["target"] == target]
 
         logger.info(f"Figures for target {target}:")
-        for split_name in ("random", "hard", "park"):
-            sel_ts = sel_t[sel_t["split"] == split_name]
-            if sel_ts.empty:
-                continue
-            fig = viz.plot_selection_grid(sel_ts, metrics=METRICS)
-            fig.suptitle(
-                f"Majority-class selection — {target} ({split_name} split)",
-                fontsize=14,
-            )
-            save_figure(
-                fig,
-                "downselection",
-                f"downselection_grid_{target}_{split_name}.png",
-                DOMAIN,
-            )
-            plot_saturation_panels(
-                satm_t[satm_t["split"] == split_name],
-                satp_t[satp_t["split"] == split_name],
-                title=f"Saturation: AUPRC vs. size — {target} ({split_name} split)",
-                fname=f"saturation_curve_{target}_{split_name}.png",
-                domain=DOMAIN,
-            )
+        plot_downselection_split_figures(
+            sel_t,
+            satm_t,
+            satp_t,
+            splits=("random", "hard", "park"),
+            domain=DOMAIN,
+            metrics=METRICS,
+            fname_prefix=f"{target}_",
+            title_label=target,
+        )
 
         # Per-target overlays (random/hard/park on one axes).
         fig, ax = plt.subplots(figsize=(8.5, 5.5))
@@ -239,10 +216,5 @@ def plot() -> None:
         )
 
 
-def main() -> None:
-    """Parse flags and run generation and/or plotting."""
-    run_script(generate, plot, __doc__)
-
-
 if __name__ == "__main__":
-    main()
+    run_script(generate, plot, __doc__)

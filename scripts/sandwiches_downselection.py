@@ -71,15 +71,14 @@ from negative_ml.models import feature_selected_ridge_classifier
 from negative_ml.runner import metrics_path
 from negative_ml.script_io import (
     log_mean_metrics,
+    plot_downselection_split_figures,
     plot_proportional_saturation_overlay,
-    plot_saturation_panels,
     read_result_frames,
-    run_downselection_sweeps,
     run_script,
+    run_splits_sweep,
     save_figure,
     save_frame,
     save_sweep_frames,
-    warn_small_fractions,
 )
 from negative_ml.viz import results as viz
 from negative_ml.viz import selection_examples as selviz
@@ -186,35 +185,19 @@ def generate() -> None:
         DOMAIN,
     )
 
-    selection_frames, sat_frames, sat_prop_frames = [], [], []
-    for split_name, sp in sandwiches.build_splits(cds).items():
-        if len(set(sp.y_test.tolist())) < 2:
-            logger.warning(
-                f"  [{split_name}] held-out test set is single-class; "
-                "AUROC/AUPRC are undefined, skipping this split."
-            )
-            continue
-        n_majority = int(sp.train_ds.majority_mask().sum())
-        n_minority = int(sp.train_ds.minority_mask().sum())
-        budgets = [b for b in BUDGETS if b < n_majority]
-        warn_small_fractions(FRACTIONS, n_minority, "good train sandwiches", split_name)
-        logger.info(
-            f"  [{split_name}] budgets {budgets} (n_seeds={N_SEEDS}); train pool "
-            f"{sp.train_ds.n_samples} ({n_majority} bad / {n_minority} good), "
-            f"test {len(sp.y_test)} ({int(sp.y_test.sum())} good)"
-        )
-
-        tag = {"split": split_name}
-        sel_f, sat_f, satp_f = run_downselection_sweeps(
-            cds, classifier_factory, budgets, FRACTIONS, N_SEEDS, sp, tag
-        )
-        selection_frames.append(sel_f)
-        sat_frames.append(sat_f)
-        sat_prop_frames.append(satp_f)
-
-    selection_df = save_sweep_frames(
-        selection_frames, sat_frames, sat_prop_frames, DOMAIN
+    sel_frames, sat_frames, sat_prop_frames = run_splits_sweep(
+        sandwiches.build_splits(cds),
+        cds,
+        classifier_factory,
+        BUDGETS,
+        FRACTIONS,
+        N_SEEDS,
+        base_tag={},
+        minority_label="good train sandwiches",
+        skip_single_class=True,
     )
+
+    selection_df = save_sweep_frames(sel_frames, sat_frames, sat_prop_frames, DOMAIN)
     log_mean_metrics(selection_df, ["split", "strategy"], METRICS)
 
 
@@ -261,35 +244,18 @@ def plot() -> None:
     )
     splits_present = [s for s in SPLITS if s in set(selection_df["split"])]
 
-    for split_name in splits_present:
-        sel_s = selection_df[selection_df["split"] == split_name]
-        logger.info(f"Figures for the {split_name} split:")
-        fig = viz.plot_selection_grid(sel_s, metrics=METRICS)
-        fig.suptitle(f"Majority-class selection — {split_name} split", fontsize=14)
-        save_figure(
-            fig, "downselection", f"downselection_grid_{split_name}.png", DOMAIN
-        )
-
-        sel_s_no_dd = sel_s[sel_s["strategy"] != "density_diversity"]
-        fig = viz.plot_selection_grid(sel_s_no_dd, metrics=METRICS)
-        fig.suptitle(
-            f"Majority-class selection — {split_name} split (no density-diversity)",
-            fontsize=14,
-        )
-        save_figure(
-            fig,
-            "downselection",
-            f"downselection_grid_{split_name}_no_density_diversity.png",
-            DOMAIN,
-        )
-
-        plot_saturation_panels(
-            sat_majority[sat_majority["split"] == split_name],
-            sat_proportional[sat_proportional["split"] == split_name],
-            title=f"Saturation: AUPRC vs. size — {split_name} split",
-            fname=f"saturation_curve_{split_name}.png",
-            domain=DOMAIN,
-        )
+    plot_downselection_split_figures(
+        selection_df,
+        sat_majority,
+        sat_proportional,
+        splits=splits_present,
+        domain=DOMAIN,
+        metrics=METRICS,
+        fname_prefix="",
+        title_label="",
+        no_dd_fname_suffix="_no_density_diversity",
+        no_dd_title_suffix=" (no density-diversity)",
+    )
 
     # Cross-split overlays: random and season only (scaffold omitted).
     overlay_df = selection_df[selection_df["split"].isin(["random", "season"])]
@@ -324,10 +290,5 @@ def plot() -> None:
     )
 
 
-def main() -> None:
-    """Parse flags and run generation and/or plotting."""
-    run_script(generate, plot, __doc__)
-
-
 if __name__ == "__main__":
-    main()
+    run_script(generate, plot, __doc__)

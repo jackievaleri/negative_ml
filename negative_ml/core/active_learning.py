@@ -23,7 +23,7 @@ from negative_ml.core.config import RANDOM_SEED
 from negative_ml.core.dataset import Dataset
 from negative_ml.core.eval import compute_metrics
 from negative_ml.core.experiment import ModelFactory, positive_scores
-from negative_ml.core.selection import STRATEGIES, clamp, standardize
+from negative_ml.core.selection import STRATEGIES, _greedy_k_center, clamp, standardize
 
 #: Callable[model, X_pool, batch_size, seed] -> 1-D array of pool indices.
 AcquisitionFn = Callable[[object, np.ndarray, int, int], np.ndarray]
@@ -96,17 +96,9 @@ def diversity_uncertainty_acquisition(
         return np.sort(candidates)
 
     Xz = standardize(X_pool[candidates])
-    n = len(candidates)
     rng = np.random.default_rng(seed)
-    selected = np.empty(k, dtype=int)
-    start = int(rng.integers(n))
-    selected[0] = start
-    min_dist = np.linalg.norm(Xz - Xz[start], axis=1)
-    for i in range(1, k):
-        nxt = int(np.argmax(min_dist))
-        selected[i] = nxt
-        d = np.linalg.norm(Xz - Xz[nxt], axis=1)
-        min_dist = np.minimum(min_dist, d)
+    start = int(rng.integers(len(candidates)))
+    selected = _greedy_k_center(Xz, k, start)
     return np.sort(candidates[selected])
 
 

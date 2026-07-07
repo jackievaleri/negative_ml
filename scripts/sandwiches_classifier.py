@@ -87,11 +87,6 @@ warnings.filterwarnings("ignore", message="invalid value encountered in divide")
 DOMAIN = "sandwiches"
 
 
-def artifact(name: str):
-    """Standard classifier data-artifact path under results/sandwiches/data/metrics/."""
-    return data_path(DOMAIN, "metrics", name, ".csv")
-
-
 #: The ridge model builder: the feature-selected ridge pipeline (top-feature
 #: F-test selection then an L2 ridge classifier) shared with the downselection
 #: study. A fresh, unfitted pipeline each call lets the cross-validation loop
@@ -209,7 +204,7 @@ def save_selected_features(
         if keep
     ]
     selected.sort(key=lambda row: row["importance"], reverse=True)
-    path = artifact("selected_features")
+    path = data_path(DOMAIN, "metrics", "selected_features", ".csv")
     pd.DataFrame(selected).to_csv(path, index=False)
     logger.info(
         f"  selected {len(selected)} features; wrote {path.relative_to(REPO_ROOT)}"
@@ -265,7 +260,7 @@ def generate() -> None:
             )
         )
 
-    metrics_path = artifact("classifier_metrics")
+    metrics_path = data_path(DOMAIN, "metrics", "classifier_metrics", ".csv")
     pd.DataFrame(metrics_rows).to_csv(metrics_path, index=False)
     # Honest reference points: good is the minority (positive) class here.
     naive_f1 = 2 * base_rate / (1 + base_rate)
@@ -275,11 +270,11 @@ def generate() -> None:
     )
     logger.info(f"  wrote {metrics_path.relative_to(REPO_ROOT)}")
 
-    roc_path = artifact("classifier_roc")
+    roc_path = data_path(DOMAIN, "metrics", "classifier_roc", ".csv")
     pd.concat(roc_frames, ignore_index=True).to_csv(roc_path, index=False)
     logger.info(f"  wrote {roc_path.relative_to(REPO_ROOT)}")
 
-    conf_path = artifact("classifier_confusion")
+    conf_path = data_path(DOMAIN, "metrics", "classifier_confusion", ".csv")
     pd.concat(conf_frames, ignore_index=True).to_csv(conf_path, index=False)
     logger.info(f"  wrote {conf_path.relative_to(REPO_ROOT)}")
 
@@ -293,10 +288,10 @@ def make_figures() -> None:
     panel per model, so the two models read side by side; the selected-features
     figure stays ridge-specific (the F-test selection step is a ridge-only artifact).
     """
-    metrics_path = artifact("classifier_metrics")
-    roc_path = artifact("classifier_roc")
-    conf_path = artifact("classifier_confusion")
-    features_path = artifact("selected_features")
+    metrics_path = data_path(DOMAIN, "metrics", "classifier_metrics", ".csv")
+    roc_path = data_path(DOMAIN, "metrics", "classifier_roc", ".csv")
+    conf_path = data_path(DOMAIN, "metrics", "classifier_confusion", ".csv")
+    features_path = data_path(DOMAIN, "metrics", "selected_features", ".csv")
     require_artifacts(
         "sandwiches_classifier.py",
         metrics_path,
@@ -346,10 +341,5 @@ def plot() -> None:
     make_figures()
 
 
-def main() -> None:
-    """Parse flags and run cross-validation and/or plotting."""
-    run_script(generate, plot, __doc__)
-
-
 if __name__ == "__main__":
-    main()
+    run_script(generate, plot, __doc__)
