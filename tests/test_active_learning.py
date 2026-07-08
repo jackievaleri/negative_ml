@@ -6,11 +6,10 @@ from sklearn.linear_model import LogisticRegression
 
 from negative_ml.core.active_learning import (
     ACQUISITION_FNS,
-    diversity_uncertainty_acquisition,
     make_init_labeled,
     random_acquisition,
     run_active_learning,
-    uncertainty_acquisition,
+    ucb_acquisition,
 )
 from negative_ml.core.dataset import Dataset
 
@@ -74,12 +73,12 @@ def test_acquisition_indices_sorted():
         assert list(idx) == sorted(idx.tolist()), f"{name} returned unsorted indices"
 
 
-def test_uncertainty_picks_smallest_margin():
-    """Uncertainty acquisition selects points closest to the decision boundary."""
+def test_ucb_picks_smallest_margin():
+    """UCB acquisition selects points closest to the decision boundary."""
     ds = synthetic_dataset()
     model = fitted_model(ds)
     batch_size = 10
-    chosen = uncertainty_acquisition(model, ds.X, batch_size, seed=0)
+    chosen = ucb_acquisition(model, ds.X, batch_size, seed=0)
 
     probs = model.predict_proba(ds.X)[:, 1]
     margins = np.abs(2.0 * probs - 1.0)
@@ -94,14 +93,6 @@ def test_random_acquisition_reproducible():
     a = random_acquisition(model, ds.X, batch_size=20, seed=7)
     b = random_acquisition(model, ds.X, batch_size=20, seed=7)
     assert np.array_equal(a, b)
-
-
-def test_diversity_uncertainty_no_duplicates():
-    """Diversity-uncertainty acquisition returns unique indices."""
-    ds = synthetic_dataset()
-    model = fitted_model(ds)
-    idx = diversity_uncertainty_acquisition(model, ds.X, batch_size=15, seed=0)
-    assert len(set(idx.tolist())) == len(idx)
 
 
 def test_acquisition_clamped_to_pool_size():
@@ -232,7 +223,7 @@ def test_run_active_learning_positives_nonnegative():
         model_factory=logistic_factory,
         batch_size=5,
         n_batches=3,
-        acquisition_fn=uncertainty_acquisition,
+        acquisition_fn=ucb_acquisition,
         neg_composition="hard",
         neg_budget=20,
         init_labeled_idx=init_idx,
