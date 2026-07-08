@@ -59,7 +59,16 @@ def make_split(
     scaffold: bool = False,
     seed: int = RANDOM_SEED,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Train/test split, scaffold/grouped when requested and available."""
+    """Train/test split, scaffold/grouped when requested and available.
+
+    Args:
+        dataset: Dataset to split.
+        scaffold: Use a scaffold/grouped split when True (requires dataset.groups).
+        seed: Random seed for the split.
+
+    Returns:
+        (train_idx, test_idx) integer index arrays.
+    """
     if scaffold:
         return scaffold_split(dataset, seed=seed)
     return random_split(dataset, seed=seed)
@@ -75,6 +84,15 @@ def split_from_dataset(
 
     This is the default regime: a stratified random (or scaffold) split where the
     train pool and test set come from the same dataset.
+
+    Args:
+        dataset: Dataset to split.
+        scaffold: Use a scaffold/grouped split when True.
+        seed: Random seed for the split.
+        name: Split-regime label carried into result frames.
+
+    Returns:
+        An EvalSplit built from train and test halves of dataset.
     """
     train_idx, test_idx = make_split(dataset, scaffold=scaffold, seed=seed)
     return EvalSplit(
@@ -128,6 +146,14 @@ def cross_dataset_split(
     The cross-season ("hard") regime: e.g. train_dataset is the full 2023 season
     and test_dataset the full 2024 season, so the model is scored under genuine
     distribution shift rather than an in-distribution random holdout.
+
+    Args:
+        train_dataset: Dataset used entirely for training.
+        test_dataset: Dataset used entirely for evaluation.
+        name: Split-regime label carried into result frames.
+
+    Returns:
+        An EvalSplit with train_dataset as the pool and test_dataset as the test set.
     """
     return EvalSplit(
         train_ds=train_dataset,
@@ -147,6 +173,15 @@ def resolve_split(
 
     Lets every runner accept an optional pre-built split while keeping their
     original dataset + scaffold + seed behavior when none is supplied.
+
+    Args:
+        dataset: Dataset to split when split is None.
+        split: Pre-built EvalSplit to return as-is; when None a new split is built.
+        scaffold: Use a scaffold/grouped split when building a new split.
+        seed: Random seed forwarded when building a new split.
+
+    Returns:
+        The provided split, or a freshly built in-dataset split.
     """
     if split is not None:
         return split

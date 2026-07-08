@@ -106,7 +106,14 @@ def logistic_classifier(
 
 
 def ridge_regressor(**params: Any) -> Ridge:
-    """Build a ridge regressor for the latent-rating sandwich classifier."""
+    """Build a ridge regressor for the latent-rating sandwich classifier.
+
+    Args:
+        **params: Additional Ridge hyper-parameters (e.g. alpha).
+
+    Returns:
+        A configured Ridge regressor instance.
+    """
     kwargs: dict[str, Any] = {"random_state": RANDOM_SEED, **params}
     return Ridge(**kwargs)
 

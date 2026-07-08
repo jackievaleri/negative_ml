@@ -171,7 +171,14 @@ def fetch_statcast(start: str, end: str) -> pd.DataFrame:
 
 
 def read_cached(path: Path) -> pd.DataFrame:
-    """Read a cached events frame (parquet or CSV) by file extension."""
+    """Read a cached events frame (parquet or CSV) by file extension.
+
+    Args:
+        path: Path to a .parquet or .csv events file.
+
+    Returns:
+        The events DataFrame loaded from disk.
+    """
     if path.suffix == ".parquet":
         return pd.read_parquet(path)
     return pd.read_csv(path)
@@ -187,6 +194,14 @@ def adjusted_spray_angle(
     hand so that, for every batter, positive means pulled and negative means
     opposite field — right-handers pull to left field (raw < 0) and left-handers
     pull to right field (raw > 0), so the sign is flipped only for right-handers.
+
+    Args:
+        hc_x: Statcast hit-coordinate x values (home-plate origin).
+        hc_y: Statcast hit-coordinate y values (home-plate origin).
+        stand: Batter handedness per row ("L" or "R").
+
+    Returns:
+        Pull-positive spray angle in degrees, shape (n,).
     """
     raw = np.degrees(np.arctan2(hc_x - _HC_X_ORIGIN, _HC_Y_ORIGIN - hc_y))
     handed = np.where(np.asarray(stand) == "L", 1.0, -1.0)
@@ -194,7 +209,14 @@ def adjusted_spray_angle(
 
 
 def outcome_label(events: pd.Series) -> pd.Series:
-    """Map raw Statcast events to the 5-class outcome (out is the default)."""
+    """Map raw Statcast events to the 5-class outcome (out is the default).
+
+    Args:
+        events: Raw Statcast "events" column, one value per batted ball.
+
+    Returns:
+        Series of outcome strings (single / double / triple / home_run / out).
+    """
     return events.map(_HIT_EVENTS).fillna("out")
 
 

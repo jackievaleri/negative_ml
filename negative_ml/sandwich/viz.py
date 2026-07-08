@@ -343,7 +343,14 @@ def plot_rating_by_season(
 
 
 def to_float(value: object) -> float:
-    """Coerce a value to float, returning NaN when it is not numeric."""
+    """Coerce a value to float, returning NaN when it is not numeric.
+
+    Args:
+        value: Any value to attempt to coerce.
+
+    Returns:
+        The value as a float, or float("nan") if conversion fails.
+    """
     try:
         return float(value)
     except (TypeError, ValueError):

@@ -103,7 +103,14 @@ def normalize_ratings(frame: pd.DataFrame) -> pd.DataFrame:
     bare_number = re.compile(r"^\d+(\.\d+)?$")
 
     def repair(value: object) -> object:
-        """Strip whitespace and append /10 to a bare numeric rating."""
+        """Strip whitespace and append /10 to a bare numeric rating.
+
+        Args:
+            value: Raw rating cell value (may be str, float, or other).
+
+        Returns:
+            The repaired string, or the original value stringified if not repairable.
+        """
         text = str(value).replace(" ", "")
         if bare_number.match(text):
             text = f"{text}/10"

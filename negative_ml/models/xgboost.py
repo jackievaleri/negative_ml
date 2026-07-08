@@ -35,6 +35,13 @@ def xgb_classifier(
 
 
 def xgb_regressor(**params: Any) -> XGBRegressor:
-    """Build an XGBRegressor for the sandwich-ratings task."""
+    """Build an XGBRegressor for the sandwich-ratings task.
+
+    Args:
+        **params: Additional XGBoost hyper-parameters (override the defaults).
+
+    Returns:
+        A configured XGBRegressor instance.
+    """
     kwargs = {**XGB_DEFAULTS, **params}
     return XGBRegressor(**kwargs)

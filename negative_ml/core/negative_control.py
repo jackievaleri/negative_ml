@@ -37,6 +37,13 @@ def correlation_factory(feature_index: int) -> ModelFactory:
 
     Absorbs any **kwargs (e.g. an ignored class_weight) so it satisfies the
     ModelFactory contract that fit_score expects.
+
+    Args:
+        feature_index: Column of X this control is bound to.
+
+    Returns:
+        A zero-argument factory (accepting **kwargs) that returns a fresh
+        CorrelationModel for feature_index.
     """
     return lambda **_kw: make_model(
         "classification", kind="correlation", feature_index=feature_index

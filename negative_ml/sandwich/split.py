@@ -78,7 +78,16 @@ def build_regression_splits(
     seas_train, seas_test = season_split(cds, SANDWICH_TEST_SEASON)
 
     def make(train_idx: np.ndarray, test_idx: np.ndarray, name: str) -> EvalSplit:
-        """Build one EvalSplit from raw index arrays."""
+        """Build one EvalSplit from raw index arrays.
+
+        Args:
+            train_idx: Row indices into reg_ds for the training pool.
+            test_idx: Row indices into reg_ds for the test set.
+            name: Split-regime label carried into result frames.
+
+        Returns:
+            EvalSplit whose train_ds.y is continuous and y_test is binary.
+        """
         reg_train_ds = reg_ds.subset(train_idx)
         reg_train_ds = Dataset(
             X=reg_train_ds.X,

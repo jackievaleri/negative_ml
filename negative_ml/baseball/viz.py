@@ -52,7 +52,14 @@ TARGET_ABBR = {"home_run": "HR", "triple": "3B", "double": "2B", "single": "1B"}
 
 
 def target_label(target: str) -> str:
-    """Human-readable target name for titles, e.g. home_run -> home run."""
+    """Human-readable target name for titles, e.g. home_run -> home run.
+
+    Args:
+        target: Internal target name with underscores (e.g. "home_run").
+
+    Returns:
+        Display string with underscores replaced by spaces (e.g. "home run").
+    """
     return target.replace("_", " ")
 
 

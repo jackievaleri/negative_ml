@@ -57,7 +57,11 @@ class Dataset:
 
     @property
     def n_samples(self) -> int:
-        """Number of rows in the dataset."""
+        """Number of rows in the dataset.
+
+        Returns:
+            The number of samples (length of y).
+        """
         return len(self.y)
 
     def minority_mask(self, threshold: float | None = None) -> np.ndarray:
@@ -85,11 +89,26 @@ class Dataset:
         return self.y <= threshold
 
     def majority_mask(self, threshold: float | None = None) -> np.ndarray:
-        """Boolean mask selecting the majority examples (complement of minority)."""
+        """Boolean mask selecting the majority examples (complement of minority).
+
+        Args:
+            threshold: Cutoff for the regression minority tail; forwarded to
+                minority_mask. Ignored when label_y is set.
+
+        Returns:
+            Boolean array of length n_samples (complement of minority_mask).
+        """
         return ~self.minority_mask(threshold)
 
     def subset(self, indices: np.ndarray) -> "Dataset":
-        """Return a new Dataset containing only the given row indices."""
+        """Return a new Dataset containing only the given row indices.
+
+        Args:
+            indices: Integer row indices into this dataset.
+
+        Returns:
+            A new Dataset restricted to the given rows.
+        """
         indices = np.asarray(indices)
         meta = (
             None

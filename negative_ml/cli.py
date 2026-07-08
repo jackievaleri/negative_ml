@@ -41,7 +41,13 @@ def prepare(
     domain: str = typer.Argument(None),
     all_domains: bool = typer.Option(False, "--all"),
 ) -> None:
-    """Fetch and cache featurized data for one domain or --all (plan.md 3)."""
+    """Fetch and cache featurized data for one domain or --all (plan.md 3).
+
+    Args:
+        domain: Domain name to prepare (one of DOMAINS); ignored when all_domains
+            is True.
+        all_domains: When True, prepare every domain in DOMAIN_LOADERS.
+    """
     names = list(DOMAIN_LOADERS) if all_domains else [domain]
     for name in names:
         loader, _ = DOMAIN_LOADERS[name]
@@ -50,7 +56,12 @@ def prepare(
 
 @app.command()
 def saturation(domain: str, scaffold: bool = False) -> None:
-    """Run the saturation experiment for a domain (plan.md 4.1)."""
+    """Run the saturation experiment for a domain (plan.md 4.1).
+
+    Args:
+        domain: Domain name (one of DOMAINS).
+        scaffold: Use a scaffold/grouped train-test split when True.
+    """
     dataset, task = load_classification_domain(domain)
     results = saturation_exp.fix_minority_vary_majority(
         dataset,
@@ -72,6 +83,13 @@ def selection(
 
     Pass --sweep to sweep the per-domain default budgets and emit the
     strategy-vs-size curves; otherwise compare strategies at a single budget.
+
+    Args:
+        domain: Domain name (one of DOMAINS).
+        budget: Number of majority examples per strategy when not sweeping.
+        sweep: When True, sweep the per-domain default budgets instead of a
+            single budget.
+        scaffold: Use a scaffold/grouped train-test split when True.
     """
     dataset, task = load_classification_domain(domain)
     factory = model_factory(task)
