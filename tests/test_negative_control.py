@@ -4,7 +4,7 @@ import numpy as np
 
 from negative_ml.core.dataset import Dataset
 from negative_ml.core.experiment import cross_dataset_split
-from negative_ml.experiments.negative_control import run_negative_control
+from negative_ml.core.negative_control import run_negative_control
 from negative_ml.models import make_model
 
 METRIC_COLS = {"auroc", "auprc", "f1", "precision_at_k", "enrichment_factor"}

@@ -44,9 +44,12 @@ from negative_ml.core.experiment import (
     cross_dataset_split,
     split_from_dataset,
 )
-from negative_ml.core.mmp import find_matched_pairs, run_mmp_evaluation
+from negative_ml.core.mmp import (
+    find_matched_pairs,
+    rescore_examples,
+    run_mmp_evaluation,
+)
 from negative_ml.core.splitting import random_split
-from negative_ml.experiments.mmp import rescore_examples
 from negative_ml.models import feature_selected_ridge_classifier, model_factory
 from negative_ml.molecules import io as molecules
 from negative_ml.runner import metrics_path

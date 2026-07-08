@@ -37,7 +37,7 @@ from negative_ml.baseball import viz
 from negative_ml.baseball.config import OUTLIER_BALLPARKS
 from negative_ml.core import eval as ev
 from negative_ml.core.config import REPO_ROOT
-from negative_ml.experiments.negative_control import run_negative_control
+from negative_ml.core.negative_control import run_negative_control
 from negative_ml.models import model_factory
 from negative_ml.runner import data_path, metrics_path
 from negative_ml.script_io import (

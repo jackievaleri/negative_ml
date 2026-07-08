@@ -1,7 +1,7 @@
 """Plotting helpers for the downselection results frames (plan.md 4.1/4.2).
 
 Domain-agnostic: anything that returns the long-format frames produced by
-negative_ml.experiments.selection / .saturation can be plotted here.
+negative_ml.core.sweep / .saturation can be plotted here.
 The headline figure realizes the talk's main result axes:
 
     y = model performance metric, x = dataset size, color/marker = selection method.

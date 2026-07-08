@@ -1,7 +1,7 @@
 """Custom CLI for negative_ml — the single entry point for every experiment.
 
 Typer app exposing the experiment runners. The heavy lifting lives in
-negative_ml.experiments; these commands just parse arguments, load a
+negative_ml.core; these commands just parse arguments, load a
 domain (via negative_ml.runner), build a model, run the experiment, and
 write results. See https://typer.tiangolo.com for the framework.
 
@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import typer
 
-from negative_ml.experiments import saturation as saturation_exp
-from negative_ml.experiments import selection as selection_exp
+from negative_ml.core import saturation as saturation_exp
+from negative_ml.core import sweep as selection_exp
 from negative_ml.models import model_factory
 from negative_ml.runner import (
     DEFAULT_BUDGETS,

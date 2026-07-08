@@ -15,9 +15,9 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from loguru import logger
 
+from negative_ml.core import saturation as sat
+from negative_ml.core import sweep as sel
 from negative_ml.core.config import REPO_ROOT
-from negative_ml.experiments import saturation as sat
-from negative_ml.experiments import selection as sel
 from negative_ml.runner import figure_path, metrics_path
 from negative_ml.viz import diagnostics as diag
 from negative_ml.viz import results as viz
