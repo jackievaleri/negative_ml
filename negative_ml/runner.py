@@ -15,24 +15,26 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from negative_ml.baseball import io as baseball_io
 from negative_ml.core.config import RESULTS_DIR
 from negative_ml.core.dataset import Dataset
-from negative_ml.domains import baseball, molecules, sandwiches
+from negative_ml.molecules import io as molecules_io
+from negative_ml.sandwich import io as sandwich_io
 
 #: Map a CLI domain name to its loader and ML task.
 DOMAIN_LOADERS = {
-    "molecules": (molecules.load, "classification"),
-    "baseball": (baseball.load, "classification"),
-    "sandwiches": (sandwiches.load, "regression"),
+    "molecules": (molecules_io.load, "classification"),
+    "baseball": (baseball_io.load, "classification"),
+    "sandwiches": (sandwich_io.load, "regression"),
 }
 
 #: Recast a natively-regression domain into the good-vs-bad classification framing
 #: the selection and saturation experiments require (they rank a positive minority
 #: with AUROC / AUPRC / F1). molecules and baseball are already classification and
 #: need no converter; the sandwich domain is a skewed regression, so its good-vs-bad
-#: view (sandwiches.to_classification) is registered here.
+#: view (sandwich_io.to_classification) is registered here.
 CLASSIFICATION_VIEW = {
-    "sandwiches": sandwiches.to_classification,
+    "sandwiches": sandwich_io.to_classification,
 }
 
 #: Default majority-class budgets / sizes swept per domain (plan.md 4.1/4.2).

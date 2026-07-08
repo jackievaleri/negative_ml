@@ -4,8 +4,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from negative_ml.baseball.split import ballpark_split
 from negative_ml.core.dataset import Dataset
-from negative_ml.core.splitting import ballpark_split, random_split, season_split
+from negative_ml.core.splitting import random_split, season_split
 
 
 def imbalanced_dataset(n: int = 200) -> Dataset:

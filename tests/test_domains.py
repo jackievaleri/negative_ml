@@ -4,9 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from negative_ml.core.config import MORGAN_N_BITS, SANDWICH_GOOD_RATING_THRESHOLD
+from negative_ml.baseball import io as baseball
 from negative_ml.core.dataset import Dataset
-from negative_ml.domains import baseball, molecules, sandwiches
+from negative_ml.molecules import io as molecules
+from negative_ml.molecules.config import MORGAN_N_BITS
+from negative_ml.sandwich import io as sandwiches
+from negative_ml.sandwich.config import SANDWICH_GOOD_RATING_THRESHOLD
 
 
 def test_dataset_validates_shapes():

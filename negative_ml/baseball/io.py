@@ -1,34 +1,6 @@
-"""MLB batted-ball outcomes domain — intuitive geometry (plan.md 3.2).
+"""MLB batted-ball outcomes domain — I/O, featurization, and constants.
 
-The core features are exit velocity, launch angle, and an adjusted (pull-positive)
-spray angle, extended with pitch context (plate location, release speed, release
-spin rate) and a coarse pitch-class indicator (fastball / breaking / offspeed);
-the task is to predict a rare batted-ball outcome. The default minority target is
-the home run — it occupies a small, well-defined region of the exit-velocity /
-launch-angle plane (high exit velocity, ~12-50 deg launch angle), which makes
-"near-miss" majority examples (balls that just miss being home runs) a natural
-selection target. The target can instead be any hit type; triple is a
-deliberately harder, more imbalanced minority (rarer than home runs, and
-geometrically diffuse rather than a tight high-exit-velocity cluster).
-
-Two groups of available Statcast columns are deliberately left out of the feature
-matrix. hit_distance_sc, estimated_ba_using_speedangle,
-estimated_woba_using_speedangle, and launch_speed_angle (the barrel class) are
-measured or modeled consequences of the outcome itself, so they would leak the
-label. bat_speed and swing_length (bat tracking) are ~58% missing in 2023 and
-would break the NaN-intolerant distance and clustering used by the selection
-strategies; they can be added if the study moves to a 2024+ training season.
-
-The batter's home team is retained as Dataset.groups so a ballpark-based split can
-hold entire (quirky) parks out of training — a harder, park-factor distribution
-shift than the chronological cross-season split.
-
-Data is pulled with pybaseball one MLB season at a time — see SEASONS and
-load_season. For the binary framing used
-throughout the imbalance study, the chosen target is the minority class
-(y == 1) and every other batted ball is the majority class; the full
-multiclass outcome (out / single / double / triple / home_run) is retained in
-meta.
+See negative_ml.baseball for the full domain description.
 """
 
 from __future__ import annotations
@@ -42,12 +14,6 @@ from pybaseball import statcast
 
 from negative_ml.core.config import RAW_DATA_DIR
 from negative_ml.core.dataset import Dataset
-from negative_ml.core.experiment import (
-    EvalSplit,
-    cross_dataset_split,
-    park_split_from_dataset,
-    split_from_dataset,
-)
 
 # Default Statcast pull: the full 2024 MLB regular season.
 DEFAULT_START = "2024-03-20"
@@ -178,29 +144,6 @@ def load_season(year: int, target: str = "home_run", binary: bool = True) -> Dat
         )
     start, end = SEASONS[year]
     return load(binary=binary, start=start, end=end, target=target)
-
-
-def build_splits(ds_train: Dataset, ds_test: Dataset) -> dict[str, EvalSplit]:
-    """The three baseball evaluation regimes keyed by name.
-
-    random is a stratified holdout within the training season; hard trains on the
-    full training season and tests on the full held-out season (a chronological
-    cross-season shift); park holds the quirky outlier ballparks (carried in
-    ds_train.groups) entirely out of training (a park-factor shift). Shared by
-    every baseball script so the regimes are defined once.
-
-    Args:
-        ds_train: The training-season Dataset (its groups hold the ballpark).
-        ds_test: The held-out-season Dataset used for the hard split.
-
-    Returns:
-        Mapping of split name to its EvalSplit.
-    """
-    return {
-        "random": split_from_dataset(ds_train, name="random"),
-        "hard": cross_dataset_split(ds_train, ds_test, name="hard"),
-        "park": park_split_from_dataset(ds_train, name="park"),
-    }
 
 
 def fetch_statcast(start: str, end: str) -> pd.DataFrame:

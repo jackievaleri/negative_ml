@@ -1,20 +1,6 @@
-"""Antibacterial screening domain — the core case study (plan.md 3.1).
+"""Antibacterial screening domain — I/O, featurization, and constants.
 
-~40,000 small molecules experimentally screened for antibacterial activity;
-~97% inactive (majority) and ~3% active (minority). Molecules are featurized
-with chemical fingerprints for the XGBoost model. Scaffold information is
-extracted so that negative_ml.core.splitting.scaffold_split can hold out entire
-structural families to test generalization under distribution shift.
-
-The featurization loaders (load, load_screen, compute_fingerprints,
-bemis_murcko_scaffolds) turn the raw SMILES + activity files into the shared
-Dataset for the XGBoost study, offering three featurizations: the precomputed
-RDKit descriptors, Morgan fingerprints, or both concatenated. build_splits pairs
-the training screen with its two held-out test files (a random holdout and a
-time split) as cross-dataset EvalSplits. load_gnn_saturation_results, by
-contrast, reads the precomputed graph-neural-network saturation results for the
-gonorrhea screen (the negative-set sweep by selection strategy) into one tidy
-frame the viz and script layers plot, without needing to refit the GNN here.
+See negative_ml.molecules for the full domain description.
 """
 
 from __future__ import annotations
@@ -28,20 +14,17 @@ from rdkit import Chem
 from rdkit.Chem import rdFingerprintGenerator
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
-from negative_ml.core.config import (
+from negative_ml.core.config import PROCESSED_DATA_DIR
+from negative_ml.core.dataset import Dataset
+from negative_ml.molecules.config import (
     GONORRHEA_RAW_DIR,
     MOLECULE_FEATURIZATIONS,
     MOLECULE_GNN_N_POSITIVES,
     MOLECULE_GNN_RESULT_FILES,
-    MOLECULE_TEST_RANDOM_STEM,
-    MOLECULE_TEST_TIME_STEM,
     MOLECULE_TRAIN_STEM,
     MORGAN_N_BITS,
     MORGAN_RADIUS,
-    PROCESSED_DATA_DIR,
 )
-from negative_ml.core.dataset import Dataset
-from negative_ml.core.experiment import EvalSplit, cross_dataset_split
 
 
 def get_rdkit_feature_names() -> list[str]:
@@ -299,34 +282,6 @@ def load(path: str | Path | None = None, featurization: str = "both") -> Dataset
         stem = path.stem
         raw_dir = path.parent
     return load_screen(stem, featurization=featurization, raw_dir=raw_dir)
-
-
-def build_splits(
-    train_ds: Dataset,
-    featurization: str = "both",
-) -> dict[str, EvalSplit]:
-    """Pair the training screen with its two held-out test files.
-
-    Both test files are featurized the same way as train_ds and wrapped as
-    cross-dataset EvalSplits: "random" is the random 20% holdout
-    (MOLECULE_TEST_RANDOM_STEM) and "time" is the easy/medium/hard time-split
-    validation set (MOLECULE_TEST_TIME_STEM). Training uses all of train_ds; the
-    selection and saturation runners sub-select its majority against these fixed
-    test sets.
-
-    Args:
-        train_ds: The training-screen Dataset (its featurization must match).
-        featurization: One of MOLECULE_FEATURIZATIONS (see featurize).
-
-    Returns:
-        Mapping of split name to EvalSplit, keyed "random" and "time".
-    """
-    test_random = load_screen(MOLECULE_TEST_RANDOM_STEM, featurization)
-    test_time = load_screen(MOLECULE_TEST_TIME_STEM, featurization)
-    return {
-        "random": cross_dataset_split(train_ds, test_random, name="random"),
-        "time": cross_dataset_split(train_ds, test_time, name="time"),
-    }
 
 
 def tidy_gnn_results(raw: pd.DataFrame, class_balance: str) -> pd.DataFrame:

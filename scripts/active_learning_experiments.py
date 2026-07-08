@@ -19,10 +19,10 @@ Data splits mirror the existing downselection scripts for comparability:
 
 Usage::
 
-    python scripts/active_learning.py                   # all domains
-    python scripts/active_learning.py --domain molecules
-    python scripts/active_learning.py --domain baseball --generate-only
-    python scripts/active_learning.py --domain sandwiches --plot-only
+    python scripts/active_learning_experiments.py                   # all domains
+    python scripts/active_learning_experiments.py --domain molecules
+    python scripts/active_learning_experiments.py --domain baseball --generate-only
+    python scripts/active_learning_experiments.py --domain sandwiches --plot-only
 """
 
 from __future__ import annotations
@@ -33,11 +33,12 @@ from dataclasses import dataclass
 
 import matplotlib
 
-matplotlib.use("Agg")  # headless: write PNGs without a display
+matplotlib.use("Agg")
 import numpy as np
 import pandas as pd
 from loguru import logger
 
+from negative_ml.baseball import io as baseball
 from negative_ml.core.active_learning import (
     ACQUISITION_FNS,
     make_init_labeled,
@@ -52,39 +53,27 @@ from negative_ml.core.config import (
     AL_N_SEEDS,
     AL_NEG_BUDGETS,
     AL_NEG_COMPOSITIONS,
-    MOLECULE_TEST_RANDOM_STEM,
-    MOLECULE_TRAIN_STEM,
     RANDOM_SEED,
-    SANDWICH_CLF_TOP_FEATURES,
-    SANDWICH_RIDGE_ALPHA,
 )
 from negative_ml.core.dataset import Dataset
 from negative_ml.core.splitting import random_split
-from negative_ml.domains import baseball, molecules, sandwiches
 from negative_ml.models.linear import feature_selected_ridge_classifier
 from negative_ml.models.xgboost import xgb_classifier
+from negative_ml.molecules import io as molecules
+from negative_ml.molecules.config import MOLECULE_TEST_RANDOM_STEM, MOLECULE_TRAIN_STEM
 from negative_ml.runner import metrics_path
+from negative_ml.sandwich import io as sandwiches
+from negative_ml.sandwich.config import SANDWICH_CLF_TOP_FEATURES, SANDWICH_RIDGE_ALPHA
 from negative_ml.script_io import save_figure, save_frame
 from negative_ml.viz import active_learning as viz_al
 
-#: Experiment name used for the metrics CSV and log paths.
 EXPERIMENT = "active_learning"
-
-#: Domains available for the --domain CLI flag.
 ALL_DOMAINS = ("molecules", "baseball", "sandwiches")
 
 
 @dataclass
 class AlConfig:
-    """Per-domain configuration for the active learning experiment.
-
-    Attributes:
-        domain: Domain name (molecules, baseball, or sandwiches).
-        build_pool: Callable returning (train_pool_ds, X_test, y_test); called
-            once per generate() invocation to load data for this domain.
-        classifier_factory: Zero-argument callable returning a fresh, unfitted
-            classifier for this domain.
-    """
+    """Per-domain configuration for the active learning experiment."""
 
     domain: str
     build_pool: Callable[[], tuple[Dataset, np.ndarray, np.ndarray]]
@@ -92,33 +81,21 @@ class AlConfig:
 
 
 def build_molecules_pool() -> tuple[Dataset, np.ndarray, np.ndarray]:
-    """Load the molecules pool (train file) and held-out test set.
-
-    Returns:
-        (train_pool_ds, X_test, y_test) using RDKit featurization.
-    """
+    """Load the molecules pool (train file) and held-out test set."""
     train_pool_ds = molecules.load_screen(MOLECULE_TRAIN_STEM, featurization="rdkit")
     test_ds = molecules.load_screen(MOLECULE_TEST_RANDOM_STEM, featurization="rdkit")
     return train_pool_ds, test_ds.X, test_ds.y
 
 
 def build_baseball_pool() -> tuple[Dataset, np.ndarray, np.ndarray]:
-    """Load the 2023 baseball season as pool and 2024 as the cross-season test.
-
-    Returns:
-        (train_pool_ds, X_test, y_test) for the home-run target.
-    """
+    """Load the 2023 baseball season as pool and 2024 as the cross-season test."""
     train_pool_ds = baseball.load_season(2023, target="home_run")
     test_ds = baseball.load_season(2024, target="home_run")
     return train_pool_ds, test_ds.X, test_ds.y
 
 
 def build_sandwiches_pool() -> tuple[Dataset, np.ndarray, np.ndarray]:
-    """Load and split the sandwich dataset (random 80/20 within the menu).
-
-    Returns:
-        (train_pool_ds, X_test, y_test) for the good-vs-bad framing.
-    """
+    """Load and split the sandwich dataset (random 80/20 within the menu)."""
     full_ds = sandwiches.to_classification(sandwiches.load())
     train_idx, test_idx = random_split(full_ds, seed=RANDOM_SEED)
     train_pool_ds = full_ds.subset(train_idx)
@@ -152,15 +129,7 @@ CONFIGS: dict[str, AlConfig] = {
 
 
 def generate(cfg: AlConfig) -> None:
-    """Run the active learning sweep for one domain and save results.
-
-    For each (seed, acquisition, neg_composition) triple, runs AL_N_BATCHES
-    query rounds starting from a stratified initial labeled set and records
-    positives recovered and held-out test-set metrics at every round.
-
-    Args:
-        cfg: Domain-specific configuration (pool builder and model factory).
-    """
+    """Run the active learning sweep for one domain and save results."""
     domain = cfg.domain
     logger.info(f"[{domain}] loading data ...")
     train_pool_ds, X_test, y_test = cfg.build_pool()
@@ -215,21 +184,14 @@ def generate(cfg: AlConfig) -> None:
 
 
 def plot(cfg: AlConfig) -> None:
-    """Rebuild active learning figures from the saved results frame.
-
-    Reads the CSV produced by generate() and writes two PNG figures:
-    - active_learning/positives_recovered.png
-    - active_learning/performance_curves.png
-
-    Args:
-        cfg: Domain-specific configuration (only domain name is used here).
-    """
+    """Rebuild active learning figures from the saved results frame."""
     domain = cfg.domain
     path = metrics_path(EXPERIMENT, domain)
     if not path.exists():
         raise FileNotFoundError(
-            f"Missing results for {domain!r}; run "
-            f"python scripts/active_learning.py --domain {domain} --generate-only"
+            f"Missing results for {domain!r}; run: "
+            f"python scripts/active_learning_experiments.py "
+            f"--domain {domain} --generate-only"
         )
     results = pd.read_csv(path)
 

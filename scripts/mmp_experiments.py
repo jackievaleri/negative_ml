@@ -15,10 +15,10 @@ Supports three domains:
 
 Run modes::
 
-    python scripts/mmps.py --domain molecules               # generate + plot
-    python scripts/mmps.py --domain sandwiches --generate-only
-    python scripts/mmps.py --domain baseball --plot-only
-    python scripts/mmps.py                                  # all domains
+    python scripts/mmp_experiments.py --domain molecules               # generate + plot
+    python scripts/mmp_experiments.py --domain sandwiches --generate-only
+    python scripts/mmp_experiments.py --domain baseball --plot-only
+    python scripts/mmp_experiments.py                                  # all domains
 """
 
 from __future__ import annotations
@@ -36,11 +36,8 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from negative_ml.core.config import (
-    RANDOM_SEED,
-    SANDWICH_CLF_TOP_FEATURES,
-    SANDWICH_RIDGE_ALPHA,
-)
+from negative_ml.baseball import io as baseball
+from negative_ml.core.config import RANDOM_SEED
 from negative_ml.core.dataset import Dataset
 from negative_ml.core.experiment import (
     EvalSplit,
@@ -49,10 +46,12 @@ from negative_ml.core.experiment import (
 )
 from negative_ml.core.mmp import find_matched_pairs, run_mmp_evaluation
 from negative_ml.core.splitting import random_split
-from negative_ml.domains import baseball, molecules, sandwiches
 from negative_ml.experiments.mmp import rescore_examples
 from negative_ml.models import feature_selected_ridge_classifier, model_factory
+from negative_ml.molecules import io as molecules
 from negative_ml.runner import metrics_path
+from negative_ml.sandwich import io as sandwiches
+from negative_ml.sandwich.config import SANDWICH_CLF_TOP_FEATURES, SANDWICH_RIDGE_ALPHA
 from negative_ml.script_io import read_result_frames, save_figure, save_frame
 from negative_ml.viz.mmp import (
     baseball_describe,
@@ -234,12 +233,13 @@ def generate(cfg: MmpConfig) -> None:
 
 def plot(cfg: MmpConfig) -> None:
     """Rebuild MMP figures from saved frames."""
-    (results,) = read_result_frames(["mmps"], cfg.domain, "mmps.py")
+    (results,) = read_result_frames(["mmps"], cfg.domain, "mmp_experiments.py")
     pairs_path = metrics_path("mmp_examples", cfg.domain)
     if not pairs_path.exists():
         raise FileNotFoundError(
-            f"Missing {pairs_path.name}; run generation first "
-            f"(python scripts/mmps.py --domain {cfg.domain} --generate-only)."
+            f"Missing {pairs_path.name}; run: "
+            f"python scripts/mmp_experiments.py "
+            f"--domain {cfg.domain} --generate-only"
         )
     pairs = pd.read_csv(pairs_path)
 
