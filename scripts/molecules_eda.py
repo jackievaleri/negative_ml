@@ -254,8 +254,11 @@ def make_leakage_figures() -> None:
         )
         save_figure(fig, "leakage", f"leakage_distributions_{split_name}.png", DOMAIN)
 
-    # Per-scaffold activity rate: keep the largest scaffolds for legibility.
-    large_scaffolds = per_scaffold[per_scaffold["n"] >= 2].copy()
+    # Per-scaffold activity rate: keep the largest named scaffolds for legibility.
+    # Empty-string scaffolds (molecules with no ring system) become NaN on CSV
+    # round-trip; drop them so matplotlib receives only string x-axis values.
+    named = per_scaffold["group"].notna() & (per_scaffold["group"] != "")
+    large_scaffolds = per_scaffold[named & (per_scaffold["n"] >= 2)].copy()
     if len(large_scaffolds) > MOLECULES_EDA_TOP_SCAFFOLDS:
         large_scaffolds = large_scaffolds.nlargest(MOLECULES_EDA_TOP_SCAFFOLDS, "n")
     if not large_scaffolds.empty:
