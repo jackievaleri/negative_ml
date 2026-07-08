@@ -53,4 +53,4 @@ dependencies:
   # Place packages that cannot be installed by conda in this section.
   - pybaseball
   - mknotebooks
-  - git+https://github.com/bp-kelley/descriptastorus@d552f934757378a61dd1799cdb589a864032cd1b
+  - descriptastorus
