@@ -20,8 +20,6 @@ repos:
         args:
           - "--config=pyproject.toml"
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    # Ruff is the sole linter + formatter (replaces black/isort/flake8/pylint).
-    # >=0.1.9 for the `[tool.ruff.lint]` table and the `ruff-format` hook.
     rev: v0.15.19
     hooks:
       - id: ruff

@@ -44,7 +44,12 @@ from negative_ml.domains import baseball
 from negative_ml.experiments.negative_control import run_negative_control
 from negative_ml.models import model_factory
 from negative_ml.runner import data_path, metrics_path
-from negative_ml.script_io import require_artifacts, run_script, save_figure
+from negative_ml.script_io import (
+    plot_covariate_shift_panels,
+    require_artifacts,
+    run_script,
+    save_figure,
+)
 from negative_ml.viz import baseball as viz
 from negative_ml.viz import diagnostics as diag
 from negative_ml.viz import results as rviz
@@ -327,16 +332,7 @@ def make_leakage_figures() -> None:
     park = pd.read_csv(park_path)
     label_corr = pd.read_csv(corr_path)
 
-    # Covariate shift per split, one panel each.
-    splits_present = list(dict.fromkeys(shift["split"]))
-    fig, axes = plt.subplots(
-        1, len(splits_present), figsize=(5 * len(splits_present), 4), squeeze=False
-    )
-    for ax, split_name in zip(axes.ravel(), splits_present):
-        diag.plot_covariate_shift(shift[shift["split"] == split_name], ax)
-        ax.set_title(f"Covariate shift — {split_name} split")
-    fig.tight_layout()
-    save_figure(fig, "leakage", "leakage_covariate_shift.png", DOMAIN)
+    plot_covariate_shift_panels(shift, DOMAIN)
 
     # Train vs. test feature distributions per split (raw values re-loaded).
     shared = baseball.load_season(TRAIN_YEAR, target="home_run")

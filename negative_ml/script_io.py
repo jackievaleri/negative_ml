@@ -19,6 +19,7 @@ from negative_ml.core.config import REPO_ROOT
 from negative_ml.experiments import saturation as sat
 from negative_ml.experiments import selection as sel
 from negative_ml.runner import figure_path, metrics_path
+from negative_ml.viz import diagnostics as diag
 from negative_ml.viz import results as viz
 from negative_ml.viz.style import DARK2, save_fig
 
@@ -123,6 +124,36 @@ def read_result_frames(
             f"(run: python scripts/{script_name} --generate-only)."
         )
     return tuple(pd.read_csv(p) for p in paths.values())
+
+
+def plot_covariate_shift_panels(
+    shift: pd.DataFrame,
+    domain: str,
+    title_suffix: str = "",
+    top_n: int | None = None,
+) -> None:
+    """Multi-panel covariate-shift figure, one panel per split, saved to leakage/.
+
+    Args:
+        shift: Tidy covariate-shift frame with a 'split' column (from
+            diag.covariate_shift_table).
+        domain: Domain name for figure routing.
+        title_suffix: String appended to each panel title after the split name,
+            e.g. " (top features)". Default "" produces "Covariate shift — X split".
+        top_n: If not None, restricts each split to its top-N rows before plotting.
+    """
+    splits_present = list(dict.fromkeys(shift["split"]))
+    fig, axes = plt.subplots(
+        1, len(splits_present), figsize=(5 * len(splits_present), 4), squeeze=False
+    )
+    for ax, split_name in zip(axes.ravel(), splits_present):
+        split_data = shift[shift["split"] == split_name]
+        if top_n is not None:
+            split_data = split_data.head(top_n)
+        diag.plot_covariate_shift(split_data, ax)
+        ax.set_title(f"Covariate shift — {split_name} split{title_suffix}")
+    fig.tight_layout()
+    save_figure(fig, "leakage", "leakage_covariate_shift.png", domain)
 
 
 def plot_saturation_panels(

@@ -36,7 +36,12 @@ from negative_ml.core.config import (
 )
 from negative_ml.domains import sandwiches
 from negative_ml.runner import metrics_path
-from negative_ml.script_io import require_artifacts, run_script, save_figure
+from negative_ml.script_io import (
+    plot_covariate_shift_panels,
+    require_artifacts,
+    run_script,
+    save_figure,
+)
 from negative_ml.viz import diagnostics as diag
 from negative_ml.viz import sandwiches as viz
 
@@ -171,17 +176,7 @@ def make_leakage_figures() -> None:
     fig.tight_layout()
     save_figure(fig, "leakage", "leakage_label_corr.png", DOMAIN)
 
-    # Covariate shift per split — which ingredient dimensions shift most between
-    # train and test when splits hold out entire protein families or seasons?
-    splits_present = list(dict.fromkeys(shift["split"]))
-    fig, axes = plt.subplots(
-        1, len(splits_present), figsize=(5 * len(splits_present), 4), squeeze=False
-    )
-    for ax, split_name in zip(axes.ravel(), splits_present):
-        diag.plot_covariate_shift(shift[shift["split"] == split_name], ax)
-        ax.set_title(f"Covariate shift — {split_name} split")
-    fig.tight_layout()
-    save_figure(fig, "leakage", "leakage_covariate_shift.png", DOMAIN)
+    plot_covariate_shift_panels(shift, DOMAIN)
 
     # Per-Main (protein) good-sandwich rate.
     fig, ax = plt.subplots(figsize=(max(8, 0.5 * len(per_main)), 4.5))

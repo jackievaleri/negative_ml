@@ -48,7 +48,12 @@ from negative_ml.core.config import (
 )
 from negative_ml.domains import molecules
 from negative_ml.runner import metrics_path
-from negative_ml.script_io import require_artifacts, run_script, save_figure
+from negative_ml.script_io import (
+    plot_covariate_shift_panels,
+    require_artifacts,
+    run_script,
+    save_figure,
+)
 from negative_ml.viz import diagnostics as diag
 from negative_ml.viz.style import INK, LIGHT_GRAY, PALETTE, style_axes
 
@@ -223,17 +228,9 @@ def make_leakage_figures() -> None:
     shift = pd.read_csv(shift_path)
     per_scaffold = pd.read_csv(scaffold_path)
 
-    # Covariate shift: one panel per split, showing top shifted features.
-    splits_present = list(dict.fromkeys(shift["split"]))
-    fig, axes = plt.subplots(
-        1, len(splits_present), figsize=(5 * len(splits_present), 4), squeeze=False
+    plot_covariate_shift_panels(
+        shift, DOMAIN, title_suffix=" (top features)", top_n=MOLECULES_EDA_TOP_FEATURES
     )
-    for ax, split_name in zip(axes.ravel(), splits_present):
-        shift_s = shift[shift["split"] == split_name].head(MOLECULES_EDA_TOP_FEATURES)
-        diag.plot_covariate_shift(shift_s, ax)
-        ax.set_title(f"Covariate shift — {split_name} split (top features)")
-    fig.tight_layout()
-    save_figure(fig, "leakage", "leakage_covariate_shift.png", DOMAIN)
 
     # Train vs. test distributions per split (top features by overall shift).
     ds_train = molecules.load_screen(MOLECULE_TRAIN_STEM, FEATURIZATION)

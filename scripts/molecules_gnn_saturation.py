@@ -47,7 +47,7 @@ from loguru import logger
 from negative_ml.core.config import REPO_ROOT
 from negative_ml.domains import molecules
 from negative_ml.runner import metrics_path
-from negative_ml.script_io import run_script, save_figure
+from negative_ml.script_io import read_result_frames, run_script, save_figure
 from negative_ml.viz import molecules as viz
 
 DOMAIN = "molecules"
@@ -85,13 +85,8 @@ def generate() -> None:
 
 def read_frame() -> pd.DataFrame:
     """Read the combined result frame, with a clear "generate first" error."""
-    path = metrics_path(EXPERIMENT, DOMAIN)
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Missing {path.name}; run generation first "
-            "(run: python scripts/molecules_gnn_saturation.py --generate-only)."
-        )
-    return pd.read_csv(path)
+    (df,) = read_result_frames([EXPERIMENT], DOMAIN, "molecules_gnn_saturation.py")
+    return df
 
 
 def plot() -> None:

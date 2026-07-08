@@ -186,7 +186,7 @@ AL_NEG_BUDGETS: dict[str, int] = {
 # Negative-composition strategies evaluated at each AL round.
 AL_NEG_COMPOSITIONS: tuple[str, ...] = ("as_is", "random", "hard", "diversity")
 # Acquisition strategy names (two substantive + random baseline).
-AL_ACQUISITIONS: tuple[str, ...] = ("uncertainty", "diversity_uncertainty", "random")
+AL_ACQUISITIONS: tuple[str, ...] = ("ucb", "gp_ei", "random")
 
 # --- Visualization --------------------------------------------------------
 # Resolution (dots per inch) for every saved figure.
