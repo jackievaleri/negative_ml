@@ -60,11 +60,6 @@ TRAIN_YEAR, TEST_YEAR = 2023, 2024
 SPLITS = ("random", "hard", "park")
 
 
-def artifact(category: str, name: str, suffix: str = ".csv"):
-    """Standard data-artifact path under results/baseball/data/<category>/."""
-    return data_path(DOMAIN, category, name, suffix)
-
-
 def generate() -> None:
     """Train the full models + negative controls and persist plotting artifacts.
 
@@ -105,7 +100,7 @@ def generate() -> None:
             for method in ("pearson", "spearman"):
                 diag.feature_correlation_matrix(
                     ds_train.X, ds_train.feature_names, method=method
-                ).to_csv(artifact("metrics", f"feature_corr_{method}"))
+                ).to_csv(data_path(DOMAIN, "metrics", f"feature_corr_{method}"))
             for split_name, sp in splits.items():
                 shift_frames.append(
                     diag.covariate_shift_table(
@@ -118,7 +113,9 @@ def generate() -> None:
             model.fit(sp.train_ds.X, sp.train_ds.y)
             y_score = model.predict_proba(sp.X_test)[:, 1]
 
-            pred_path = artifact("predictions", f"predictions_{target}_{split_name}")
+            pred_path = data_path(
+                DOMAIN, "predictions", f"predictions_{target}_{split_name}"
+            )
             pd.DataFrame({"y_true": sp.y_test, "y_score": y_score}).to_csv(
                 pred_path, index=False
             )
@@ -131,7 +128,7 @@ def generate() -> None:
 
             # The in-distribution (random) model anchors the importance + surface.
             if split_name == "random":
-                imp_path = artifact("metrics", f"feature_importance_{target}")
+                imp_path = data_path(DOMAIN, "metrics", f"feature_importance_{target}")
                 pd.DataFrame(
                     {
                         "feature": sp.train_ds.feature_names,
@@ -141,7 +138,9 @@ def generate() -> None:
                 logger.info(f"  wrote {imp_path.relative_to(REPO_ROOT)}")
 
                 ev_lin, la_lin, proba = viz.compute_probability_surface(model, ds_train)
-                grid_path = artifact("grids", f"probability_grid_{target}", ".npz")
+                grid_path = data_path(
+                    DOMAIN, "grids", f"probability_grid_{target}", ".npz"
+                )
                 np.savez(grid_path, ev_lin=ev_lin, la_lin=la_lin, proba=proba)
                 logger.info(f"  wrote {grid_path.relative_to(REPO_ROOT)}")
 
@@ -201,7 +200,9 @@ def make_performance_figures() -> None:
         pos_label = viz.TARGET_ABBR.get(target, target)
         label = viz.target_label(target)
         for split_name in SPLITS:
-            pred_path = artifact("predictions", f"predictions_{target}_{split_name}")
+            pred_path = data_path(
+                DOMAIN, "predictions", f"predictions_{target}_{split_name}"
+            )
             require_artifacts("baseball_eda_model.py", pred_path)
             preds = pd.read_csv(pred_path)
             y_test = preds["y_true"].to_numpy()
@@ -232,8 +233,8 @@ def make_performance_figures() -> None:
             )
 
         # Importance + probability surface characterize the in-distribution model.
-        imp_path = artifact("metrics", f"feature_importance_{target}")
-        grid_path = artifact("grids", f"probability_grid_{target}", ".npz")
+        imp_path = data_path(DOMAIN, "metrics", f"feature_importance_{target}")
+        grid_path = data_path(DOMAIN, "grids", f"probability_grid_{target}", ".npz")
         require_artifacts("baseball_eda_model.py", imp_path, grid_path)
         importances = pd.read_csv(imp_path)
         grid = np.load(grid_path)
@@ -279,8 +280,8 @@ def make_negative_control_figures() -> None:
 def make_feature_relationship_figures() -> None:
     """Pearson/Spearman correlation heatmaps and the feature pair matrix."""
     logger.info("Feature-relationship figures:")
-    pearson_path = artifact("metrics", "feature_corr_pearson")
-    spearman_path = artifact("metrics", "feature_corr_spearman")
+    pearson_path = data_path(DOMAIN, "metrics", "feature_corr_pearson")
+    spearman_path = data_path(DOMAIN, "metrics", "feature_corr_spearman")
     require_artifacts("baseball_eda_model.py", pearson_path, spearman_path)
     pearson = pd.read_csv(pearson_path, index_col=0)
     spearman = pd.read_csv(spearman_path, index_col=0)
@@ -367,10 +368,5 @@ def plot() -> None:
     make_negative_control_figures()
 
 
-def main() -> None:
-    """Parse flags and run generation and/or plotting."""
-    run_script(generate, plot, __doc__)
-
-
 if __name__ == "__main__":
-    main()
+    run_script(generate, plot, __doc__)

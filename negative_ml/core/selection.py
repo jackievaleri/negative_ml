@@ -77,6 +77,31 @@ def clamp(budget: int | None, n_available: int) -> int:
     return int(min(max(budget, 0), n_available))
 
 
+def _greedy_k_center(Xz: np.ndarray, k: int, start: int) -> np.ndarray:
+    """Greedy k-center farthest-point selection on a standardized feature matrix.
+
+    Starting from `start`, repeatedly adds the point farthest from the current
+    selection using a vectorized min-distance update.
+
+    Args:
+        Xz: Standardized feature matrix (n_pool, n_features).
+        k: Number of points to select.
+        start: Index of the initial seed point in Xz.
+
+    Returns:
+        Integer array of k indices into Xz, in selection order.
+    """
+    selected = np.empty(k, dtype=int)
+    selected[0] = start
+    min_dist = np.linalg.norm(Xz - Xz[start], axis=1)
+    for i in range(1, k):
+        nxt = int(np.argmax(min_dist))
+        selected[i] = nxt
+        d = np.linalg.norm(Xz - Xz[nxt], axis=1)
+        min_dist = np.minimum(min_dist, d)
+    return selected
+
+
 # --- strategies -----------------------------------------------------------
 def as_is(dataset: Dataset, budget: int | None = None, **_kwargs) -> np.ndarray:
     """Full-dataset baseline: keep every majority example (ignores budget)."""
@@ -169,18 +194,8 @@ def diversity_selection(
         return np.sort(pool)
 
     Xz = standardized_features(dataset)[pool]
-    n = len(pool)
-    # Greedy k-center: start from a random point, repeatedly add the point
-    # farthest from the current selection (vectorized min-distance update).
-    selected = np.empty(k, dtype=int)
-    start = int(rng.integers(n))
-    selected[0] = start
-    min_dist = np.linalg.norm(Xz - Xz[start], axis=1)
-    for i in range(1, k):
-        nxt = int(np.argmax(min_dist))
-        selected[i] = nxt
-        d = np.linalg.norm(Xz - Xz[nxt], axis=1)
-        min_dist = np.minimum(min_dist, d)
+    start = int(rng.integers(len(pool)))
+    selected = _greedy_k_center(Xz, k, start)
     return np.sort(pool[selected])
 
 

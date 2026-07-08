@@ -276,6 +276,155 @@ def log_mean_metrics(
     logger.info("\n" + summary.to_string(float_format=lambda v: f"{v:.4f}"))
 
 
+def run_splits_sweep(
+    splits: dict,
+    ds: object,
+    classifier_factory: Callable,
+    budgets: list[int],
+    fractions: list[float],
+    n_seeds: int,
+    base_tag: dict,
+    minority_label: str,
+    skip_single_class: bool = False,
+) -> tuple[list[pd.DataFrame], list[pd.DataFrame], list[pd.DataFrame]]:
+    """Run budget + saturation sweeps for all splits of one domain variant.
+
+    Iterates over a splits dict from a domain's build_splits(), filters budgets
+    to those below the available majority, warns on small fractions, and
+    delegates each split to run_downselection_sweeps.
+
+    Args:
+        splits: {split_name: EvalSplit} dict from a domain's build_splits().
+        ds: Full training Dataset for this variant.
+        classifier_factory: Zero-argument callable returning a fresh classifier.
+        budgets: Candidate majority-class budgets; clamped per split at run time.
+        fractions: Dataset fractions for the proportional saturation sweep.
+        n_seeds: Random seeds per sweep point.
+        base_tag: Columns to attach to every row (outer-dimension tags; "split"
+            is added automatically per iteration). Single-entry dicts supply
+            the context_key prefix for warn_small_fractions log messages.
+        minority_label: Short description of the minority class used in
+            warn_small_fractions log messages.
+        skip_single_class: If True, skip any split whose test set is
+            single-class (AUROC/AUPRC undefined).
+
+    Returns:
+        (sel_frames, sat_frames, satp_frames): accumulated per-split DataFrames,
+        one entry per split that was not skipped.
+    """
+    context_key = next(iter(base_tag.values()), None) if len(base_tag) == 1 else None
+    sel_frames: list[pd.DataFrame] = []
+    sat_frames: list[pd.DataFrame] = []
+    satp_frames: list[pd.DataFrame] = []
+    for split_name, sp in splits.items():
+        if skip_single_class and len(set(sp.y_test.tolist())) < 2:
+            logger.warning(
+                f"  [{split_name}] held-out test set is single-class; "
+                "AUROC/AUPRC are undefined, skipping this split."
+            )
+            continue
+        n_majority = int(sp.train_ds.majority_mask().sum())
+        n_minority = int(sp.train_ds.minority_mask().sum())
+        split_budgets = [b for b in budgets if b < n_majority]
+        warn_small_fractions(
+            fractions,
+            n_minority,
+            minority_label,
+            split_name,
+            context_key=context_key,
+        )
+        logger.info(
+            f"  [{split_name}] budgets {split_budgets} (n_seeds={n_seeds}); "
+            f"train {sp.train_ds.n_samples:,} ({n_majority:,} majority / "
+            f"{n_minority:,} minority), test {len(sp.y_test):,}"
+        )
+        tag = {**base_tag, "split": split_name}
+        sel_f, sat_f, satp_f = run_downselection_sweeps(
+            ds, classifier_factory, split_budgets, fractions, n_seeds, sp, tag
+        )
+        sel_frames.append(sel_f)
+        sat_frames.append(sat_f)
+        satp_frames.append(satp_f)
+    return sel_frames, sat_frames, satp_frames
+
+
+def plot_downselection_split_figures(
+    sel_df: pd.DataFrame,
+    sat_majority: pd.DataFrame,
+    sat_proportional: pd.DataFrame,
+    splits: Sequence[str],
+    domain: str,
+    metrics: list[str],
+    fname_prefix: str,
+    title_label: str,
+    no_dd_fname_suffix: str | None = None,
+    no_dd_title_suffix: str = "",
+) -> None:
+    """Selection grid + saturation panels for each split in one domain variant.
+
+    For each split, plots the full-strategy selection grid and the two-panel
+    saturation figure. Optionally also plots a density_diversity-excluded
+    variant of the selection grid.
+
+    Args:
+        sel_df: Selection frame filtered to one outer-dimension value (or all).
+        sat_majority: Fix-minority saturation frame, same filter.
+        sat_proportional: Proportional saturation frame, same filter.
+        splits: Split names to iterate over; empty splits are skipped.
+        domain: Domain name for figure routing.
+        metrics: Metrics to pass to plot_selection_grid.
+        fname_prefix: Filename prefix before the split name, e.g. "home_run_"
+            or "rdkit_" (use "" for no outer dimension).
+        title_label: Human-readable outer-dimension label for figure titles,
+            e.g. "home_run" or "rdkit" (use "" for no outer dimension).
+        no_dd_fname_suffix: If not None, also plot a density_diversity-excluded
+            grid variant whose filename ends with this suffix (e.g. "_no_dd" or
+            "_no_density_diversity"). Default None skips the variant.
+        no_dd_title_suffix: String appended to the regular suptitle for the
+            no_dd variant (e.g. " (no density-diversity)"). Default "" keeps
+            the same title as the regular grid.
+    """
+    for split_name in splits:
+        sel_s = sel_df[sel_df["split"] == split_name]
+        if sel_s.empty:
+            continue
+        if title_label:
+            title_suffix = f"{title_label} ({split_name} split)"
+            fname_body = f"{fname_prefix}{split_name}"
+        else:
+            title_suffix = f"{split_name} split"
+            fname_body = split_name
+
+        logger.info(f"  [{split_name}] selection grid + saturation panels")
+        fig = viz.plot_selection_grid(sel_s, metrics=metrics)
+        fig.suptitle(f"Majority-class selection — {title_suffix}", fontsize=14)
+        save_figure(
+            fig, "downselection", f"downselection_grid_{fname_body}.png", domain
+        )
+
+        if no_dd_fname_suffix is not None:
+            sel_no_dd = sel_s[sel_s["strategy"] != "density_diversity"]
+            fig = viz.plot_selection_grid(sel_no_dd, metrics=metrics)
+            fig.suptitle(
+                f"Majority-class selection — {title_suffix}{no_dd_title_suffix}",
+                fontsize=14,
+            )
+            save_figure(
+                fig,
+                "downselection",
+                f"downselection_grid_{fname_body}{no_dd_fname_suffix}.png",
+                domain,
+            )
+
+        plot_saturation_panels(
+            sat_majority[sat_majority["split"] == split_name],
+            sat_proportional[sat_proportional["split"] == split_name],
+            title=f"Saturation: AUPRC vs. size — {title_suffix}",
+            fname=f"saturation_curve_{fname_body}.png",
+            domain=domain,
+        )
+
+
 def plot_proportional_saturation_overlay(
     satp: pd.DataFrame,
     splits: Sequence[str],

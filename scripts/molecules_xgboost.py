@@ -56,14 +56,13 @@ from negative_ml.domains import molecules
 from negative_ml.models import model_factory
 from negative_ml.script_io import (
     log_mean_metrics,
+    plot_downselection_split_figures,
     plot_proportional_saturation_overlay,
-    plot_saturation_panels,
     read_result_frames,
-    run_downselection_sweeps,
+    run_splits_sweep,
     save_figure,
     save_frame,
     save_sweep_frames,
-    warn_small_fractions,
 )
 from negative_ml.viz import results as viz
 from negative_ml.viz.style import DARK2, style_axes
@@ -120,37 +119,29 @@ def generate() -> None:
         )
         train_rows = np.arange(ds_train.n_samples)
 
-        for split_name, sp in molecules.build_splits(ds_train, featurization).items():
-            n_majority = int(sp.train_ds.majority_mask().sum())
-            n_minority = int(sp.train_ds.minority_mask().sum())
-            budgets = [b for b in BUDGETS if b < n_majority]
-            warn_small_fractions(
-                FRACTIONS,
-                n_minority,
-                "train actives",
-                split_name,
-                context_key=featurization,
-            )
-            logger.info(
-                f"  [{split_name}] test {len(sp.y_test):,} molecules, "
-                f"{int(sp.y_test.sum()):,} active; budgets {budgets} "
-                f"(n_seeds={N_SEEDS})"
-            )
+        splits = molecules.build_splits(ds_train, featurization)
 
+        # Full-data XGBoost benchmark (all training rows, per split).
+        for split_name, sp in splits.items():
             tag = {"featurization": featurization, "split": split_name}
-
-            # Full-data XGBoost benchmark (all training rows).
             metrics = fit_score(
                 sp.train_ds, train_rows, sp.X_test, sp.y_test, classifier_factory
             )
             benchmark_rows.append({**tag, "n_train": int(len(train_rows)), **metrics})
 
-            sel_f, sat_f, satp_f = run_downselection_sweeps(
-                ds_train, classifier_factory, budgets, FRACTIONS, N_SEEDS, sp, tag
-            )
-            selection_frames.append(sel_f)
-            sat_frames.append(sat_f)
-            sat_prop_frames.append(satp_f)
+        sel_fs, sat_fs, satp_fs = run_splits_sweep(
+            splits,
+            ds_train,
+            classifier_factory,
+            BUDGETS,
+            FRACTIONS,
+            N_SEEDS,
+            base_tag={"featurization": featurization},
+            minority_label="train actives",
+        )
+        selection_frames.extend(sel_fs)
+        sat_frames.extend(sat_fs)
+        sat_prop_frames.extend(satp_fs)
 
     benchmark_df = pd.DataFrame(benchmark_rows)
     save_frame(benchmark_df, "xgboost_benchmark", DOMAIN)
@@ -235,40 +226,17 @@ def plot() -> None:
         satp_f = sat_proportional[sat_proportional["featurization"] == featurization]
 
         logger.info(f"Figures for featurization {featurization}:")
-        for split_name in SPLITS:
-            sel_fs = sel_f[sel_f["split"] == split_name]
-            if sel_fs.empty:
-                continue
-            fig = viz.plot_selection_grid(sel_fs, metrics=METRICS)
-            fig.suptitle(
-                f"Majority-class selection — {featurization} ({split_name} split)",
-                fontsize=14,
-            )
-            save_figure(
-                fig,
-                "downselection",
-                f"downselection_grid_{featurization}_{split_name}.png",
-                DOMAIN,
-            )
-            sel_fs_no_dd = sel_fs[sel_fs["strategy"] != "density_diversity"]
-            fig = viz.plot_selection_grid(sel_fs_no_dd, metrics=METRICS)
-            fig.suptitle(
-                f"Majority-class selection — {featurization} ({split_name} split)",
-                fontsize=14,
-            )
-            save_figure(
-                fig,
-                "downselection",
-                f"downselection_grid_{featurization}_{split_name}_no_dd.png",
-                DOMAIN,
-            )
-            plot_saturation_panels(
-                satm_f[satm_f["split"] == split_name],
-                satp_f[satp_f["split"] == split_name],
-                title=f"Saturation: AUPRC vs. size — {featurization} ({split_name})",
-                fname=f"saturation_curve_{featurization}_{split_name}.png",
-                domain=DOMAIN,
-            )
+        plot_downselection_split_figures(
+            sel_f,
+            satm_f,
+            satp_f,
+            splits=SPLITS,
+            domain=DOMAIN,
+            metrics=METRICS,
+            fname_prefix=f"{featurization}_",
+            title_label=featurization,
+            no_dd_fname_suffix="_no_dd",
+        )
 
         # Per-featurization overlays (random vs. time on one axes).
         fig, ax = plt.subplots(figsize=(8.5, 5.5))
