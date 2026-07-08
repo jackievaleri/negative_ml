@@ -11,7 +11,7 @@ To get started:
 ```bash
 git clone git@github.com:jackievaleri/negative_ml
 cd negative_ml
-mamba env update -f environment.yml
+micromamba env update -f environment.yml
 conda activate negative_ml
 python -m pip install -e .
 ```

@@ -1,30 +1,19 @@
-# negative_ml }}
+# negative_ml
 
-Welcome to the repository for the negative_ml }} project!
+Welcome to the repository for the negative_ml project!
 
 ## Quickstart
 
-<!-- uncomment if relevant
-### Install from PyPI
-
-```python
-pip install negative_ml
-```
--->
 ### Install from source
 
 ```bash
 pip install git@github.com:jackievaleri/negative_ml
 ```
 
-### Build and preview docs
-
-```bash
-mkdocs serve
-```
-
 ## Why this project exists
 
-Place your reasons here for why this project exists.
-
-What benefits does this project give to users?
+This explores the role of negative data in machine learning, with a focus on the following questions:
+    * How can we best leverage negative data in model training?
+    * If we were to collect less negative data, what negative data should we collect?
+    * Does losing negative data hurt model performance on the discrimination boundary?
+    * What is the role of negative data in active learning loops?

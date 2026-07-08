@@ -23,6 +23,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from descriptastorus.descriptors.DescriptorGenerator import MakeGenerator
 from rdkit import Chem
 from rdkit.Chem import rdFingerprintGenerator
 from rdkit.Chem.Scaffolds import MurckoScaffold
@@ -41,6 +42,21 @@ from negative_ml.core.config import (
 )
 from negative_ml.core.dataset import Dataset
 from negative_ml.core.experiment import EvalSplit, cross_dataset_split
+
+
+def get_rdkit_feature_names() -> list[str]:
+    """Return the list of RDKit2D descriptor names computed by descriptastorus.
+
+    The first column emitted by the generator is a boolean success flag
+    (RDKit2D_calculated) which is not stored in the .npz descriptor matrices;
+    it is skipped here so the returned list aligns with the 200-column
+    descriptor arrays produced by descriptastorus's RDKit2D pipeline.
+
+    Returns:
+        List of 200 RDKit descriptor name strings (e.g. "MolWt", "TPSA", ...).
+    """
+    generator = MakeGenerator(("RDKit2D",))
+    return [name for name, _ in generator.GetColumns() if name != "RDKit2D_calculated"]
 
 
 def _fp_cache_path(stem: str, radius: int, n_bits: int) -> Path:
@@ -202,7 +218,7 @@ def featurize(
                 f"the {len(smiles)} SMILES; check the paired csv/npz files."
             )
         blocks.append(descriptors)
-        names.extend(f"rdkit_{i}" for i in range(descriptors.shape[1]))
+        names.extend(get_rdkit_feature_names())
     if featurization in ("morgan", "both"):
         fingerprints = compute_fingerprints(smiles, cache_path=fp_cache).astype(float)
         blocks.append(fingerprints)

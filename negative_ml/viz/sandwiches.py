@@ -277,6 +277,71 @@ def plot_feature_importance(
     return style_axes(ax)
 
 
+def plot_rating_by_season(
+    seasons: ArrayLike, clean_ratings: ArrayLike, ax: plt.Axes
+) -> plt.Axes:
+    """Violin of rating distributions per season, showing how the show evolved.
+
+    Each season gets a violin (when it has enough distinct values) plus a
+    jittered swarm so individual episodes remain visible. The mean rating per
+    season is annotated, letting a reader spot drift toward higher or lower
+    scores over the show's run.
+
+    Args:
+        seasons: Season identifier per sandwich (e.g. "S1", "S2", ...).
+        clean_ratings: Numeric 0-10 ratings aligned with seasons.
+        ax: Target matplotlib axes.
+
+    Returns:
+        The styled ax.
+    """
+    seasons = np.asarray(seasons)
+    ratings = np.asarray(clean_ratings, dtype=float)
+    categories = sorted(set(seasons.tolist()))
+    grouped = [ratings[seasons == cat] for cat in categories]
+
+    violin_data, violin_pos = [], []
+    rng = np.random.default_rng(0)
+    for pos, (cat, group) in enumerate(zip(categories, grouped)):
+        if len(group) >= 2 and np.std(group) > 0:
+            violin_data.append(group)
+            violin_pos.append(pos)
+        jitter = rng.uniform(-0.12, 0.12, size=len(group))
+        ax.scatter(
+            np.full(len(group), pos) + jitter,
+            group,
+            s=14,
+            color=ACCENT,
+            alpha=0.6,
+            edgecolors="none",
+        )
+        mean_val = float(np.mean(group)) if len(group) > 0 else float("nan")
+        ax.text(
+            pos,
+            10.3,
+            f"{mean_val:.1f}",
+            ha="center",
+            va="bottom",
+            fontsize=7,
+            color=INK,
+        )
+
+    if violin_data:
+        parts = ax.violinplot(
+            violin_data, positions=violin_pos, showextrema=False, widths=0.7
+        )
+        for body in parts["bodies"]:
+            body.set_facecolor(ACCENT)
+            body.set_alpha(0.3)
+
+    ax.set_xticks(range(len(categories)))
+    ax.set_xticklabels(categories)
+    ax.set_ylabel("rating")
+    ax.set_ylim(0, 11)
+    ax.set_title("Rating distribution by season (mean annotated)")
+    return style_axes(ax)
+
+
 def to_float(value: object) -> float:
     """Coerce a value to float, returning NaN when it is not numeric."""
     try:

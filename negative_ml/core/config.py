@@ -186,7 +186,7 @@ AL_NEG_BUDGETS: dict[str, int] = {
 # Negative-composition strategies evaluated at each AL round.
 AL_NEG_COMPOSITIONS: tuple[str, ...] = ("as_is", "random", "hard", "diversity")
 # Acquisition strategy names (two substantive + random baseline).
-AL_ACQUISITIONS: tuple[str, ...] = ("uncertainty", "diversity_uncertainty", "random")
+AL_ACQUISITIONS: tuple[str, ...] = ("ucb", "gp_ei", "random")
 
 # --- Visualization --------------------------------------------------------
 # Resolution (dots per inch) for every saved figure.
@@ -195,3 +195,11 @@ FIGURE_DPI = 300
 VIZ_MAX_POINTS = 30_000
 # Smaller per-panel point cap for the (many-panel) feature pair matrix.
 VIZ_PAIRPLOT_POINTS = 4_000
+
+# --- Molecule EDA tunables ------------------------------------------------
+# Number of rdkit features shown in the label-correlation bar chart and the
+# class-stratified distribution grid (features ranked by |pearson| with label).
+MOLECULES_EDA_TOP_FEATURES = 20
+# Maximum number of scaffold groups shown in the per-scaffold positive-rate
+# bar chart (the largest-count scaffolds are kept when the screen has more).
+MOLECULES_EDA_TOP_SCAFFOLDS = 30

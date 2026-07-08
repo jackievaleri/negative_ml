@@ -1,11 +1,11 @@
-"""Data-leakage and feature-relationship diagnostics for the baseball domain.
+"""Data-leakage and feature-relationship diagnostics, shared across all domains.
 
 These are the critical-review figures a machine-learning scientist or statistician
 would ask for before trusting the models: do the train and test sets come from the
 same distribution (covariate shift), is any single feature suspiciously predictive
 of the label (leakage smell-test), how do the features relate to each other
 (correlation and pairwise structure), and how does the positive rate vary across
-the ballparks that the park split holds out.
+categorical groups such as ballparks, protein choices, or molecular scaffolds.
 
 Following the rest of negative_ml.viz, the compute functions return tidy frames so
 a generation step can persist them and a plotting step can redraw without
@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from negative_ml.core.config import OUTLIER_BALLPARKS, VIZ_PAIRPLOT_POINTS
+from negative_ml.core.config import VIZ_PAIRPLOT_POINTS
 from negative_ml.viz.style import (
     DIVERGING_CMAP,
     INK,
@@ -108,8 +108,7 @@ def label_correlation_table(
 
     Reports both Pearson (linear / point-biserial against the binary label) and
     Spearman (monotonic). A feature with a near-perfect correlation would signal
-    leakage; the geometry features are expected to be moderate, which is the point
-    of the check after the outcome-derived columns were excluded.
+    leakage; moderate correlations are the expected healthy range.
 
     Args:
         X: Feature matrix.
@@ -136,18 +135,23 @@ def label_correlation_table(
     ).reset_index(drop=True)
 
 
-def per_park_positive_rate(groups: np.ndarray, y: np.ndarray) -> pd.DataFrame:
-    """Positive-class rate and batted-ball count per ballpark.
+def per_group_positive_rate(groups: np.ndarray, y: np.ndarray) -> pd.DataFrame:
+    """Positive-class rate and sample count per categorical group.
+
+    Groups can be any categorical grouping: ballparks, protein (Main) choices,
+    molecular scaffolds, etc. The returned frame can be filtered and passed to
+    plot_per_group_rate.
 
     Args:
-        groups: Per-row ballpark identifier (Statcast home_team code).
+        groups: Per-row group identifier (e.g. Statcast home_team code, scaffold
+            SMILES, or sandwich Main ingredient).
         y: Binary label aligned with groups.
 
     Returns:
-        Frame with columns [park, n, positive_rate], sorted by positive_rate.
+        Frame with columns [group, n, positive_rate], sorted by positive_rate.
     """
-    df = pd.DataFrame({"park": np.asarray(groups), "y": np.asarray(y, dtype=float)})
-    g = df.groupby("park")["y"].agg(["mean", "size"]).reset_index()
+    df = pd.DataFrame({"group": np.asarray(groups), "y": np.asarray(y, dtype=float)})
+    g = df.groupby("group")["y"].agg(["mean", "size"]).reset_index()
     g = g.rename(columns={"mean": "positive_rate", "size": "n"})
     return g.sort_values("positive_rate").reset_index(drop=True)
 
@@ -195,9 +199,7 @@ def plot_label_correlations(
     """Grouped bars of each feature's Pearson and Spearman correlation with y.
 
     The leakage smell-test: bars that approach +/-1 would flag a feature that
-    nearly determines the label. The dashed guides mark the leakage threshold; the
-    geometry features are expected to stay well inside it, confirming the
-    outcome-derived columns were the only genuine leakage risks.
+    nearly determines the label. The dashed guides mark the leakage threshold.
 
     Args:
         df: Frame with [feature, pearson, spearman] (see label_correlation_table).
@@ -311,6 +313,82 @@ def plot_train_test_distributions(
     return fig
 
 
+def plot_class_stratified_distributions(
+    X: np.ndarray,
+    y: np.ndarray,
+    feature_names: Sequence[str],
+    bins: int = 40,
+    minority_label: str = "minority",
+    majority_label: str = "majority",
+) -> plt.Figure:
+    """Overlaid normalized histograms per feature, stratified by class label.
+
+    Shows which features separate the minority class from the majority: panels
+    where the two outlines diverge identify the most discriminative features.
+    Useful as a complement to label_correlation_table — correlation captures the
+    linear signal while this view reveals the full distributional shape difference.
+
+    Args:
+        X: Feature matrix.
+        y: Binary label aligned with X rows (1 == minority / positive class).
+        feature_names: Column names aligned with X.
+        bins: Histogram bin count per panel.
+        minority_label: Legend label for the positive (minority) class.
+        majority_label: Legend label for the negative (majority) class.
+
+    Returns:
+        The created Figure (caller saves / displays it).
+    """
+    X = np.asarray(X, dtype=float)
+    y = np.asarray(y, dtype=int)
+    pos_mask = y == 1
+    neg_mask = ~pos_mask
+    n = len(feature_names)
+    ncols = 3
+    nrows = (n + ncols - 1) // ncols
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(5 * ncols, 3.2 * nrows), squeeze=False
+    )
+    flat = axes.ravel()
+    for i, name in enumerate(feature_names):
+        ax = flat[i]
+        col_pos = X[pos_mask, i]
+        col_neg = X[neg_mask, i]
+        lo = float(X[:, i].min())
+        hi = float(X[:, i].max())
+        edges = np.linspace(lo, hi, bins + 1)
+        ax.hist(
+            col_neg,
+            bins=edges,
+            density=True,
+            histtype="step",
+            color=LIGHT_GRAY,
+            lw=1.6,
+            label=majority_label,
+        )
+        ax.hist(
+            col_pos,
+            bins=edges,
+            density=True,
+            histtype="step",
+            color=PALETTE["magenta"],
+            lw=1.6,
+            label=minority_label,
+        )
+        ax.set_title(name, fontsize=10)
+        ax.set_yticks([])
+        style_axes(ax)
+    for ax in flat[n:]:
+        ax.set_visible(False)
+    flat[0].legend(loc="upper right", fontsize=8)
+    fig.suptitle(
+        f"Feature distributions by class ({minority_label} vs. {majority_label})",
+        fontsize=13,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    return fig
+
+
 def plot_covariate_shift(shift_df: pd.DataFrame, ax: plt.Axes) -> plt.Axes:
     """Horizontal bar chart of per-feature train-vs-test KS statistics.
 
@@ -329,22 +407,23 @@ def plot_covariate_shift(shift_df: pd.DataFrame, ax: plt.Axes) -> plt.Axes:
     return style_axes(ax)
 
 
-def plot_per_park_rate(
+def plot_per_group_rate(
     rate_df: pd.DataFrame,
     ax: plt.Axes,
-    highlight: Sequence[str] = OUTLIER_BALLPARKS,
+    highlight: Sequence[str] = (),
     label: str = "positive",
 ) -> plt.Axes:
-    """Bar chart of per-park positive rate, highlighting the held-out parks.
+    """Bar chart of per-group positive rate, optionally highlighting held-out groups.
 
-    Justifies the park split: the highlighted (held-out) parks should sit toward
-    the extremes of the positive-rate distribution, so training without them and
-    testing on them is a genuine park-factor shift.
+    Justifies group-based splits: highlighted groups should sit toward the
+    extremes of the positive-rate distribution, so training without them and
+    testing on them is a genuine distribution shift.
 
     Args:
-        rate_df: Frame with [park, n, positive_rate] (see per_park_positive_rate).
+        rate_df: Frame with [group, n, positive_rate] (see per_group_positive_rate).
         ax: Target matplotlib axes.
-        highlight: Park identifiers drawn in the highlight color (held-out parks).
+        highlight: Group identifiers drawn in the highlight color (e.g. held-out
+            groups such as outlier ballparks or held-out protein families).
         label: Name of the positive class for the y-axis label.
 
     Returns:
@@ -353,9 +432,9 @@ def plot_per_park_rate(
     d = rate_df.sort_values("positive_rate")
     highlight_set = set(highlight)
     colors = [
-        PALETTE["orange"] if p in highlight_set else LIGHT_GRAY for p in d["park"]
+        PALETTE["orange"] if g in highlight_set else LIGHT_GRAY for g in d["group"]
     ]
-    ax.bar(d["park"], d["positive_rate"], color=colors)
+    ax.bar(d["group"], d["positive_rate"], color=colors)
     ax.axhline(
         float(np.average(d["positive_rate"], weights=d["n"])),
         color=INK,
@@ -363,11 +442,11 @@ def plot_per_park_rate(
         lw=1,
         label="overall rate",
     )
-    ax.set_xticks(range(len(d["park"])))
-    ax.set_xticklabels(d["park"], rotation=90, fontsize=7)
+    ax.set_xticks(range(len(d["group"])))
+    ax.set_xticklabels(d["group"], rotation=90, fontsize=7)
     ax.set_ylabel(f"{label} rate")
     ax.set_ylim(0, None)
-    ax.set_title("Positive rate by ballpark (held-out parks highlighted)")
+    ax.set_title("Positive rate by group (highlighted: held-out)")
     ax.legend(loc="upper left", fontsize=8)
     return style_axes(ax)
 

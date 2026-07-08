@@ -18,88 +18,131 @@ from collections.abc import Callable
 
 import numpy as np
 import pandas as pd
+from scipy.stats import norm
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import Matern
 
 from negative_ml.core.config import RANDOM_SEED
 from negative_ml.core.dataset import Dataset
 from negative_ml.core.eval import compute_metrics
 from negative_ml.core.experiment import ModelFactory, positive_scores
-from negative_ml.core.selection import STRATEGIES, _greedy_k_center, clamp, standardize
+from negative_ml.core.selection import STRATEGIES, clamp, standardize
 
-#: Callable[model, X_pool, batch_size, seed] -> 1-D array of pool indices.
-AcquisitionFn = Callable[[object, np.ndarray, int, int], np.ndarray]
+#: Callable[model, X_pool, batch_size, seed, X_labeled, y_labeled]
+# -> 1-D array of pool indices.
+AcquisitionFn = Callable[
+    [object, np.ndarray, int, int, np.ndarray, np.ndarray], np.ndarray
+]
+
+#: Maximum number of labeled examples used to fit the GP in gp_ei_acquisition.
+_GP_MAX_LABELED = 500
 
 
-def uncertainty_acquisition(
+def ucb_acquisition(
     model: object,
     X_pool: np.ndarray,
     batch_size: int,
     seed: int,
+    X_labeled: np.ndarray,
+    y_labeled: np.ndarray,
 ) -> np.ndarray:
-    """Margin-based uncertainty acquisition.
+    """Upper Confidence Bound (UCB) acquisition using the existing fitted model.
 
-    Scores each unlabeled example by the model's margin (|2*p - 1| where p is
-    the positive-class probability), then returns the indices of the batch_size
-    examples with the smallest margin — those nearest the decision boundary.
+    Scores each unlabeled example as UCB = μ + κ·σ, where μ is the model's
+    positive-class probability (exploitation) and σ = 1 − |2μ − 1| is a
+    margin-based uncertainty proxy (exploration). κ = 1.0 balances the two
+    terms. Examples with high predicted probability AND high uncertainty score
+    highest, unlike pure uncertainty sampling which ignores the exploitation
+    signal entirely.
 
     Args:
         model: Fitted classifier exposing predict_proba or decision_function.
         X_pool: Feature matrix for the unlabeled pool.
         batch_size: Number of examples to select.
         seed: Ignored (deterministic); accepted to match AcquisitionFn signature.
+        X_labeled: Ignored; accepted to match AcquisitionFn signature.
+        y_labeled: Ignored; accepted to match AcquisitionFn signature.
 
     Returns:
-        Sorted pool indices of the batch_size most uncertain examples.
+        Sorted pool indices of the batch_size examples with highest UCB score.
     """
+    kappa = 1.0
     p = positive_scores(model, X_pool)
-    margin = np.abs(2.0 * p - 1.0)
+    uncertainty = 1.0 - np.abs(2.0 * p - 1.0)
+    ucb = p + kappa * uncertainty
     k = clamp(batch_size, len(X_pool))
-    chosen = np.argpartition(margin, k)[:k]
+    chosen = np.argpartition(-ucb, k)[:k]
     return np.sort(chosen)
 
 
-def diversity_uncertainty_acquisition(
+def gp_ei_acquisition(
     model: object,
     X_pool: np.ndarray,
     batch_size: int,
     seed: int,
+    X_labeled: np.ndarray,
+    y_labeled: np.ndarray,
 ) -> np.ndarray:
-    """Batch-aware acquisition: k-center selection on the uncertain subset.
+    """Bayesian optimization acquisition: Gaussian Process + Expected Improvement.
 
-    First filters to the top 2 * batch_size most uncertain candidates (by
-    margin), then applies greedy farthest-point (k-center) sampling on
-    standardized features to pick batch_size diverse ones. This avoids the
-    main failure mode of plain uncertainty sampling in batch mode: selecting
-    a redundant cluster of near-identical uncertain examples.
+    Fits a GaussianProcessRegressor on the labeled data and uses Expected
+    Improvement (EI) to select the next batch. EI scores each unlabeled
+    example as:
 
-    When the pool is smaller than 2 * batch_size the full pool is the
-    candidate set, so this degrades gracefully to plain uncertainty sampling.
+        EI(x) = (μ(x) − f*) · Φ(Z) + σ(x) · φ(Z),  Z = (μ(x) − f*) / σ(x)
+
+    where f* = 1.0 (the best achievable label), μ and σ are the GP posterior
+    mean and standard deviation, and Φ/φ are the standard normal CDF/PDF.
+    Examples with high predicted probability AND high GP uncertainty score
+    highest, naturally balancing exploitation and exploration without manual
+    heuristics.
+
+    When the labeled set exceeds _GP_MAX_LABELED examples, a random subsample
+    is drawn to keep GP training tractable (O(n³) cost). Features are
+    standardized before fitting.
 
     Args:
-        model: Fitted classifier exposing predict_proba or decision_function.
+        model: Ignored; accepted to match AcquisitionFn signature.
         X_pool: Feature matrix for the unlabeled pool.
         batch_size: Number of examples to select.
-        seed: Random seed for breaking ties in the greedy starting point.
+        seed: Random seed for GP subsample and reproducibility.
+        X_labeled: Feature matrix for all currently labeled examples.
+        y_labeled: Labels for all currently labeled examples.
 
     Returns:
-        Sorted pool indices of the selected batch_size examples.
+        Sorted pool indices of the batch_size examples with highest EI.
     """
     k = clamp(batch_size, len(X_pool))
     if k == 0:
         return np.empty(0, dtype=int)
 
-    p = positive_scores(model, X_pool)
-    margin = np.abs(2.0 * p - 1.0)
-    n_candidates = min(2 * k, len(X_pool))
-    candidates = np.argpartition(margin, n_candidates)[:n_candidates]
-
-    if k >= len(candidates):
-        return np.sort(candidates)
-
-    Xz = standardize(X_pool[candidates])
     rng = np.random.default_rng(seed)
-    start = int(rng.integers(len(candidates)))
-    selected = _greedy_k_center(Xz, k, start)
-    return np.sort(candidates[selected])
+    X_train, y_train = X_labeled, y_labeled
+    if len(X_train) > _GP_MAX_LABELED:
+        idx = rng.choice(len(X_train), size=_GP_MAX_LABELED, replace=False)
+        X_train, y_train = X_train[idx], y_train[idx]
+
+    X_train_z = standardize(X_train)
+    gp = GaussianProcessRegressor(
+        kernel=Matern(nu=2.5),
+        normalize_y=True,
+        n_restarts_optimizer=2,
+        random_state=int(rng.integers(2**31)),
+    )
+    gp.fit(X_train_z, y_train.astype(float))
+
+    # Standardize pool using same scale as training (reuse standardize per-matrix)
+    X_pool_z = standardize(X_pool)
+    mu, sigma = gp.predict(X_pool_z, return_std=True)
+
+    f_best = 1.0
+    with np.errstate(divide="ignore"):
+        Z = (mu - f_best) / sigma
+    ei = (mu - f_best) * norm.cdf(Z) + sigma * norm.pdf(Z)
+    ei = np.where(sigma > 0, ei, 0.0)
+
+    chosen = np.argpartition(-ei, k)[:k]
+    return np.sort(chosen)
 
 
 def random_acquisition(
@@ -107,6 +150,8 @@ def random_acquisition(
     X_pool: np.ndarray,
     batch_size: int,
     seed: int,
+    X_labeled: np.ndarray,
+    y_labeled: np.ndarray,
 ) -> np.ndarray:
     """Uniform random acquisition from the unlabeled pool.
 
@@ -115,6 +160,8 @@ def random_acquisition(
         X_pool: Feature matrix for the unlabeled pool.
         batch_size: Number of examples to select.
         seed: Random seed for reproducibility.
+        X_labeled: Ignored; accepted to match AcquisitionFn signature.
+        y_labeled: Ignored; accepted to match AcquisitionFn signature.
 
     Returns:
         Sorted pool indices of the selected batch_size examples.
@@ -127,8 +174,8 @@ def random_acquisition(
 
 #: Registry of acquisition functions by name.
 ACQUISITION_FNS: dict[str, AcquisitionFn] = {
-    "uncertainty": uncertainty_acquisition,
-    "diversity_uncertainty": diversity_uncertainty_acquisition,
+    "ucb": ucb_acquisition,
+    "gp_ei": gp_ei_acquisition,
     "random": random_acquisition,
 }
 
@@ -237,7 +284,9 @@ def run_active_learning(
         if batch_idx < n_batches:
             pool_idx = np.where(pool_mask)[0]
             X_pool = train_pool_ds.X[pool_idx]
-            pool_chosen = acquisition_fn(model, X_pool, batch_size, seed + batch_idx)
+            pool_chosen = acquisition_fn(
+                model, X_pool, batch_size, seed + batch_idx, labeled_ds.X, labeled_ds.y
+            )
             new_idx = pool_idx[pool_chosen]
             labeled_idx = np.sort(np.concatenate([labeled_idx, new_idx]))
             pool_mask[new_idx] = False

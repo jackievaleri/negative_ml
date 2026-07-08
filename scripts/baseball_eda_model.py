@@ -39,12 +39,17 @@ import pandas as pd
 from loguru import logger
 
 from negative_ml.core import eval as ev
-from negative_ml.core.config import REPO_ROOT
+from negative_ml.core.config import OUTLIER_BALLPARKS, REPO_ROOT
 from negative_ml.domains import baseball
 from negative_ml.experiments.negative_control import run_negative_control
 from negative_ml.models import model_factory
 from negative_ml.runner import data_path, metrics_path
-from negative_ml.script_io import require_artifacts, run_script, save_figure
+from negative_ml.script_io import (
+    plot_covariate_shift_panels,
+    require_artifacts,
+    run_script,
+    save_figure,
+)
 from negative_ml.viz import baseball as viz
 from negative_ml.viz import diagnostics as diag
 from negative_ml.viz import results as rviz
@@ -80,14 +85,14 @@ def generate() -> None:
             f"{int(ds_train.y.sum()):,} pos ({ds_train.y.mean():.2%}) ==="
         )
 
-        # Per-target diagnostics: leakage smell-test and per-park positive rate.
+        # Per-target diagnostics: leakage smell-test and per-group positive rate.
         label_corr_frames.append(
             diag.label_correlation_table(
                 ds_train.X, ds_train.y, ds_train.feature_names
             ).assign(target=target)
         )
         park_rate_frames.append(
-            diag.per_park_positive_rate(ds_train.groups, ds_train.y).assign(
+            diag.per_group_positive_rate(ds_train.groups, ds_train.y).assign(
                 target=target
             )
         )
@@ -166,8 +171,9 @@ def make_eda_figures() -> None:
     """Reproduce the blog EDA on 2023: class balance, geometry, spray, density.
 
     The class-balance and geometry panels are target-independent (same rows), so
-    they are drawn once; the density overlay is drawn per target since it
-    highlights that target's minority class.
+    they are drawn once; the density overlay and class-stratified feature
+    distributions are drawn per target since they highlight that target's
+    minority class.
     """
     logger.info("EDA figures (2023):")
     shared = baseball.load_season(TRAIN_YEAR, target="home_run")
@@ -191,6 +197,16 @@ def make_eda_figures() -> None:
             ds, ax, label=viz.target_label(target), color=viz.OUTCOME_COLORS[target]
         )
         save_figure(fig, "eda", f"eda_density_{target}.png", DOMAIN)
+
+        label = viz.target_label(target)
+        fig = diag.plot_class_stratified_distributions(
+            ds.X,
+            ds.y,
+            ds.feature_names,
+            minority_label=label,
+            majority_label="other outcome",
+        )
+        save_figure(fig, "eda", f"eda_class_distributions_{target}.png", DOMAIN)
 
 
 def make_performance_figures() -> None:
@@ -316,16 +332,7 @@ def make_leakage_figures() -> None:
     park = pd.read_csv(park_path)
     label_corr = pd.read_csv(corr_path)
 
-    # Covariate shift per split, one panel each.
-    splits_present = list(dict.fromkeys(shift["split"]))
-    fig, axes = plt.subplots(
-        1, len(splits_present), figsize=(5 * len(splits_present), 4), squeeze=False
-    )
-    for ax, split_name in zip(axes.ravel(), splits_present):
-        diag.plot_covariate_shift(shift[shift["split"] == split_name], ax)
-        ax.set_title(f"Covariate shift — {split_name} split")
-    fig.tight_layout()
-    save_figure(fig, "leakage", "leakage_covariate_shift.png", DOMAIN)
+    plot_covariate_shift_panels(shift, DOMAIN)
 
     # Train vs. test feature distributions per split (raw values re-loaded).
     shared = baseball.load_season(TRAIN_YEAR, target="home_run")
@@ -344,7 +351,9 @@ def make_leakage_figures() -> None:
         pr = park[park["target"] == target]
         if not pr.empty:
             fig, ax = plt.subplots(figsize=(11, 4.5))
-            diag.plot_per_park_rate(pr, ax, label=viz.target_label(target))
+            diag.plot_per_group_rate(
+                pr, ax, highlight=OUTLIER_BALLPARKS, label=viz.target_label(target)
+            )
             fig.tight_layout()
             save_figure(fig, "leakage", f"leakage_per_park_rate_{target}.png", DOMAIN)
         lc = label_corr[label_corr["target"] == target]
