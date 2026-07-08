@@ -47,14 +47,14 @@ def test_feature_and_label_correlation_shapes():
     assert lab.iloc[0]["feature"] == "a"
 
 
-def test_per_park_positive_rate():
-    """Per-park rate returns one row per park with rate and count."""
+def test_per_group_positive_rate():
+    """Per-group rate returns one row per group with positive rate and count."""
     groups = np.array(["BOS", "BOS", "LAD", "LAD"])
     y = np.array([1, 0, 0, 0])
-    out = diag.per_park_positive_rate(groups, y)
-    assert set(out["park"]) == {"BOS", "LAD"}
-    assert out.set_index("park").loc["BOS", "positive_rate"] == 0.5
-    assert out.set_index("park").loc["LAD", "n"] == 2
+    out = diag.per_group_positive_rate(groups, y)
+    assert set(out["group"]) == {"BOS", "LAD"}
+    assert out.set_index("group").loc["BOS", "positive_rate"] == 0.5
+    assert out.set_index("group").loc["LAD", "n"] == 2
 
 
 def test_apply_metric_ylim():
