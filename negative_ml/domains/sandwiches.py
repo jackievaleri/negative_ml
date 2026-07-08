@@ -41,6 +41,7 @@ from negative_ml.core.experiment import (
     season_split_from_dataset,
     split_from_dataset,
 )
+from negative_ml.core.splitting import random_split, scaffold_split, season_split
 
 #: Source workbook, read from data/raw by default (see RAW_DATA_DIR).
 SANDWICH_FILENAME = "RFS Sandwiches.xlsx"
@@ -363,4 +364,65 @@ def build_splits(cds: Dataset) -> dict[str, EvalSplit]:
         "season": season_split_from_dataset(
             cds, test_season=SANDWICH_TEST_SEASON, name="season"
         ),
+    }
+
+
+def build_regression_splits(
+    reg_ds: Dataset,
+    threshold: float = SANDWICH_GOOD_RATING_THRESHOLD,
+) -> dict[str, EvalSplit]:
+    """The three sandwich evaluation regimes for a regression model.
+
+    Produces EvalSplits where the training Dataset carries continuous 0-10
+    ratings as y (so an XGBRegressor trains on the real rating signal) while
+    the held-out test labels are binarized at threshold for metric computation.
+    The label_y attribute on each train_ds is set to the corresponding binary
+    labels so that minority_mask / majority_mask work correctly for the
+    selection and saturation experiment runners without needing a threshold
+    argument.
+
+    Split indices are derived from the classification version of reg_ds so the
+    stratified random split and the grouped scaffold split are seeded with the
+    same binary label information as build_splits.
+
+    Args:
+        reg_ds: The sandwich regression Dataset (see load), whose y holds
+            continuous 0-10 ratings and whose meta carries season information.
+        threshold: Rating at or above which a sandwich is the good (positive)
+            minority class. Defaults to SANDWICH_GOOD_RATING_THRESHOLD.
+
+    Returns:
+        Mapping of split name to an EvalSplit whose train_ds.y is continuous
+        and whose y_test is binary.
+    """
+    cds = to_classification(reg_ds, threshold)
+    binary_y = cds.y
+
+    rand_train, rand_test = random_split(cds)
+    scaf_train, scaf_test = scaffold_split(cds)
+    seas_train, seas_test = season_split(cds, SANDWICH_TEST_SEASON)
+
+    def make(train_idx: np.ndarray, test_idx: np.ndarray, name: str) -> EvalSplit:
+        """Build one EvalSplit from raw index arrays."""
+        reg_train_ds = reg_ds.subset(train_idx)
+        reg_train_ds = Dataset(
+            X=reg_train_ds.X,
+            y=reg_train_ds.y,
+            task="regression",
+            feature_names=reg_train_ds.feature_names,
+            groups=reg_train_ds.groups,
+            meta=reg_train_ds.meta,
+            label_y=binary_y[train_idx],
+        )
+        return EvalSplit(
+            train_ds=reg_train_ds,
+            X_test=reg_ds.X[test_idx],
+            y_test=binary_y[test_idx],
+            name=name,
+        )
+
+    return {
+        "random": make(rand_train, rand_test, "random"),
+        "scaffold": make(scaf_train, scaf_test, "scaffold"),
+        "season": make(seas_train, seas_test, "season"),
     }
