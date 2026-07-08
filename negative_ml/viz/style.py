@@ -93,6 +93,13 @@ def apply_house_style() -> None:
     """
     plt.rcParams["axes.prop_cycle"] = cycler(color=DARK2)
     plt.rcParams["savefig.dpi"] = FIGURE_DPI
+    plt.rcParams["font.size"] = 12
+    plt.rcParams["axes.titlesize"] = 13
+    plt.rcParams["axes.labelsize"] = 12
+    plt.rcParams["xtick.labelsize"] = 11
+    plt.rcParams["ytick.labelsize"] = 11
+    plt.rcParams["legend.fontsize"] = 10
+    plt.rcParams["legend.title_fontsize"] = 11
 
 
 def style_axes(ax: plt.Axes, despine: Sequence[str] = ("top", "right")) -> plt.Axes:
