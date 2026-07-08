@@ -31,6 +31,11 @@ class Dataset:
             grouped / scaffold splits. None when not applicable.
         meta: Optional raw rows / identifiers (SMILES, player, ingredients)
             kept alongside the features for inspection and matched-pair eval.
+        label_y: Optional binary {0, 1} label array that overrides y for
+            minority_mask / majority_mask when y holds continuous values (e.g.
+            a regression Dataset whose model trains on continuous ratings but
+            whose minority class is still defined by a threshold-derived binary
+            label). When None, mask logic falls back to y and task as usual.
     """
 
     X: np.ndarray
@@ -39,6 +44,7 @@ class Dataset:
     feature_names: list[str] | None = None
     groups: np.ndarray | None = None
     meta: pd.DataFrame | None = field(default=None, repr=False)
+    label_y: np.ndarray | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         """Validate that shapes line up."""
@@ -57,16 +63,21 @@ class Dataset:
     def minority_mask(self, threshold: float | None = None) -> np.ndarray:
         """Boolean mask selecting the minority / class-of-interest examples.
 
-        For classification this is y == 1. For regression the minority is
-        defined as the low-value tail y <= threshold (e.g. low-rated
-        sandwiches); threshold must then be supplied.
+        When label_y is set it takes precedence: the mask is label_y == 1,
+        which lets a regression Dataset (continuous y for model training) keep
+        a correct binary minority definition without changing its y. Otherwise
+        for classification this is y == 1, and for regression the minority is
+        the low-value tail y <= threshold (threshold must then be supplied).
 
         Args:
-            threshold: Cutoff for the regression minority tail.
+            threshold: Cutoff for the regression minority tail. Ignored when
+                label_y is set.
 
         Returns:
             Boolean array of length n_samples.
         """
+        if self.label_y is not None:
+            return self.label_y == 1
         if self.task == "classification":
             return self.y == 1
         if threshold is None:
@@ -86,6 +97,7 @@ class Dataset:
             else self.meta.iloc[indices].reset_index(drop=True)
         )
         groups = None if self.groups is None else np.asarray(self.groups)[indices]
+        label_y = None if self.label_y is None else np.asarray(self.label_y)[indices]
         return Dataset(
             X=self.X[indices],
             y=self.y[indices],
@@ -93,4 +105,5 @@ class Dataset:
             feature_names=self.feature_names,
             groups=groups,
             meta=meta,
+            label_y=label_y,
         )

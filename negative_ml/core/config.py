@@ -111,6 +111,11 @@ MOLECULE_FEATURIZATIONS = ("rdkit", "morgan", "both")
 # exactly 9 counts as good.
 SANDWICH_GOOD_RATING_THRESHOLD = 9.0
 
+# Candidate thresholds swept by sandwiches_downselection.py to evaluate sensitivity
+# of the downselection results to the good/bad boundary. Lower thresholds admit more
+# sandwiches into the positive (good) class, making it less rare.
+SANDWICH_GOOD_RATING_THRESHOLDS: list[float] = [8.0]
+
 # --- Sandwich classifier ---------------------------------------------------
 # The sandwich set is tiny (~240 rows), so a single hold-out split is too noisy
 # to score a model on. Metrics are averaged over SANDWICH_CV_REPEATS runs of

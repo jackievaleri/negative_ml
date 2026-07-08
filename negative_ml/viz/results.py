@@ -153,6 +153,19 @@ def plot_strategy_curves(
     """
     present = list(df["strategy"].unique())
     varying = [s for s in STRATEGY_STYLE if s in present]
+
+    # Snap n_train to the median per (strategy, budget) group so that seeds with
+    # slightly different n_train (e.g. from density_diversity empty-cluster shortfalls)
+    # collapse to one x-position rather than piling up side by side.
+    if x == "n_train" and "budget" in df.columns:
+        df = df.copy()
+        df[x] = (
+            df.groupby(["strategy", "budget"])[x]
+            .transform("median")
+            .round()
+            .astype(int)
+        )
+
     x_all = df[x].to_numpy()
     x_lo, x_hi = float(np.min(x_all)), float(np.max(x_all))
     # Cap the axis at the largest varying-strategy budget, not the full-data

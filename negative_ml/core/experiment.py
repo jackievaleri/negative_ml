@@ -183,7 +183,7 @@ def resolve_split(
 
 
 def positive_scores(model: object, X: np.ndarray) -> np.ndarray:
-    """Positive-class scores in [0, 1] from a fitted classifier.
+    """Positive-class scores from a fitted estimator.
 
     Returns predict_proba for the positive class when the estimator exposes it.
     Otherwise the decision_function margin is squashed through a logistic sigmoid,
@@ -193,18 +193,23 @@ def positive_scores(model: object, X: np.ndarray) -> np.ndarray:
     flow through the same experiment plumbing as the XGBoost models, including the
     F1 metric: compute_metrics binarizes at DEFAULT_THRESHOLD (0.5), which now
     matches the estimator's hard predictions instead of thresholding an unbounded
-    margin at an arbitrary cutoff.
+    margin at an arbitrary cutoff. When neither predict_proba nor decision_function
+    is available (e.g. a plain XGBRegressor), predict() is used directly; its raw
+    continuous output serves as a ranking score for AUROC / AUPRC.
 
     Args:
-        model: A fitted classifier exposing predict_proba or decision_function.
+        model: A fitted estimator exposing predict_proba, decision_function, or
+            predict.
         X: Features to score.
 
     Returns:
-        A 1-D array of positive-class scores in [0, 1] aligned with X.
+        A 1-D array of scores aligned with X.
     """
     if hasattr(model, "predict_proba"):
         return model.predict_proba(X)[:, 1]
-    return expit(np.asarray(model.decision_function(X), dtype=float))
+    if hasattr(model, "decision_function"):
+        return expit(np.asarray(model.decision_function(X), dtype=float))
+    return np.asarray(model.predict(X), dtype=float)
 
 
 def fit_score(
