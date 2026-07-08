@@ -102,12 +102,12 @@ SPLIT_COLOR = {
     "time": DARK2[1],
 }
 SPLIT_LABEL = {
-    "random": "random split (within 2023)",
-    "hard": "hard split (2023→2024)",
-    "park": "park split (outlier parks held out)",
+    "random": "random split",
+    "hard": "time split (2024)",
+    "park": "ballpark split",
     "scaffold": "scaffold split (held-out fillings)",
     "season": "season split (newest season held out)",
-    "time": "time split (easy/med/hard validation)",
+    "time": "time/similarity split",
 }
 
 
