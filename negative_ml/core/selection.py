@@ -231,6 +231,17 @@ def density_aware_diversity(
         d = np.linalg.norm(Xz[members] - centers[c], axis=1)
         chosen.append(int(members[np.argmin(d)]))
     chosen_arr = np.array(sorted(set(chosen)), dtype=int)
+
+    # MiniBatchKMeans can produce empty clusters, leaving fewer than k centroid
+    # representatives. Fill the shortfall with a random draw from unchosen majority
+    # points so the returned set always has exactly k elements and n_train is
+    # consistent across seeds at the same budget.
+    if len(chosen_arr) < k:
+        rng = np.random.default_rng(seed)
+        remaining = np.setdiff1d(np.arange(len(majority)), chosen_arr)
+        fill = rng.choice(remaining, size=k - len(chosen_arr), replace=False)
+        chosen_arr = np.sort(np.concatenate([chosen_arr, fill]))
+
     return np.sort(majority[chosen_arr])
 
 
