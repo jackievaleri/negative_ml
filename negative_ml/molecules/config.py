@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from negative_ml.core.config import PROCESSED_DATA_DIR, RAW_DATA_DIR  # noqa: F401
 
-# --- Antibacterial GNN saturation study -----------------------------------
 # Precomputed graph-neural-network results for the gonorrhea antibacterial screen
 # (the core case study, plan.md 3.1), one tidy frame per class-balance regime, read
 # from PROCESSED_DATA_DIR. proportional holds the actives (positives) to ~3% of the
@@ -22,7 +21,6 @@ MOLECULE_GNN_RESULT_FILES = {
 # included), so this recovers its total training size as negatives + positives.
 MOLECULE_GNN_N_POSITIVES = 1017
 
-# --- Antibacterial XGBoost featurization study ----------------------------
 # Directory and file stems for the gonorrhea screen used by the XGBoost study.
 # Each stem has a paired <stem>.csv (Name/SMILES/hit) and <stem>.npz (the
 # precomputed RDKit descriptor matrix under the "features" key), row-aligned.
@@ -44,7 +42,6 @@ MORGAN_N_BITS = 2048
 # "both" (descriptors concatenated with fingerprint bits).
 MOLECULE_FEATURIZATIONS = ("rdkit", "morgan", "both")
 
-# --- Molecule EDA tunables ------------------------------------------------
 # Number of rdkit features shown in the label-correlation bar chart and the
 # class-stratified distribution grid (features ranked by |pearson| with label).
 MOLECULES_EDA_TOP_FEATURES = 20

@@ -46,7 +46,6 @@ def compute_metrics(
     }
 
 
-# --- A) Global discrimination --------------------------------------------
 def auroc(y_true: np.ndarray, y_score: np.ndarray) -> float:
     """Area under the ROC curve.
 
@@ -90,7 +89,6 @@ def f1_at_threshold(
     return float(f1_score(y_true, y_pred, zero_division=0))
 
 
-# --- B) Early retrieval / top-k ------------------------------------------
 def precision_at_k(y_true: np.ndarray, y_score: np.ndarray, k: int) -> float:
     """Fraction of the top-k highest-scored items that are true positives.
 

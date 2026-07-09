@@ -82,9 +82,6 @@ class MmpConfig:
     full_ds_examples: bool = False
 
 
-# --- molecules ----------------------------------------------------------------
-
-
 def molecules_load() -> tuple[EvalSplit, Dataset]:
     """Load the molecule screen (rdkit featurization) with a random 80/20 split."""
     ds = molecules.load(featurization="rdkit")
@@ -121,9 +118,6 @@ MOLECULES = MmpConfig(
 )
 
 
-# --- sandwiches ---------------------------------------------------------------
-
-
 def sandwiches_classifier_factory():
     """Return a fresh feature-selected Ridge classifier for the sandwich domain."""
     return feature_selected_ridge_classifier(
@@ -152,9 +146,6 @@ SANDWICHES = MmpConfig(
     build_viz_dataset=lambda split, cds: cds,
     full_ds_examples=True,
 )
-
-
-# --- baseball -----------------------------------------------------------------
 
 
 def baseball_load() -> tuple[EvalSplit, Dataset]:
@@ -195,9 +186,6 @@ ALL_CONFIGS: dict[str, MmpConfig] = {
     "sandwiches": SANDWICHES,
     "baseball": BASEBALL,
 }
-
-
-# --- shared generate / plot ---------------------------------------------------
 
 
 def generate(cfg: MmpConfig) -> tuple[EvalSplit, Any]:

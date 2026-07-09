@@ -2,7 +2,7 @@
 
 Reproduces the Roll-for-Sandwich exploratory analysis from the reference notebook
 (rating distribution, ratings over time, per-ingredient rating spreads) in the
-house style, alongside the good-vs-bad classifier panels (ROC, confusion matrix,
+shared style, alongside the good-vs-bad classifier panels (ROC, confusion matrix,
 selected-feature importances). The reference used seaborn with a single indigo
 accent; these helpers redraw the same views with plain matplotlib and the shared
 Dark2 palette so the sandwich figures match the rest of the study.

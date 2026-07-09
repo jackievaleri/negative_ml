@@ -64,7 +64,6 @@ def target_label(target: str) -> str:
     return target.replace("_", " ")
 
 
-# --- EDA (reproduce the blog geometry) -----------------------------------
 def plot_class_balance(meta: Any, ax: plt.Axes) -> plt.Axes:
     """Bar chart of batted-ball outcome counts (shows home-run rarity).
 
@@ -184,7 +183,6 @@ def plot_minority_density(
     return style_axes(ax)
 
 
-# --- Model performance (driven by negative_ml.core.eval) ----------------------
 def plot_roc(y_true: ArrayLike, y_score: ArrayLike, ax: plt.Axes) -> plt.Axes:
     """ROC curve annotated with AUROC.
 

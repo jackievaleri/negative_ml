@@ -1,22 +1,14 @@
-"""Baseball experiments: EDA, XGBoost models, negative controls, and downselection.
+"""Baseball EDA: exit-velocity/launch-angle geometry, XGBoost models, negative controls.
 
-Merges baseball_eda_model.py and baseball_downselection.py into one entry point.
-
-EDA + model section reproduces the exit-velocity / launch-angle EDA, trains XGBoost
-models for home_run and triple targets under three evaluation regimes (random, hard
+Reproduces the exit-velocity / launch-angle EDA, trains XGBoost models for
+home_run and triple targets under three evaluation regimes (random, hard
 cross-season, park-factor), and computes per-feature negative controls.
-
-Downselection section compares majority-class selection strategies (random, hard,
-diversity, density-diversity) against full-data and class-weighting baselines,
-and runs saturation sweeps across the same target x split matrix.
 
 Usage::
 
-    python scripts/all_bball_experiments.py                  # all experiments + plots
-    python scripts/all_bball_experiments.py --plot-only       # replot saved artifacts
-    python scripts/all_bball_experiments.py --generate-only   # train + save, no figures
-    python scripts/all_bball_experiments.py --section eda     # EDA + model only
-    python scripts/all_bball_experiments.py --section down    # downselection only
+    python scripts/bball_eda.py                  # generate + plot
+    python scripts/bball_eda.py --plot-only       # replot saved artifacts
+    python scripts/bball_eda.py --generate-only   # train + save, no figures
 """
 
 from __future__ import annotations
@@ -39,37 +31,19 @@ from negative_ml.core.negative_control import run_negative_control
 from negative_ml.models import model_factory
 from negative_ml.runner import data_path, metrics_path
 from negative_ml.script_io import (
-    log_mean_metrics,
     plot_covariate_shift_panels,
-    plot_downselection_split_figures,
-    plot_proportional_saturation_overlay,
-    read_result_frames,
     require_artifacts,
-    run_sectioned_script,
-    run_splits_sweep,
+    run_script,
     save_figure,
-    save_frame,
-    save_sweep_frames,
 )
 from negative_ml.viz import diagnostics as diag
-from negative_ml.viz import results as rviz
-from negative_ml.viz import selection_examples as selviz
+from negative_ml.viz import selection_results as rviz
 
 DOMAIN = "baseball"
 
 TARGETS = ["home_run", "triple"]
 TRAIN_YEAR, TEST_YEAR = 2023, 2024
 SPLITS = ("random", "hard", "park")
-BUDGETS = [250, 500, 1000, 2000, 4000, 8000, 16000]
-FRACTIONS = [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]
-N_SEEDS = 3
-METRICS = ["auroc", "auprc", "precision_at_k", "enrichment_factor"]
-EXAMPLE_BUDGET = 12
-
-
-# ---------------------------------------------------------------------------
-# EDA + model
-# ---------------------------------------------------------------------------
 
 
 def generate_eda_model() -> None:
@@ -216,7 +190,7 @@ def make_performance_figures() -> None:
             pred_path = data_path(
                 DOMAIN, "predictions", f"predictions_{target}_{split_name}"
             )
-            require_artifacts("all_bball_experiments.py", pred_path)
+            require_artifacts("bball_eda.py", pred_path)
             preds = pd.read_csv(pred_path)
             y_test = preds["y_true"].to_numpy()
             y_score = preds["y_score"].to_numpy()
@@ -247,7 +221,7 @@ def make_performance_figures() -> None:
 
         imp_path = data_path(DOMAIN, "metrics", f"feature_importance_{target}")
         grid_path = data_path(DOMAIN, "grids", f"probability_grid_{target}", ".npz")
-        require_artifacts("all_bball_experiments.py", imp_path, grid_path)
+        require_artifacts("bball_eda.py", imp_path, grid_path)
         importances = pd.read_csv(imp_path)
         grid = np.load(grid_path)
 
@@ -269,7 +243,7 @@ def make_performance_figures() -> None:
 def make_negative_control_figures() -> None:
     """Per-target negative-control bars (AUROC + AUPRC), across splits."""
     nc_path = metrics_path("negative_control", "baseball")
-    require_artifacts("all_bball_experiments.py", nc_path)
+    require_artifacts("bball_eda.py", nc_path)
     nc = pd.read_csv(nc_path)
 
     logger.info("Negative-control figures:")
@@ -294,7 +268,7 @@ def make_feature_relationship_figures() -> None:
     logger.info("Feature-relationship figures:")
     pearson_path = data_path(DOMAIN, "metrics", "feature_corr_pearson")
     spearman_path = data_path(DOMAIN, "metrics", "feature_corr_spearman")
-    require_artifacts("all_bball_experiments.py", pearson_path, spearman_path)
+    require_artifacts("bball_eda.py", pearson_path, spearman_path)
     pearson = pd.read_csv(pearson_path, index_col=0)
     spearman = pd.read_csv(spearman_path, index_col=0)
 
@@ -322,7 +296,7 @@ def make_leakage_figures() -> None:
     shift_path = metrics_path("covariate_shift", "baseball")
     park_path = metrics_path("per_park_rate", "baseball")
     corr_path = metrics_path("label_correlation", "baseball")
-    require_artifacts("all_bball_experiments.py", shift_path, park_path, corr_path)
+    require_artifacts("bball_eda.py", shift_path, park_path, corr_path)
     shift = pd.read_csv(shift_path)
     park = pd.read_csv(park_path)
     label_corr = pd.read_csv(corr_path)
@@ -370,158 +344,9 @@ def plot_eda_model() -> None:
     make_negative_control_figures()
 
 
-# ---------------------------------------------------------------------------
-# Downselection
-# ---------------------------------------------------------------------------
-
-
-def generate_downselection() -> None:
-    """Run selection + saturation sweeps over targets x splits; save frames."""
-    classifier_factory = model_factory("classification")
-    selection_frames, sat_frames, sat_prop_frames = [], [], []
-    example_frames = []
-
-    for target in TARGETS:
-        logger.info(f"=== target: {target} ===")
-        ds_train = baseball.load_season(TRAIN_YEAR, target=target)
-        ds_test = baseball.load_season(TEST_YEAR, target=target)
-
-        example_frames.append(
-            selviz.selection_examples_frame(ds_train, EXAMPLE_BUDGET).assign(
-                target=target
-            )
-        )
-        logger.info(
-            f"  {TRAIN_YEAR}: {ds_train.n_samples:,} balls, {int(ds_train.y.sum()):,} "
-            f"{target} ({ds_train.y.mean():.2%}); {TEST_YEAR} test: "
-            f"{ds_test.n_samples:,} balls, {int(ds_test.y.sum()):,} {target}"
-        )
-
-        sel_fs, sat_fs, satp_fs = run_splits_sweep(
-            baseball_split.build_splits(ds_train, ds_test),
-            ds_train,
-            classifier_factory,
-            BUDGETS,
-            FRACTIONS,
-            N_SEEDS,
-            base_tag={"target": target},
-            minority_label=f"train {target}s",
-            skip_single_class=True,
-        )
-        selection_frames.extend(sel_fs)
-        sat_frames.extend(sat_fs)
-        sat_prop_frames.extend(satp_fs)
-
-    selection_df = save_sweep_frames(
-        selection_frames, sat_frames, sat_prop_frames, DOMAIN
-    )
-    save_frame(
-        pd.concat(example_frames, ignore_index=True), "selection_examples", DOMAIN
-    )
-    log_mean_metrics(selection_df, ["target", "split", "strategy"], METRICS)
-
-
-def make_example_figures() -> None:
-    """Log example tables and draw the four-panel downselection scatters."""
-    path = metrics_path("selection_examples", DOMAIN)
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Missing {path.name}; run generation first "
-            "(run: python scripts/all_bball_experiments.py --generate-only)."
-        )
-    examples = pd.read_csv(path)
-    cols = [
-        "exit_velocity",
-        "launch_angle",
-        "spray_angle",
-        "outcome",
-        "dist_to_minority",
-    ]
-    for target in list(dict.fromkeys(examples["target"])):
-        ex_t = examples[examples["target"] == target]
-        logger.info(f"Downselection examples — {target} (budget={EXAMPLE_BUDGET}):")
-        for strat in selviz.BUDGET_VARYING:
-            sub = ex_t[ex_t["strategy"] == strat]
-            if sub.empty:
-                continue
-            logger.info(f"  [{strat}]\n{sub[cols].to_string(index=False)}")
-        ds = baseball.load_season(TRAIN_YEAR, target=target)
-        fig = selviz.plot_selection_examples(
-            ds, ex_t, label=target.replace("_", " "), budget=EXAMPLE_BUDGET
-        )
-        save_figure(
-            fig, "downselection", f"downselection_examples_{target}.png", DOMAIN
-        )
-
-
-def plot_downselection() -> None:
-    """Rebuild every downselection figure from saved result frames."""
-    make_example_figures()
-    selection_df, sat_majority, sat_proportional = read_result_frames(
-        ["selection", "saturation", "saturation_proportional"],
-        DOMAIN,
-        "all_bball_experiments.py",
-    )
-    targets = list(dict.fromkeys(selection_df["target"]))
-
-    for target in targets:
-        sel_t = selection_df[selection_df["target"] == target]
-        satm_t = sat_majority[sat_majority["target"] == target]
-        satp_t = sat_proportional[sat_proportional["target"] == target]
-
-        logger.info(f"Figures for target {target}:")
-        plot_downselection_split_figures(
-            sel_t,
-            satm_t,
-            satp_t,
-            splits=("random", "hard", "park"),
-            domain=DOMAIN,
-            metrics=METRICS,
-            fname_prefix=f"{target}_",
-            title_label=target,
-        )
-
-        fig, ax = plt.subplots(figsize=(8.5, 5.5))
-        rviz.plot_split_overlay(sel_t, "auprc", ax, logx=True)
-        ax.set_title(f"AUPRC vs. size — across splits ({target})")
-        save_figure(fig, "downselection", f"downselection_overlay_{target}.png", DOMAIN)
-
-        plot_proportional_saturation_overlay(
-            satp_t,
-            ("random", "hard", "park"),
-            f"Proportional saturation — across splits ({target})",
-            f"saturation_overlay_{target}.png",
-            DOMAIN,
-        )
-
-
-# ---------------------------------------------------------------------------
-# Top-level entry points
-# ---------------------------------------------------------------------------
-
-
-def generate() -> None:
-    """Run all baseball experiments (EDA + model + downselection)."""
-    generate_eda_model()
-    generate_downselection()
-
-
-def plot() -> None:
-    """Rebuild all baseball figures from saved artifacts."""
-    plot_eda_model()
-    plot_downselection()
-
-
 def main() -> None:
-    """Parse CLI flags and dispatch generate/plot for the requested section."""
-    run_sectioned_script(
-        __doc__,
-        default=(generate, plot),
-        sections={
-            "eda": (generate_eda_model, plot_eda_model),
-            "down": (generate_downselection, plot_downselection),
-        },
-    )
+    """Parse CLI flags and dispatch generate/plot."""
+    run_script(generate_eda_model, plot_eda_model, __doc__)
 
 
 if __name__ == "__main__":

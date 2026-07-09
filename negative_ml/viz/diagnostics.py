@@ -32,7 +32,6 @@ from negative_ml.viz.style import (
 )
 
 
-# --- compute (decoupled from drawing) -------------------------------------
 def ks_statistic(a: np.ndarray, b: np.ndarray) -> float:
     """Two-sample Kolmogorov-Smirnov statistic between two 1-D samples.
 
@@ -160,7 +159,6 @@ def per_group_positive_rate(groups: np.ndarray, y: np.ndarray) -> pd.DataFrame:
     return g.sort_values("positive_rate").reset_index(drop=True)
 
 
-# --- plotting -------------------------------------------------------------
 def plot_correlation_heatmap(
     corr: pd.DataFrame, ax: plt.Axes, title: str = "Feature correlation"
 ) -> plt.Axes:

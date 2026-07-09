@@ -271,7 +271,6 @@ def test_prune_rare_features_keeps_well_sampled_columns():
     assert X[:, keep].shape == (3, 2)
 
 
-# --- Molecule (antibacterial screen) featurization ------------------------
 def test_compute_fingerprints_shape_and_invalid_zero_row():
     """Morgan fingerprints are (n, n_bits) uint8; unparseable SMILES are zeros."""
     fps = molecules.compute_fingerprints(["c1ccccc1", "CCO", "not-a-smiles"], n_bits=64)

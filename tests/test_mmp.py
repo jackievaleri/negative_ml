@@ -6,10 +6,6 @@ import pytest
 
 from negative_ml.core.mmp import find_matched_pairs, mmp_metrics, score_pairs
 
-# ---------------------------------------------------------------------------
-# Synthetic helpers
-# ---------------------------------------------------------------------------
-
 
 def _toy_data(n_pos: int = 5, n_neg: int = 20, n_feat: int = 3, seed: int = 0):
     """Small imbalanced classification dataset with separated clusters."""
@@ -20,11 +16,6 @@ def _toy_data(n_pos: int = 5, n_neg: int = 20, n_feat: int = 3, seed: int = 0):
     X = np.vstack([X_pos, X_neg])
     y = np.array([1] * n_pos + [0] * n_neg)
     return X, y
-
-
-# ---------------------------------------------------------------------------
-# find_matched_pairs
-# ---------------------------------------------------------------------------
 
 
 def test_find_matched_pairs_returns_dataframe():
@@ -74,11 +65,6 @@ def test_find_matched_pairs_empty_when_no_positives():
     assert pairs.empty
 
 
-# ---------------------------------------------------------------------------
-# score_pairs
-# ---------------------------------------------------------------------------
-
-
 class _DummyModel:
     """Fake model whose positive-class score equals the first feature value."""
 
@@ -112,11 +98,6 @@ def test_score_pairs_margin_equals_difference():
     scored = score_pairs(_DummyModel(), X, pairs)
     expected_margin = scored["score_pos"] - scored["score_neg"]
     np.testing.assert_allclose(scored["margin"].to_numpy(), expected_margin.to_numpy())
-
-
-# ---------------------------------------------------------------------------
-# mmp_metrics
-# ---------------------------------------------------------------------------
 
 
 def test_mmp_metrics_all_correct():

@@ -29,7 +29,6 @@ from negative_ml.core.config import (
 from negative_ml.core.dataset import Dataset
 
 
-# --- shared helpers -------------------------------------------------------
 def majority_indices(dataset: Dataset) -> np.ndarray:
     """Full-dataset row indices of the majority class.
 
@@ -123,7 +122,6 @@ def greedy_k_center(Xz: np.ndarray, k: int, start: int) -> np.ndarray:
     return selected
 
 
-# --- strategies -----------------------------------------------------------
 def as_is(dataset: Dataset, budget: int | None = None, **_kwargs) -> np.ndarray:
     """Full-dataset baseline: keep every majority example (ignores budget).
 

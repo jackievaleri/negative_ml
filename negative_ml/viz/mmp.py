@@ -35,9 +35,6 @@ STRATEGY_LABELS = {
 STRATEGY_COLORS = dict(zip(BUDGET_VARYING, DARK2))
 
 
-# --- domain describe functions ------------------------------------------------
-
-
 def baseball_describe(dataset: Dataset, idx: int) -> pd.Series:
     """Return key kinematic features and outcome for one baseball row.
 
@@ -111,9 +108,6 @@ def sandwiches_describe(dataset: Dataset, idx: int) -> pd.Series:
     return pd.Series(row)
 
 
-# --- performance figure -------------------------------------------------------
-
-
 def plot_mmp_performance(
     results: pd.DataFrame,
     domain: str,
@@ -173,9 +167,6 @@ def plot_mmp_performance(
     )
     fig.tight_layout()
     return fig
-
-
-# --- examples figure ----------------------------------------------------------
 
 
 def plot_mmp_examples(

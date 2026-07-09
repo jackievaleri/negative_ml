@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-# --- Domain thresholds ----------------------------------------------------
 # Sandwich ratings are 0-10 and skewed high; the "minority" / class of interest
 # is the rare, high-value "good" sandwich. See plan.md section 3.3.
 
@@ -19,7 +18,6 @@ SANDWICH_GOOD_RATING_THRESHOLD = 9.0
 # everywhere else in the domain (EDA, the classifier comparison).
 SANDWICH_GOOD_RATING_THRESHOLDS: list[float] = [7.5, 8.0, 8.5, 9.0, 9.5]
 
-# --- Sandwich classifier ---------------------------------------------------
 # The sandwich set is tiny (~240 rows), so a single hold-out split is too noisy
 # to score a model on. Metrics are averaged over SANDWICH_CV_REPEATS runs of
 # SANDWICH_CV_FOLDS-fold stratified cross-validation instead.
@@ -49,7 +47,6 @@ SANDWICH_RIDGE_ALPHA = 1.0
 # newest), the sandwich analog of the baseball chronological cross-season split.
 SANDWICH_TEST_SEASON = "S5"
 
-# --- Sandwich EDA tunables -------------------------------------------------
 # Ingredient values rarer than these counts are excluded from the EDA so each
 # panel stays legible. DISPLAY is the "print the popular ones" cutoff; VIOLIN is
 # the per-ingredient rating-distribution cutoff.

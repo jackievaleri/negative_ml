@@ -73,7 +73,8 @@ GNN_TEST_SETS = {
 }
 
 #: Raw metric labels in the GNN result files mapped to the study's metric keys
-#: (see negative_ml.viz.results.METRIC_LABELS). The source writes auPR for AUPRC.
+#: (see negative_ml.viz.selection_results.METRIC_LABELS). The source writes
+#: auPR for AUPRC.
 GNN_METRICS = {"auROC": "auroc", "auPR": "auprc"}
 
 

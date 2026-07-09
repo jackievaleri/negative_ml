@@ -27,7 +27,7 @@ from sklearn.neighbors import NearestNeighbors
 from negative_ml.core.config import RANDOM_SEED, VIZ_MAX_POINTS
 from negative_ml.core.dataset import Dataset
 from negative_ml.core.selection import BUDGET_VARYING, STRATEGIES, standardized_features
-from negative_ml.viz.results import STRATEGY_STYLE
+from negative_ml.viz.selection_results import STRATEGY_STYLE
 from negative_ml.viz.style import LIGHT_GRAY, PALETTE, style_axes, subsample_indices
 
 

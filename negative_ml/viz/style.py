@@ -3,9 +3,9 @@
 Centralizes the things that must look the same across all plots: the
 categorical palette, the sequential colormaps used for density / probability
 surfaces, the save resolution, and the axis cleanup (no top/right spines, no
-gridlines). Importing this module applies the house style (see
-apply_house_style) so the scripts, the EDA helpers, the results helpers,
-and the notebooks all share one look.
+gridlines). Importing this module applies the style (see apply_style) so the
+scripts, the EDA helpers, the results helpers, and the notebooks all share
+one look.
 
 The categorical palette is Matplotlib's Dark2 (the ColorBrewer qualitative
 set). Use the colors in order for categorical series — DARK2 is the
@@ -84,8 +84,8 @@ def dark2(i: int) -> str:
     return DARK2[i % len(DARK2)]
 
 
-def apply_house_style() -> None:
-    """Install the house style into Matplotlib's global rcParams.
+def apply_style() -> None:
+    """Install the style into Matplotlib's global rcParams.
 
     Sets the default color cycle to DARK2 (so unstyled plots use the
     palette in order) and the saved-figure resolution to FIGURE_DPI.
@@ -104,7 +104,7 @@ def apply_house_style() -> None:
 
 
 def style_axes(ax: plt.Axes, despine: Sequence[str] = ("top", "right")) -> plt.Axes:
-    """Apply the house style to a single axes in place.
+    """Apply the style to a single axes in place.
 
     Removes the requested spines and disables gridlines so every panel reads
     the same regardless of which helper drew it.
@@ -169,4 +169,4 @@ def subsample_indices(idx: np.ndarray, cap: int, seed: int) -> np.ndarray:
     return rng.choice(idx, cap, replace=False)
 
 
-apply_house_style()  # apply the look on import of the viz package
+apply_style()  # apply the look on import of the viz package

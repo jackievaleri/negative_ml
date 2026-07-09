@@ -20,7 +20,7 @@ from negative_ml.core import sweep as sel
 from negative_ml.core.config import REPO_ROOT
 from negative_ml.runner import figure_path, metrics_path
 from negative_ml.viz import diagnostics as diag
-from negative_ml.viz import results as viz
+from negative_ml.viz import selection_results as viz
 from negative_ml.viz.style import DARK2, save_fig
 
 
