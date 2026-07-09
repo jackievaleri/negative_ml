@@ -56,13 +56,13 @@ SANDWICH_FREQ_THRESHOLD_VIOLIN = 5
 # Ingredient-value cutoff for the notebook's deli-counter candidate menu (the
 # itertools.product enumeration of every buildable sandwich). Looser than
 # SANDWICH_FREQ_THRESHOLD_VIOLIN so the search explores more of the menu, but
-# the candidate count grows combinatorially (product of the per-column counts)
-# and each candidate is a dense multi-hot row, so it cannot go as low as
-# SANDWICH_MIN_INGREDIENT_COUNT: threshold 1 yields ~6.5 trillion candidates
-# (unrunnable), and even 3 yields ~15 million (~100 GB dense). 4 yields ~310k
-# candidates (~2 GB, seconds to score) -- about 9x the menu at VIOLIN's cutoff
-# of 5, and the largest cutoff drop that stays comfortably tractable.
-SANDWICH_FREQ_THRESHOLD_DELI_SEARCH = 4
+# the candidate count grows combinatorially (product of the per-column counts),
+# so it cannot go as low as SANDWICH_MIN_INGREDIENT_COUNT: threshold 1 yields
+# ~6.5 trillion candidates (unrunnable even in batches). Threshold 3 yields
+# ~15.2 million candidates -- one-hot encoding them all at once would be a
+# ~845-column dense float64 matrix (~100 GB), so the notebook scores the menu
+# in batches (~50k candidates at a time, ~30s total) instead of in one shot.
+SANDWICH_FREQ_THRESHOLD_DELI_SEARCH = 3
 
 # Cap on how many features the leakage figures draw per panel (covariate-shift
 # bars, label-correlation bars). The multi-hot ingredient encoding has hundreds
