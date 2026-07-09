@@ -14,7 +14,10 @@ import pandas as pd
 
 from negative_ml.core.config import RAW_DATA_DIR
 from negative_ml.core.dataset import Dataset
-from negative_ml.sandwich.config import SANDWICH_GOOD_RATING_THRESHOLD
+from negative_ml.sandwich.config import (
+    SANDWICH_GOOD_RATING_THRESHOLD,
+    SANDWICH_MIN_INGREDIENT_COUNT,
+)
 
 #: Source workbook, read from data/raw by default (see RAW_DATA_DIR).
 SANDWICH_FILENAME = "RFS Sandwiches.xlsx"
@@ -255,9 +258,11 @@ def featurize(frame: pd.DataFrame) -> Dataset:
     """Turn a raw long ratings frame into a featurized regression Dataset.
 
     Pure and offline-testable (parallel to baseball.featurize): cleans the frame,
-    multi-hot encodes the ingredients, and packages the 0-10 rating as the
-    regression target. The raw ingredient columns plus Season / Episode / Rating /
-    Clean_Rating are retained in meta for the EDA and matched-pair construction.
+    multi-hot encodes the ingredients, prunes ingredient-value columns seen in
+    fewer than SANDWICH_MIN_INGREDIENT_COUNT sandwiches (see prune_rare_features),
+    and packages the 0-10 rating as the regression target. The raw ingredient
+    columns plus Season / Episode / Rating / Clean_Rating are retained in meta for
+    the EDA and matched-pair construction.
 
     Args:
         frame: The long frame from read_ratings.
@@ -269,6 +274,9 @@ def featurize(frame: pd.DataFrame) -> Dataset:
     """
     cleaned = clean_ratings(frame)
     X, feature_names = encode_ingredients(cleaned)
+    keep = prune_rare_features(X, min_count=SANDWICH_MIN_INGREDIENT_COUNT)
+    X = X[:, keep]
+    feature_names = [name for name, k in zip(feature_names, keep) if k]
     meta = cleaned[
         INGREDIENT_COLS + [RATING_COL, "Season", "Episode", CLEAN_RATING_COL]
     ].reset_index(drop=True)

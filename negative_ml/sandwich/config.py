@@ -52,3 +52,12 @@ SANDWICH_TEST_SEASON = "S5"
 # the per-ingredient rating-distribution cutoff.
 SANDWICH_FREQ_THRESHOLD_DISPLAY = 10
 SANDWICH_FREQ_THRESHOLD_VIOLIN = 5
+
+# Ingredient values seen in fewer than this many sandwiches are pruned from the
+# multi-hot feature matrix before modeling (see io.featurize / prune_rare_features).
+# The encoding is one indicator column per ingredient value, which is very wide
+# relative to the ~240-row dataset; columns that fire on only a single sandwich
+# let a model memorize that row instead of generalizing. Distinct from the EDA
+# thresholds above, which only gate what gets plotted and never touch the
+# modeling features.
+SANDWICH_MIN_INGREDIENT_COUNT = 2
