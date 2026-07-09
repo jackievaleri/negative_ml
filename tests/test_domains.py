@@ -303,20 +303,22 @@ def test_load_rdkit_descriptors_imputes_non_finite(tmp_path):
 
 def test_featurize_modes_widths_and_names(tmp_path):
     """Each featurization yields the expected width and feature-name prefix."""
-    features = np.zeros((2, 5))
+    rdkit_names = molecules.get_rdkit_feature_names()
+    n_rdkit = len(rdkit_names)
+    features = np.zeros((2, n_rdkit))
     path = tmp_path / "s.npz"
     np.savez(path, features=features)
     smiles = ["c1ccccc1", "CCO"]
 
     Xr, names_r = molecules.featurize(smiles, path, "rdkit")
-    assert Xr.shape == (2, 5) and names_r[0] == "rdkit_0"
+    assert Xr.shape == (2, n_rdkit) and names_r[0] == rdkit_names[0]
 
     Xm, names_m = molecules.featurize(smiles, path, "morgan")
     assert Xm.shape == (2, MORGAN_N_BITS) and names_m[0] == "morgan_0"
 
     Xb, names_b = molecules.featurize(smiles, path, "both")
-    assert Xb.shape == (2, 5 + MORGAN_N_BITS)
-    assert names_b[0] == "rdkit_0" and names_b[5] == "morgan_0"
+    assert Xb.shape == (2, n_rdkit + MORGAN_N_BITS)
+    assert names_b[0] == rdkit_names[0] and names_b[n_rdkit] == "morgan_0"
 
 
 def test_featurize_rejects_unknown_and_misaligned(tmp_path):

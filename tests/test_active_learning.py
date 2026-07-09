@@ -39,7 +39,7 @@ def logistic_factory() -> LogisticRegression:
 
 def test_acquisition_fns_registry():
     """ACQUISITION_FNS maps each advertised name to a callable."""
-    assert set(ACQUISITION_FNS) == {"uncertainty", "diversity_uncertainty", "random"}
+    assert set(ACQUISITION_FNS) == {"ucb", "gp_ei", "random"}
     assert all(callable(fn) for fn in ACQUISITION_FNS.values())
 
 
@@ -49,7 +49,7 @@ def test_acquisition_returns_correct_count(name):
     ds = synthetic_dataset()
     model = fitted_model(ds)
     batch_size = 10
-    idx = ACQUISITION_FNS[name](model, ds.X, batch_size, seed=0)
+    idx = ACQUISITION_FNS[name](model, ds.X, batch_size, 0, ds.X, ds.y)
     assert len(idx) == batch_size
     assert len(set(idx.tolist())) == batch_size
 
@@ -59,7 +59,7 @@ def test_acquisition_indices_within_pool(name):
     """Acquisition indices are valid into X_pool."""
     ds = synthetic_dataset()
     model = fitted_model(ds)
-    idx = ACQUISITION_FNS[name](model, ds.X, batch_size=15, seed=0)
+    idx = ACQUISITION_FNS[name](model, ds.X, 15, 0, ds.X, ds.y)
     assert np.all(idx >= 0)
     assert np.all(idx < len(ds.X))
 
@@ -69,29 +69,30 @@ def test_acquisition_indices_sorted():
     ds = synthetic_dataset()
     model = fitted_model(ds)
     for name in ACQUISITION_FNS:
-        idx = ACQUISITION_FNS[name](model, ds.X, batch_size=10, seed=0)
+        idx = ACQUISITION_FNS[name](model, ds.X, 10, 0, ds.X, ds.y)
         assert list(idx) == sorted(idx.tolist()), f"{name} returned unsorted indices"
 
 
-def test_ucb_picks_smallest_margin():
-    """UCB acquisition selects points closest to the decision boundary."""
+def test_ucb_picks_highest_score():
+    """UCB acquisition selects the points with the highest mu + kappa*uncertainty."""
     ds = synthetic_dataset()
     model = fitted_model(ds)
     batch_size = 10
-    chosen = ucb_acquisition(model, ds.X, batch_size, seed=0)
+    chosen = ucb_acquisition(model, ds.X, batch_size, 0, ds.X, ds.y)
 
     probs = model.predict_proba(ds.X)[:, 1]
-    margins = np.abs(2.0 * probs - 1.0)
-    threshold = np.sort(margins)[batch_size - 1]
-    assert np.all(margins[chosen] <= threshold + 1e-9)
+    uncertainty = 1.0 - np.abs(2.0 * probs - 1.0)
+    ucb = probs + 1.0 * uncertainty
+    threshold = np.sort(ucb)[-batch_size]
+    assert np.all(ucb[chosen] >= threshold - 1e-9)
 
 
 def test_random_acquisition_reproducible():
     """Same seed produces the same random batch."""
     ds = synthetic_dataset()
     model = fitted_model(ds)
-    a = random_acquisition(model, ds.X, batch_size=20, seed=7)
-    b = random_acquisition(model, ds.X, batch_size=20, seed=7)
+    a = random_acquisition(model, ds.X, 20, 7, ds.X, ds.y)
+    b = random_acquisition(model, ds.X, 20, 7, ds.X, ds.y)
     assert np.array_equal(a, b)
 
 
@@ -99,7 +100,7 @@ def test_acquisition_clamped_to_pool_size():
     """Requesting more than the pool size returns all pool indices."""
     ds = synthetic_dataset(n=10)
     model = fitted_model(ds)
-    idx = ACQUISITION_FNS["random"](model, ds.X, batch_size=100, seed=0)
+    idx = ACQUISITION_FNS["random"](model, ds.X, 100, 0, ds.X, ds.y)
     assert len(idx) == len(ds.X)
 
 
