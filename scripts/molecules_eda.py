@@ -30,10 +30,12 @@ from negative_ml.molecules.config import (
 )
 from negative_ml.runner import metrics_path
 from negative_ml.script_io import (
+    compute_covariate_shift,
     plot_covariate_shift_panels,
     require_artifacts,
     run_script,
     save_figure,
+    save_frame,
 )
 from negative_ml.viz import diagnostics as diag
 from negative_ml.viz.style import INK, LIGHT_GRAY, PALETTE, style_axes
@@ -56,10 +58,7 @@ def generate_eda() -> None:
     label_corr = diag.label_correlation_table(
         ds_train.X, ds_train.y, ds_train.feature_names
     )
-    label_corr.to_csv(metrics_path("label_correlation", DOMAIN), index=False)
-    logger.info(
-        f"  wrote {metrics_path('label_correlation', DOMAIN).relative_to(REPO_ROOT)}"
-    )
+    save_frame(label_corr, "label_correlation", DOMAIN)
 
     variances = np.var(ds_train.X, axis=0)
     top_idx = np.argsort(variances)[::-1][:MOLECULES_EDA_TOP_FEATURES]
@@ -70,24 +69,10 @@ def generate_eda() -> None:
         f"  wrote {metrics_path('feature_corr_pearson', DOMAIN).relative_to(REPO_ROOT)}"
     )
 
-    shift_frames = []
-    for split_name, sp in splits.items():
-        shift_frames.append(
-            diag.covariate_shift_table(
-                sp.train_ds.X, sp.X_test, ds_train.feature_names
-            ).assign(split=split_name)
-        )
-    shift_df = pd.concat(shift_frames, ignore_index=True)
-    shift_df.to_csv(metrics_path("covariate_shift", DOMAIN), index=False)
-    logger.info(
-        f"  wrote {metrics_path('covariate_shift', DOMAIN).relative_to(REPO_ROOT)}"
-    )
+    compute_covariate_shift(splits, ds_train.feature_names, DOMAIN)
 
     per_scaffold = diag.per_group_positive_rate(ds_train.groups, ds_train.y)
-    per_scaffold.to_csv(metrics_path("per_scaffold_rate", DOMAIN), index=False)
-    logger.info(
-        f"  wrote {metrics_path('per_scaffold_rate', DOMAIN).relative_to(REPO_ROOT)}"
-    )
+    save_frame(per_scaffold, "per_scaffold_rate", DOMAIN)
 
 
 def make_class_balance_figure() -> None:

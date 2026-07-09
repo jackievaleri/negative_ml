@@ -6,12 +6,9 @@ import pandas as pd
 from negative_ml.core import saturation
 from negative_ml.core import sweep as selection
 from negative_ml.core.dataset import Dataset
-from negative_ml.core.experiment import (
-    cross_dataset_split,
-    season_split_from_dataset,
-    split_from_dataset,
-)
+from negative_ml.core.experiment import cross_dataset_split, split_from_dataset
 from negative_ml.models import make_model
+from negative_ml.sandwich.split import season_split_from_dataset
 
 METRIC_COLS = {"auroc", "auprc", "f1", "precision_at_k", "enrichment_factor"}
 

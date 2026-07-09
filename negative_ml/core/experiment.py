@@ -24,11 +24,7 @@ from scipy.special import expit
 from negative_ml.core import eval as ev
 from negative_ml.core.config import RANDOM_SEED
 from negative_ml.core.dataset import Dataset
-from negative_ml.core.splitting import (
-    random_split,
-    scaffold_split,
-    season_split,
-)
+from negative_ml.core.splitting import random_split, scaffold_split
 
 #: A model factory: (**kwargs) -> unfitted estimator (see models.make_model).
 #: Accepting kwargs lets callers pass e.g. class_weight for the H4 baseline.
@@ -95,39 +91,6 @@ def split_from_dataset(
         An EvalSplit built from train and test halves of dataset.
     """
     train_idx, test_idx = make_split(dataset, scaffold=scaffold, seed=seed)
-    return EvalSplit(
-        train_ds=dataset.subset(train_idx),
-        X_test=dataset.X[test_idx],
-        y_test=dataset.y[test_idx],
-        name=name,
-    )
-
-
-def season_split_from_dataset(
-    dataset: Dataset,
-    test_season: str,
-    season_col: str = "Season",
-    name: str = "season",
-) -> EvalSplit:
-    """Build an EvalSplit that holds one entire season out of training.
-
-    Wraps season_split into an EvalSplit (parallel to park_split_from_dataset): the
-    train pool is every other season and the test set is the held-out season, so
-    this isolates a season distribution shift the way the scaffold split isolates a
-    held-out filling family. The per-row season labels are read from the dataset's
-    own meta (they live there rather than in groups, which carries the scaffold
-    family), so the split stays aligned with the dataset and needs no side array.
-
-    Args:
-        dataset: Dataset whose meta carries the per-row season column.
-        test_season: The season value to hold out for testing.
-        season_col: Name of the meta column holding each row's season.
-        name: Split-regime label carried into result frames.
-
-    Returns:
-        An EvalSplit whose train pool excludes the held-out season.
-    """
-    train_idx, test_idx = season_split(dataset, test_season, season_col)
     return EvalSplit(
         train_ds=dataset.subset(train_idx),
         X_test=dataset.X[test_idx],

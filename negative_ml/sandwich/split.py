@@ -1,21 +1,92 @@
-"""Sandwich domain evaluation-split builders."""
+"""Sandwich-specific splitting strategies and evaluation-split builders."""
 
 from __future__ import annotations
 
 import numpy as np
 
 from negative_ml.core.dataset import Dataset
-from negative_ml.core.experiment import (
-    EvalSplit,
-    season_split_from_dataset,
-    split_from_dataset,
-)
-from negative_ml.core.splitting import random_split, scaffold_split, season_split
+from negative_ml.core.experiment import EvalSplit, split_from_dataset
+from negative_ml.core.splitting import random_split, scaffold_split
 from negative_ml.sandwich.config import (
     SANDWICH_GOOD_RATING_THRESHOLD,
     SANDWICH_TEST_SEASON,
 )
 from negative_ml.sandwich.io import to_classification
+
+
+def season_split(
+    dataset: Dataset,
+    test_season: str,
+    season_col: str = "Season",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Hold one entire season out of training (a chronological-style shift).
+
+    Every row whose season equals test_season goes to the test set and the rest
+    are training. Like baseball's ballpark_split this is a deterministic
+    held-out-group split, but grouped by the show's season rather than a
+    structural family, so the model is scored on a season it never trained on --
+    the sandwich analog of the baseball chronological cross-season split. The
+    per-row season labels are read from dataset.meta (they live there rather
+    than in groups, which carries the Main filling family used by the scaffold
+    split), so the split is always aligned with the dataset it is drawn from
+    and needs no separate season array.
+
+    Args:
+        dataset: Dataset to split; its meta must carry the season_col column.
+        test_season: The season value to hold out entirely for testing.
+        season_col: Name of the meta column holding each row's season.
+
+    Returns:
+        (train_idx, test_idx) integer index arrays.
+
+    Raises:
+        ValueError: If dataset.meta lacks season_col, or no row matches
+            test_season.
+    """
+    if dataset.meta is None or season_col not in dataset.meta.columns:
+        raise ValueError(
+            f"season_split requires dataset.meta with a {season_col!r} column."
+        )
+    seasons = np.asarray(dataset.meta[season_col])
+    is_test = seasons == test_season
+    if not is_test.any():
+        raise ValueError(f"No row has season {test_season!r}.")
+    indices = np.arange(dataset.n_samples)
+    return indices[~is_test], indices[is_test]
+
+
+def season_split_from_dataset(
+    dataset: Dataset,
+    test_season: str,
+    season_col: str = "Season",
+    name: str = "season",
+) -> EvalSplit:
+    """Build an EvalSplit that holds one entire season out of training.
+
+    Wraps season_split into an EvalSplit (mirrors baseball's
+    park_split_from_dataset): the train pool is every other season and the test
+    set is the held-out season, so this isolates a season distribution shift the
+    way the scaffold split isolates a held-out filling family. The per-row
+    season labels are read from the dataset's own meta (they live there rather
+    than in groups, which carries the scaffold family), so the split stays
+    aligned with the dataset and needs no side array.
+
+    Args:
+        dataset: Dataset whose meta carries the per-row season column.
+        test_season: The season value to hold out for testing.
+        season_col: Name of the meta column holding each row's season.
+        name: Split-regime label carried into result frames.
+
+    Returns:
+        An EvalSplit whose train pool excludes the held-out season.
+    """
+    train_idx, test_idx = season_split(dataset, test_season, season_col)
+    return EvalSplit(
+        train_ds=dataset.subset(train_idx),
+        X_test=dataset.X[test_idx],
+        y_test=dataset.y[test_idx],
+        name=name,
+    )
 
 
 def build_splits(cds: Dataset) -> dict[str, EvalSplit]:

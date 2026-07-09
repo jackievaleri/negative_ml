@@ -31,10 +31,12 @@ from negative_ml.core.negative_control import run_negative_control
 from negative_ml.models import model_factory
 from negative_ml.runner import data_path, metrics_path
 from negative_ml.script_io import (
+    compute_covariate_shift,
     plot_covariate_shift_panels,
     require_artifacts,
     run_script,
     save_figure,
+    save_frame,
 )
 from negative_ml.viz import diagnostics as diag
 from negative_ml.viz import selection_results as rviz
@@ -50,7 +52,7 @@ def generate_eda_model() -> None:
     """Train XGBoost + negative controls for all targets x splits; save artifacts."""
     full_factory = model_factory("classification")
     nc_frames = []
-    label_corr_frames, park_rate_frames, shift_frames = [], [], []
+    label_corr_frames, park_rate_frames = [], []
 
     for target in TARGETS:
         ds_train = baseball.load_season(TRAIN_YEAR, target=target)
@@ -78,12 +80,7 @@ def generate_eda_model() -> None:
                 diag.feature_correlation_matrix(
                     ds_train.X, ds_train.feature_names, method=method
                 ).to_csv(data_path(DOMAIN, "metrics", f"feature_corr_{method}"))
-            for split_name, sp in splits.items():
-                shift_frames.append(
-                    diag.covariate_shift_table(
-                        sp.train_ds.X, sp.X_test, ds_train.feature_names
-                    ).assign(split=split_name)
-                )
+            compute_covariate_shift(splits, ds_train.feature_names, DOMAIN)
 
         for split_name, sp in splits.items():
             model = full_factory()
@@ -130,18 +127,13 @@ def generate_eda_model() -> None:
             )
             nc_frames.append(nc.assign(target=target, split=split_name))
 
-    nc_path = metrics_path("negative_control", "baseball")
-    pd.concat(nc_frames, ignore_index=True).to_csv(nc_path, index=False)
-    logger.info(f"  wrote {nc_path.relative_to(REPO_ROOT)}")
+    save_frame(pd.concat(nc_frames, ignore_index=True), "negative_control", DOMAIN)
 
     for frames, name in (
         (label_corr_frames, "label_correlation"),
         (park_rate_frames, "per_park_rate"),
-        (shift_frames, "covariate_shift"),
     ):
-        path = metrics_path(name, "baseball")
-        pd.concat(frames, ignore_index=True).to_csv(path, index=False)
-        logger.info(f"  wrote {path.relative_to(REPO_ROOT)}")
+        save_frame(pd.concat(frames, ignore_index=True), name, DOMAIN)
 
 
 def make_eda_figures() -> None:

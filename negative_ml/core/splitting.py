@@ -1,11 +1,17 @@
-"""Train/test splitting strategies (plan.md 3.1, 4.x).
+"""Domain-agnostic train/test splitting strategies (plan.md 3.1, 4.x).
 
-Two regimes matter for the study:
+Two regimes matter for the study, and both apply across every domain (unlike
+a domain's own held-out-group splits, e.g. baseball's ballpark_split or
+sandwich's season_split, which live in that domain's split.py):
 
     - Random splits: the easy, optimistic baseline.
     - Scaffold / grouped splits: hold out entire structural families (via
       Dataset.groups) to measure generalization under distribution shift. This
-      is where curated majority data is expected to pay off.
+      is where curated majority data is expected to pay off. Despite the name
+      (from its original use on Bemis-Murcko molecular scaffolds), it is a
+      generic grouped-random split wired through core.experiment's
+      resolve_split and exposed as the CLI's cross-domain --scaffold flag, so
+      any domain with dataset.groups set can use it.
 
 Splitters return integer index arrays so they compose cleanly with the
 selection and experiment code.
@@ -77,43 +83,3 @@ def scaffold_split(
         splitter.split(np.arange(dataset.n_samples), groups=dataset.groups)
     )
     return train_idx, test_idx
-
-
-def season_split(
-    dataset: Dataset,
-    test_season: str,
-    season_col: str = "Season",
-) -> tuple[np.ndarray, np.ndarray]:
-    """Hold one entire season out of training (a chronological-style shift).
-
-    Every row whose season equals test_season goes to the test set and the rest
-    are training. Like ballpark_split this is a deterministic held-out-group split,
-    but grouped by the show's season rather than a structural family, so the model
-    is scored on a season it never trained on -- the sandwich analog of the
-    baseball chronological cross-season split. The per-row season labels are read
-    from dataset.meta (they live there rather than in groups, which carries the Main
-    filling family used by the scaffold split), so the split is always aligned with
-    the dataset it is drawn from and needs no separate season array.
-
-    Args:
-        dataset: Dataset to split; its meta must carry the season_col column.
-        test_season: The season value to hold out entirely for testing.
-        season_col: Name of the meta column holding each row's season.
-
-    Returns:
-        (train_idx, test_idx) integer index arrays.
-
-    Raises:
-        ValueError: If dataset.meta lacks season_col, or no row matches
-            test_season.
-    """
-    if dataset.meta is None or season_col not in dataset.meta.columns:
-        raise ValueError(
-            f"season_split requires dataset.meta with a {season_col!r} column."
-        )
-    seasons = np.asarray(dataset.meta[season_col])
-    is_test = seasons == test_season
-    if not is_test.any():
-        raise ValueError(f"No row has season {test_season!r}.")
-    indices = np.arange(dataset.n_samples)
-    return indices[~is_test], indices[is_test]
