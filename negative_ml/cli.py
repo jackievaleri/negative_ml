@@ -48,7 +48,17 @@ def prepare(
             is True.
         all_domains: When True, prepare every domain in DOMAIN_LOADERS.
     """
-    names = list(DOMAIN_LOADERS) if all_domains else [domain]
+    if all_domains:
+        names = list(DOMAIN_LOADERS)
+    elif domain is None:
+        raise typer.BadParameter("Pass a domain name or --all.")
+    elif domain not in DOMAIN_LOADERS:
+        raise typer.BadParameter(
+            f"Unknown domain {domain!r}; choose from {list(DOMAIN_LOADERS)}."
+        )
+    else:
+        names = [domain]
+
     for name in names:
         loader, _ = DOMAIN_LOADERS[name]
         loader()  # TODO: persist the featurized Dataset to data/processed
@@ -57,6 +67,13 @@ def prepare(
 @app.command()
 def saturation(domain: str, scaffold: bool = False) -> None:
     """Run the saturation experiment for a domain (plan.md 4.1).
+
+    Writes to a "cli_saturation" artifact distinct from the "saturation" one
+    the reproducible scripts under scripts/ produce: this command runs a single
+    ad hoc condition rather than the scripts' full (split, target/threshold)
+    sweep, so its result frame lacks the tag columns (e.g. split, threshold,
+    target) those scripts' plotting functions expect, and would otherwise
+    silently clobber their canonical artifact at the same path.
 
     Args:
         domain: Domain name (one of DOMAINS).
@@ -69,7 +86,7 @@ def saturation(domain: str, scaffold: bool = False) -> None:
         majority_sizes=DEFAULT_BUDGETS[domain],
         scaffold_split=scaffold,
     )
-    results.to_csv(metrics_path("saturation", domain), index=False)
+    results.to_csv(metrics_path("cli_saturation", domain), index=False)
 
 
 @app.command()
@@ -83,6 +100,13 @@ def selection(
 
     Pass --sweep to sweep the per-domain default budgets and emit the
     strategy-vs-size curves; otherwise compare strategies at a single budget.
+
+    Writes to a "cli_selection" artifact distinct from the "selection" one the
+    reproducible scripts under scripts/ produce: this command runs a single ad
+    hoc condition rather than the scripts' full (split, target/threshold)
+    sweep, so its result frame lacks the tag columns those scripts' plotting
+    functions expect, and would otherwise silently clobber their canonical
+    artifact at the same path.
 
     Args:
         domain: Domain name (one of DOMAINS).
@@ -108,7 +132,7 @@ def selection(
             scaffold_split=scaffold,
             include_weighted=True,
         )
-    results.to_csv(metrics_path("selection", domain), index=False)
+    results.to_csv(metrics_path("cli_selection", domain), index=False)
 
 
 if __name__ == "__main__":

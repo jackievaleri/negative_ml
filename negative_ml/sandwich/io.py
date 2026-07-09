@@ -6,6 +6,7 @@ See negative_ml.sandwich for the full domain description.
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -46,6 +47,7 @@ GROUP_COLUMN = "Main"
 CLEAN_RATING_COL = "Clean_Rating"
 
 
+@lru_cache(maxsize=None)
 def read_ratings(path: str | Path | None = None) -> pd.DataFrame:
     """Read and reshape the raw ratings workbook into a long frame.
 
@@ -53,7 +55,10 @@ def read_ratings(path: str | Path | None = None) -> pd.DataFrame:
     first NUM_SEASONS season sheets, harmonizes the Season 1 "Other / Wild Magic"
     header to "Wild Magic", concatenates them, drops the dice / date / name
     columns by keeping only the ingredient, rating, and season columns, and melts
-    the per-season episode columns into a single (Season, Episode) pair.
+    the per-season episode columns into a single (Season, Episode) pair. The
+    result is memoized per path: a single script run asks for the ratings
+    several times (across EDA, classifier, and downselection figures), and each
+    call would otherwise re-read all five workbook sheets from scratch.
 
     Args:
         path: Path to the workbook. Defaults to RAW_DATA_DIR / SANDWICH_FILENAME.
@@ -66,7 +71,7 @@ def read_ratings(path: str | Path | None = None) -> pd.DataFrame:
     if path is None:
         path = RAW_DATA_DIR / SANDWICH_FILENAME
 
-    frame = pd.DataFrame()
+    sheets = []
     for season in range(NUM_SEASONS):
         sheet = pd.read_excel(path, sheet_name=f"Season {season + 1}")
         # Season 1 labels the column "Other / Wild Magic"; later seasons use the
@@ -74,7 +79,8 @@ def read_ratings(path: str | Path | None = None) -> pd.DataFrame:
         # up across sheets.
         if "Wild Magic" not in sheet.columns:
             sheet = sheet.rename(columns={"Other / Wild Magic": "Wild Magic"})
-        frame = pd.concat([frame, sheet], ignore_index=True)
+        sheets.append(sheet)
+    frame = pd.concat(sheets, ignore_index=True)
 
     keep = INGREDIENT_COLS + [RATING_COL] + SEASON_COLS
     return frame[keep].melt(

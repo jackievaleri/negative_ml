@@ -80,3 +80,20 @@ class CorrelationModel:
         signed = self.sign_ * np.asarray(X, dtype=float)[:, self.feature_index]
         p1 = expit((signed - self.mean_) / self.scale_)
         return np.column_stack([1.0 - p1, p1])
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Return the hard 0/1 classification decision for each row.
+
+        Thresholds the positive-class probability from predict_proba at 0.5,
+        matching the sklearn classifier convention of a discrete class label so
+        CorrelationModel satisfies the same Estimator surface as every other
+        model make_model can return.
+
+        Args:
+            X: Feature matrix to predict on; only the column at feature_index
+                is used.
+
+        Returns:
+            Array of shape (n_samples,) with 0/1 class predictions.
+        """
+        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)

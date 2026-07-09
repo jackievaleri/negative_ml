@@ -23,7 +23,6 @@ Usage::
 
 from __future__ import annotations
 
-import argparse
 import warnings
 from collections.abc import Callable, Sequence
 from functools import partial
@@ -66,6 +65,7 @@ from negative_ml.script_io import (
     plot_proportional_saturation_overlay,
     read_result_frames,
     require_artifacts,
+    run_sectioned_script,
     run_splits_sweep,
     save_figure,
     save_frame,
@@ -627,31 +627,15 @@ def plot() -> None:
 
 def main() -> None:
     """Parse CLI flags and dispatch generate/plot for the requested section."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("--plot-only", action="store_true")
-    group.add_argument("--generate-only", action="store_true")
-    parser.add_argument(
-        "--section",
-        choices=["eda", "clf", "down"],
-        default=None,
-        help="Run only this section: eda, clf (classifier), or down (downselection).",
+    run_sectioned_script(
+        __doc__,
+        default=(generate, plot),
+        sections={
+            "eda": (generate_eda, plot_eda),
+            "clf": (generate_classifier, plot_classifier),
+            "down": (generate_downselection, plot_downselection),
+        },
     )
-    args = parser.parse_args()
-
-    if args.section == "eda":
-        gen_fn, plot_fn = generate_eda, plot_eda
-    elif args.section == "clf":
-        gen_fn, plot_fn = generate_classifier, plot_classifier
-    elif args.section == "down":
-        gen_fn, plot_fn = generate_downselection, plot_downselection
-    else:
-        gen_fn, plot_fn = generate, plot
-
-    if not args.plot_only:
-        gen_fn()
-    if not args.generate_only:
-        plot_fn()
 
 
 if __name__ == "__main__":

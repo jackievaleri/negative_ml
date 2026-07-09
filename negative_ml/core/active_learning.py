@@ -66,11 +66,16 @@ def ucb_acquisition(
     Returns:
         Sorted pool indices of the batch_size examples with highest UCB score.
     """
+    k = clamp(batch_size, len(X_pool))
+    if k == 0:
+        return np.empty(0, dtype=int)
+    if k >= len(X_pool):
+        return np.arange(len(X_pool))
+
     kappa = 1.0
     p = positive_scores(model, X_pool)
     uncertainty = 1.0 - np.abs(2.0 * p - 1.0)
     ucb = p + kappa * uncertainty
-    k = clamp(batch_size, len(X_pool))
     chosen = np.argpartition(-ucb, k)[:k]
     return np.sort(chosen)
 
@@ -115,6 +120,8 @@ def gp_ei_acquisition(
     k = clamp(batch_size, len(X_pool))
     if k == 0:
         return np.empty(0, dtype=int)
+    if k >= len(X_pool):
+        return np.arange(len(X_pool))
 
     rng = np.random.default_rng(seed)
     X_train, y_train = X_labeled, y_labeled

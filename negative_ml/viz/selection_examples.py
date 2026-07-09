@@ -28,10 +28,12 @@ from negative_ml.core.config import RANDOM_SEED, VIZ_MAX_POINTS
 from negative_ml.core.dataset import Dataset
 from negative_ml.core.selection import BUDGET_VARYING, STRATEGIES, standardized_features
 from negative_ml.viz.results import STRATEGY_STYLE
-from negative_ml.viz.style import LIGHT_GRAY, PALETTE, style_axes
+from negative_ml.viz.style import LIGHT_GRAY, PALETTE, style_axes, subsample_indices
 
 
-def nearest_minority_distance(dataset: Dataset, rows: np.ndarray) -> np.ndarray:
+def nearest_minority_distance(
+    dataset: Dataset, rows: np.ndarray, nn: NearestNeighbors | None = None
+) -> np.ndarray:
     """Standardized distance from each given row to the nearest minority example.
 
     The same notion of "hardness" the hard strategy ranks on, reported here so a
@@ -41,6 +43,9 @@ def nearest_minority_distance(dataset: Dataset, rows: np.ndarray) -> np.ndarray:
     Args:
         dataset: Dataset the rows index into.
         rows: Full-dataset row indices to score.
+        nn: Optional NearestNeighbors already fit on the standardized minority
+            features (see selection_examples_frame, which fits this once and
+            reuses it across strategies); fit fresh when not given.
 
     Returns:
         Distance to the nearest minority example for each row (zeros if there are
@@ -50,7 +55,8 @@ def nearest_minority_distance(dataset: Dataset, rows: np.ndarray) -> np.ndarray:
     if len(minority) == 0:
         return np.zeros(len(rows))
     Xz = standardized_features(dataset)
-    nn = NearestNeighbors(n_neighbors=1).fit(Xz[minority])
+    if nn is None:
+        nn = NearestNeighbors(n_neighbors=1).fit(Xz[minority])
     dist, _ = nn.kneighbors(Xz[np.asarray(rows)])
     return dist.ravel()
 
@@ -90,6 +96,7 @@ def selection_example_table(
     budget: int,
     describe: Callable[[Dataset, np.ndarray], pd.DataFrame] = baseball_example_columns,
     seed: int = RANDOM_SEED,
+    nn: NearestNeighbors | None = None,
 ) -> pd.DataFrame:
     """Tidy table of the majority examples one strategy keeps at a small budget.
 
@@ -106,6 +113,9 @@ def selection_example_table(
             readable descriptor columns for those rows (baseball kinematics by
             default).
         seed: Seed forwarded to the (stochastic) strategies.
+        nn: Optional NearestNeighbors already fit on the standardized minority
+            features, forwarded to nearest_minority_distance; fit fresh when
+            not given.
 
     Returns:
         Frame with columns [strategy, row_index, <descriptor columns>,
@@ -115,7 +125,7 @@ def selection_example_table(
     table = pd.DataFrame({"strategy": strategy, "row_index": idx})
     descriptors = describe(dataset, idx).reset_index(drop=True)
     table = pd.concat([table, descriptors], axis=1)
-    table["dist_to_minority"] = nearest_minority_distance(dataset, idx).round(2)
+    table["dist_to_minority"] = nearest_minority_distance(dataset, idx, nn=nn).round(2)
     return table.sort_values("dist_to_minority").reset_index(drop=True)
 
 
@@ -138,8 +148,15 @@ def selection_examples_frame(
     Returns:
         The stacked per-strategy tables.
     """
+    # The minority set (and hence its nearest-neighbor index) is the same for
+    # every strategy, so fit it once here instead of once per strategy.
+    minority = np.where(dataset.minority_mask())[0]
+    nn = None
+    if len(minority) > 0:
+        Xz = standardized_features(dataset)
+        nn = NearestNeighbors(n_neighbors=1).fit(Xz[minority])
     frames = [
-        selection_example_table(dataset, s, budget, describe=describe, seed=seed)
+        selection_example_table(dataset, s, budget, describe=describe, seed=seed, nn=nn)
         for s in strategies
     ]
     return pd.concat(frames, ignore_index=True)
@@ -179,10 +196,7 @@ def plot_selection_examples(
         budget = int(examples.groupby("strategy").size().max())
     ev_, la = dataset.X[:, 0], dataset.X[:, 1]
     minority = dataset.minority_mask()
-    rng = np.random.default_rng(seed)
-    bg = np.arange(dataset.n_samples)
-    if bg.size > max_background:
-        bg = rng.choice(bg, max_background, replace=False)
+    bg = subsample_indices(np.arange(dataset.n_samples), max_background, seed)
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 10), squeeze=False)
     for ax, strat in zip(axes.ravel(), strategies):

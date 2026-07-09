@@ -37,6 +37,9 @@ DEFAULT_TOP_K = 100
 DEFAULT_THRESHOLD = 0.5
 
 # --- Majority-class selection ---------------------------------------------
+# Default number of seeds per sweep point for the selection/saturation/mmp
+# runners in core.sweep, core.saturation, and core.mmp.
+SWEEP_N_SEEDS = 3
 # Above this many majority candidates, the farthest-point selection subsamples
 # its candidate pool to keep the O(n*budget) runtime reasonable.
 DIVERSITY_POOL_CAP = 20_000
@@ -85,7 +88,7 @@ AL_INIT_NEGATIVES: dict[str, int] = {
 AL_NEG_BUDGETS: dict[str, int] = {
     "molecules": 2000,
     "baseball": 2000,
-    "sandwiches": 20,
+    "sandwiches": 80,
 }
 # Negative-composition strategies evaluated at each AL round.
 AL_NEG_COMPOSITIONS: tuple[str, ...] = ("as_is", "random", "hard", "diversity")

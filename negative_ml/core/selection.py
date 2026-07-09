@@ -98,10 +98,10 @@ def clamp(budget: int | None, n_available: int) -> int:
     return int(min(max(budget, 0), n_available))
 
 
-def _greedy_k_center(Xz: np.ndarray, k: int, start: int) -> np.ndarray:
+def greedy_k_center(Xz: np.ndarray, k: int, start: int) -> np.ndarray:
     """Greedy k-center farthest-point selection on a standardized feature matrix.
 
-    Starting from `start`, repeatedly adds the point farthest from the current
+    Starting from start, repeatedly adds the point farthest from the current
     selection using a vectorized min-distance update.
 
     Args:
@@ -244,7 +244,7 @@ def diversity_selection(
 
     Xz = standardized_features(dataset)[pool]
     start = int(rng.integers(len(pool)))
-    selected = _greedy_k_center(Xz, k, start)
+    selected = greedy_k_center(Xz, k, start)
     return np.sort(pool[selected])
 
 

@@ -30,9 +30,20 @@ def build_splits(
 
     Returns:
         Mapping of split name to EvalSplit, keyed "random" and "time".
+
+    Raises:
+        ValueError: If featurization does not produce the same feature space
+            as train_ds, e.g. train_ds was loaded with a different
+            featurization than the one requested here.
     """
     test_random = load_screen(MOLECULE_TEST_RANDOM_STEM, featurization)
     test_time = load_screen(MOLECULE_TEST_TIME_STEM, featurization)
+    if train_ds.X.shape[1] != test_random.X.shape[1]:
+        raise ValueError(
+            f"train_ds has {train_ds.X.shape[1]} features but featurization "
+            f"{featurization!r} produces {test_random.X.shape[1]}; train_ds "
+            "must be loaded with the same featurization passed here."
+        )
     return {
         "random": cross_dataset_split(train_ds, test_random, name="random"),
         "time": cross_dataset_split(train_ds, test_time, name="time"),

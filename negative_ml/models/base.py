@@ -85,7 +85,11 @@ def make_model(
     if kind == "ridge":
         if task == "classification":
             return ridge_classifier(class_weight=class_weight, **params)
-        return ridge_regressor(**params)
+        if task == "regression":
+            return ridge_regressor(**params)
+        raise ValueError(
+            f"Unknown task {task!r}; expected 'classification' or 'regression'."
+        )
     if kind != "xgboost":
         raise ValueError(
             f"Unsupported model kind {kind!r}; expected 'xgboost', 'logistic', "

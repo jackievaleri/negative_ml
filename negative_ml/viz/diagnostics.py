@@ -28,6 +28,7 @@ from negative_ml.viz.style import (
     LIGHT_GRAY,
     PALETTE,
     style_axes,
+    subsample_indices,
 )
 
 
@@ -120,9 +121,12 @@ def label_correlation_table(
         absolute Pearson correlation.
     """
     df = pd.DataFrame(np.asarray(X, dtype=float), columns=list(feature_names))
-    df["__label__"] = np.asarray(y, dtype=float)
-    pearson = df.corr(method="pearson")["__label__"].drop("__label__")
-    spearman = df.corr(method="spearman")["__label__"].drop("__label__")
+    label = pd.Series(np.asarray(y, dtype=float))
+    # corrwith computes only the feature-vs-label correlations (O(F)), unlike
+    # corr() which would build the full feature-by-feature matrix (O(F^2))
+    # just to slice one column back out of it.
+    pearson = df.corrwith(label, method="pearson")
+    spearman = df.corrwith(label, method="spearman")
     out = pd.DataFrame(
         {
             "feature": pearson.index,
@@ -244,6 +248,83 @@ def plot_label_correlations(
     return style_axes(ax)
 
 
+def overlaid_feature_histogram_grid(
+    feature_names: Sequence[str],
+    group_a: Sequence[np.ndarray],
+    group_b: Sequence[np.ndarray],
+    label_a: str,
+    label_b: str,
+    color_a: str,
+    color_b: str,
+    bins: int,
+    suptitle: str,
+) -> plt.Figure:
+    """Grid of overlaid normalized histograms, one panel per feature.
+
+    Shared scaffold for plot_train_test_distributions and
+    plot_class_stratified_distributions: both compare two groups' distributions
+    feature by feature in a fixed 3-column grid, differing only in which two
+    groups are compared and their labels/colors. Densities are normalized so
+    differently sized groups are comparable.
+
+    Args:
+        feature_names: Column names, one panel per name.
+        group_a: Per-feature 1-D arrays for the first group (e.g. train, or
+            majority), aligned with feature_names.
+        group_b: Per-feature 1-D arrays for the second group (e.g. test, or
+            minority), aligned with feature_names.
+        label_a: Legend label for group_a.
+        label_b: Legend label for group_b.
+        color_a: Histogram outline color for group_a.
+        color_b: Histogram outline color for group_b.
+        bins: Histogram bin count per panel.
+        suptitle: Figure-level title.
+
+    Returns:
+        The created Figure (caller saves / displays it).
+    """
+    n = len(feature_names)
+    ncols = 3
+    nrows = (n + ncols - 1) // ncols
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(5 * ncols, 3.2 * nrows), squeeze=False
+    )
+    flat = axes.ravel()
+    for i, name in enumerate(feature_names):
+        ax = flat[i]
+        col_a, col_b = group_a[i], group_b[i]
+        lo = float(min(col_a.min(), col_b.min()))
+        hi = float(max(col_a.max(), col_b.max()))
+        edges = np.linspace(lo, hi, bins + 1)
+        ax.hist(
+            col_a,
+            bins=edges,
+            density=True,
+            histtype="step",
+            color=color_a,
+            lw=1.6,
+            label=label_a,
+        )
+        ax.hist(
+            col_b,
+            bins=edges,
+            density=True,
+            histtype="step",
+            color=color_b,
+            lw=1.6,
+            label=label_b,
+        )
+        ax.set_title(name, fontsize=10)
+        ax.set_yticks([])
+        style_axes(ax)
+    for ax in flat[n:]:
+        ax.set_visible(False)
+    flat[0].legend(loc="upper right", fontsize=8)
+    fig.suptitle(suptitle, fontsize=13)
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    return fig
+
+
 def plot_train_test_distributions(
     train_X: np.ndarray,
     test_X: np.ndarray,
@@ -272,45 +353,19 @@ def plot_train_test_distributions(
     """
     train_X = np.asarray(train_X, dtype=float)
     test_X = np.asarray(test_X, dtype=float)
-    n = len(feature_names)
-    ncols = 3
-    nrows = (n + ncols - 1) // ncols
-    fig, axes = plt.subplots(
-        nrows, ncols, figsize=(5 * ncols, 3.2 * nrows), squeeze=False
+    group_a = [train_X[:, i] for i in range(len(feature_names))]
+    group_b = [test_X[:, i] for i in range(len(feature_names))]
+    return overlaid_feature_histogram_grid(
+        feature_names,
+        group_a,
+        group_b,
+        train_label,
+        test_label,
+        PALETTE["teal"],
+        PALETTE["orange"],
+        bins,
+        "Train vs. test feature distributions (covariate shift)",
     )
-    flat = axes.ravel()
-    for i, name in enumerate(feature_names):
-        ax = flat[i]
-        lo = float(min(train_X[:, i].min(), test_X[:, i].min()))
-        hi = float(max(train_X[:, i].max(), test_X[:, i].max()))
-        edges = np.linspace(lo, hi, bins + 1)
-        ax.hist(
-            train_X[:, i],
-            bins=edges,
-            density=True,
-            histtype="step",
-            color=PALETTE["teal"],
-            lw=1.6,
-            label=train_label,
-        )
-        ax.hist(
-            test_X[:, i],
-            bins=edges,
-            density=True,
-            histtype="step",
-            color=PALETTE["orange"],
-            lw=1.6,
-            label=test_label,
-        )
-        ax.set_title(name, fontsize=10)
-        ax.set_yticks([])
-        style_axes(ax)
-    for ax in flat[n:]:
-        ax.set_visible(False)
-    flat[0].legend(loc="upper right", fontsize=8)
-    fig.suptitle("Train vs. test feature distributions (covariate shift)", fontsize=13)
-    fig.tight_layout(rect=(0, 0, 1, 0.97))
-    return fig
 
 
 def plot_class_stratified_distributions(
@@ -343,50 +398,19 @@ def plot_class_stratified_distributions(
     y = np.asarray(y, dtype=int)
     pos_mask = y == 1
     neg_mask = ~pos_mask
-    n = len(feature_names)
-    ncols = 3
-    nrows = (n + ncols - 1) // ncols
-    fig, axes = plt.subplots(
-        nrows, ncols, figsize=(5 * ncols, 3.2 * nrows), squeeze=False
-    )
-    flat = axes.ravel()
-    for i, name in enumerate(feature_names):
-        ax = flat[i]
-        col_pos = X[pos_mask, i]
-        col_neg = X[neg_mask, i]
-        lo = float(X[:, i].min())
-        hi = float(X[:, i].max())
-        edges = np.linspace(lo, hi, bins + 1)
-        ax.hist(
-            col_neg,
-            bins=edges,
-            density=True,
-            histtype="step",
-            color=LIGHT_GRAY,
-            lw=1.6,
-            label=majority_label,
-        )
-        ax.hist(
-            col_pos,
-            bins=edges,
-            density=True,
-            histtype="step",
-            color=PALETTE["magenta"],
-            lw=1.6,
-            label=minority_label,
-        )
-        ax.set_title(name, fontsize=10)
-        ax.set_yticks([])
-        style_axes(ax)
-    for ax in flat[n:]:
-        ax.set_visible(False)
-    flat[0].legend(loc="upper right", fontsize=8)
-    fig.suptitle(
+    group_a = [X[neg_mask, i] for i in range(len(feature_names))]
+    group_b = [X[pos_mask, i] for i in range(len(feature_names))]
+    return overlaid_feature_histogram_grid(
+        feature_names,
+        group_a,
+        group_b,
+        majority_label,
+        minority_label,
+        LIGHT_GRAY,
+        PALETTE["magenta"],
+        bins,
         f"Feature distributions by class ({minority_label} vs. {majority_label})",
-        fontsize=13,
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.97))
-    return fig
 
 
 def plot_covariate_shift(shift_df: pd.DataFrame, ax: plt.Axes) -> plt.Axes:
@@ -479,10 +503,7 @@ def plot_feature_pair_matrix(
     """
     X = np.asarray(X, dtype=float)
     minority_mask = np.asarray(minority_mask, dtype=bool)
-    rng = np.random.default_rng(seed)
-    maj_idx = np.flatnonzero(~minority_mask)
-    if maj_idx.size > max_points:
-        maj_idx = rng.choice(maj_idx, max_points, replace=False)
+    maj_idx = subsample_indices(np.flatnonzero(~minority_mask), max_points, seed)
     min_idx = np.flatnonzero(minority_mask)
 
     n = len(feature_names)

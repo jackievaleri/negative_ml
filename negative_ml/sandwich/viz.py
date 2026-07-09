@@ -96,6 +96,71 @@ def plot_rating_timeline(
     return style_axes(ax)
 
 
+def rating_violin_swarm(
+    ax: plt.Axes,
+    categories: Sequence,
+    grouped: Sequence[np.ndarray],
+    *,
+    alpha: float = 0.7,
+    widths: float = 0.8,
+    annotate_mean: bool = False,
+) -> None:
+    """Draw a jittered swarm plus violin of rating spread per category onto ax.
+
+    Shared by plot_ingredient_violin and plot_rating_by_season: both show how
+    the rating distribution varies across a categorical grouping (an
+    ingredient value or a season), differing only in labeling and whether the
+    per-category mean is annotated. Categories with fewer than two ratings or
+    zero variance are drawn as swarm points only, since a violin's kernel
+    density is undefined there.
+
+    Args:
+        ax: Target matplotlib axes.
+        categories: Category labels, in the order to plot (only used for tick
+            count here; callers set the tick labels themselves).
+        grouped: Rating arrays, one per category, aligned with categories.
+        alpha: Swarm point transparency.
+        widths: Violin width.
+        annotate_mean: When True, print each category's mean rating above the
+            plot (used by the per-season view to show drift over time).
+    """
+    violin_data, violin_pos = [], []
+    rng = np.random.default_rng(0)
+    for pos, group in enumerate(grouped):
+        if len(group) >= 2 and np.std(group) > 0:
+            violin_data.append(group)
+            violin_pos.append(pos)
+        # Jittered swarm so individual sandwiches stay visible on top of the violin.
+        jitter = rng.uniform(-0.12, 0.12, size=len(group))
+        ax.scatter(
+            np.full(len(group), pos) + jitter,
+            group,
+            s=14,
+            color=ACCENT,
+            alpha=alpha,
+            edgecolors="none",
+        )
+        if annotate_mean:
+            mean_val = float(np.mean(group)) if len(group) > 0 else float("nan")
+            ax.text(
+                pos,
+                10.3,
+                f"{mean_val:.1f}",
+                ha="center",
+                va="bottom",
+                fontsize=7,
+                color=INK,
+            )
+    if violin_data:
+        parts = ax.violinplot(
+            violin_data, positions=violin_pos, showextrema=False, widths=widths
+        )
+        for body in parts["bodies"]:
+            body.set_facecolor(ACCENT)
+            body.set_alpha(0.3)
+    ax.set_xticks(range(len(categories)))
+
+
 def plot_ingredient_violin(
     values: ArrayLike, clean_ratings: ArrayLike, ax: plt.Axes, column: str
 ) -> plt.Axes:
@@ -120,31 +185,8 @@ def plot_ingredient_violin(
     categories = sorted(set(values.tolist()))
     grouped = [ratings[values == cat] for cat in categories]
 
-    violin_data, violin_pos = [], []
-    rng = np.random.default_rng(0)
-    for pos, group in enumerate(grouped):
-        if len(group) >= 2 and np.std(group) > 0:
-            violin_data.append(group)
-            violin_pos.append(pos)
-        # Jittered swarm so individual sandwiches stay visible on top of the violin.
-        jitter = rng.uniform(-0.12, 0.12, size=len(group))
-        ax.scatter(
-            np.full(len(group), pos) + jitter,
-            group,
-            s=14,
-            color=ACCENT,
-            alpha=0.7,
-            edgecolors="none",
-        )
-    if violin_data:
-        parts = ax.violinplot(
-            violin_data, positions=violin_pos, showextrema=False, widths=0.8
-        )
-        for body in parts["bodies"]:
-            body.set_facecolor(ACCENT)
-            body.set_alpha(0.3)
+    rating_violin_swarm(ax, categories, grouped, alpha=0.7, widths=0.8)
 
-    ax.set_xticks(range(len(categories)))
     ax.set_xticklabels(categories, rotation=90, fontsize=8)
     ax.set_ylabel("rating")
     ax.set_ylim(0, 10)
@@ -300,41 +342,10 @@ def plot_rating_by_season(
     categories = sorted(set(seasons.tolist()))
     grouped = [ratings[seasons == cat] for cat in categories]
 
-    violin_data, violin_pos = [], []
-    rng = np.random.default_rng(0)
-    for pos, (cat, group) in enumerate(zip(categories, grouped)):
-        if len(group) >= 2 and np.std(group) > 0:
-            violin_data.append(group)
-            violin_pos.append(pos)
-        jitter = rng.uniform(-0.12, 0.12, size=len(group))
-        ax.scatter(
-            np.full(len(group), pos) + jitter,
-            group,
-            s=14,
-            color=ACCENT,
-            alpha=0.6,
-            edgecolors="none",
-        )
-        mean_val = float(np.mean(group)) if len(group) > 0 else float("nan")
-        ax.text(
-            pos,
-            10.3,
-            f"{mean_val:.1f}",
-            ha="center",
-            va="bottom",
-            fontsize=7,
-            color=INK,
-        )
+    rating_violin_swarm(
+        ax, categories, grouped, alpha=0.6, widths=0.7, annotate_mean=True
+    )
 
-    if violin_data:
-        parts = ax.violinplot(
-            violin_data, positions=violin_pos, showextrema=False, widths=0.7
-        )
-        for body in parts["bodies"]:
-            body.set_facecolor(ACCENT)
-            body.set_alpha(0.3)
-
-    ax.set_xticks(range(len(categories)))
     ax.set_xticklabels(categories)
     ax.set_ylabel("rating")
     ax.set_ylim(0, 11)

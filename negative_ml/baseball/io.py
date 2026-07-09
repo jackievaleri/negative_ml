@@ -322,7 +322,12 @@ def featurize(
     return Dataset(
         X=X,
         y=y,
-        task="classification",
+        # A 5-class integer-coded y (binary=False) is neither the binary
+        # {0, 1} minority label "classification" implies nor a continuous
+        # "regression" target; labeling it "multiclass" keeps minority_mask /
+        # majority_mask from silently mistaking one outcome class for the
+        # minority instead of failing loudly.
+        task="classification" if binary else "multiclass",
         feature_names=list(_FEATURE_NAMES),
         groups=df["home_team"].to_numpy(),
         meta=meta,

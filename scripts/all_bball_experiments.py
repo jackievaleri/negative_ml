@@ -21,8 +21,6 @@ Usage::
 
 from __future__ import annotations
 
-import argparse
-
 import matplotlib
 
 matplotlib.use("Agg")
@@ -47,6 +45,7 @@ from negative_ml.script_io import (
     plot_proportional_saturation_overlay,
     read_result_frames,
     require_artifacts,
+    run_sectioned_script,
     run_splits_sweep,
     save_figure,
     save_frame,
@@ -147,7 +146,14 @@ def generate_eda_model() -> None:
                 np.savez(grid_path, ev_lin=ev_lin, la_lin=la_lin, proba=proba)
                 logger.info(f"  wrote {grid_path.relative_to(REPO_ROOT)}")
 
-            nc = run_negative_control(ds_train, full_factory, split=sp)
+            nc = run_negative_control(
+                ds_train,
+                full_factory,
+                lambda feature_index: full_factory(
+                    kind="correlation", feature_index=feature_index
+                ),
+                split=sp,
+            )
             nc_frames.append(nc.assign(target=target, split=split_name))
 
     nc_path = metrics_path("negative_control", "baseball")
@@ -400,6 +406,7 @@ def generate_downselection() -> None:
             N_SEEDS,
             base_tag={"target": target},
             minority_label=f"train {target}s",
+            skip_single_class=True,
         )
         selection_frames.extend(sel_fs)
         sat_frames.extend(sat_fs)
@@ -507,29 +514,14 @@ def plot() -> None:
 
 def main() -> None:
     """Parse CLI flags and dispatch generate/plot for the requested section."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("--plot-only", action="store_true")
-    group.add_argument("--generate-only", action="store_true")
-    parser.add_argument(
-        "--section",
-        choices=["eda", "down"],
-        default=None,
-        help="Run only this section: eda (EDA + model) or down (downselection).",
+    run_sectioned_script(
+        __doc__,
+        default=(generate, plot),
+        sections={
+            "eda": (generate_eda_model, plot_eda_model),
+            "down": (generate_downselection, plot_downselection),
+        },
     )
-    args = parser.parse_args()
-
-    if args.section == "eda":
-        gen_fn, plot_fn = generate_eda_model, plot_eda_model
-    elif args.section == "down":
-        gen_fn, plot_fn = generate_downselection, plot_downselection
-    else:
-        gen_fn, plot_fn = generate, plot
-
-    if not args.plot_only:
-        gen_fn()
-    if not args.generate_only:
-        plot_fn()
 
 
 if __name__ == "__main__":

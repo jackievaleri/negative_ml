@@ -215,6 +215,41 @@ def run_script(
         plot()
 
 
+def run_sectioned_script(
+    doc: str,
+    default: tuple[Callable[[], None], Callable[[], None]],
+    sections: dict[str, tuple[Callable[[], None], Callable[[], None]]],
+) -> None:
+    """Parse --plot-only / --generate-only / --section flags and dispatch.
+
+    Shared CLI scaffold for the reproducible scripts that support running
+    everything or a single named section (e.g. "eda", "down"): each domain
+    script implemented this identically before being unified here.
+
+    Args:
+        doc: Module docstring to pass as the argparse description.
+        default: (generate, plot) pair run when --section is omitted.
+        sections: {name: (generate, plot)} pairs selectable via --section.
+    """
+    parser = argparse.ArgumentParser(description=doc)
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--plot-only", action="store_true")
+    group.add_argument("--generate-only", action="store_true")
+    parser.add_argument(
+        "--section",
+        choices=list(sections),
+        default=None,
+        help="Run only this section (default: everything).",
+    )
+    args = parser.parse_args()
+
+    gen_fn, plot_fn = sections.get(args.section, default)
+    if not args.plot_only:
+        gen_fn()
+    if not args.generate_only:
+        plot_fn()
+
+
 def run_downselection_sweeps(
     ds: object,
     classifier_factory: Callable,

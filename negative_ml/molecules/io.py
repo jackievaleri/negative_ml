@@ -5,6 +5,7 @@ See negative_ml.molecules for the full domain description.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -42,7 +43,7 @@ def get_rdkit_feature_names() -> list[str]:
     return [name for name, _ in generator.GetColumns() if name != "RDKit2D_calculated"]
 
 
-def _fp_cache_path(stem: str, radius: int, n_bits: int) -> Path:
+def fp_cache_path(stem: str, radius: int, n_bits: int) -> Path:
     """Return the .npy cache path for a Morgan fingerprint matrix.
 
     Args:
@@ -210,6 +211,7 @@ def featurize(
     return X, names
 
 
+@lru_cache(maxsize=None)
 def load_screen(
     stem: str,
     featurization: str = "both",
@@ -218,7 +220,11 @@ def load_screen(
     """Load one gonorrhea screening file as a classification Dataset.
 
     Reads the paired <stem>.csv (SMILES + hit label) and <stem>.npz (precomputed
-    RDKit descriptors) and featurizes the molecules per featurization.
+    RDKit descriptors) and featurizes the molecules per featurization. The
+    result is memoized per (stem, featurization, raw_dir): a single script run
+    asks for the same screen file several times (across EDA, performance, and
+    downselection figures), and each call would otherwise re-read the CSV and
+    re-run RDKit scaffold/descriptor extraction from scratch.
 
     Args:
         stem: File stem shared by the .csv and .npz (e.g. MOLECULE_TRAIN_STEM).
@@ -245,7 +251,7 @@ def load_screen(
     frame = pd.read_csv(csv_path)
     smiles = frame["SMILES"].astype(str).tolist()
     y = frame["hit"].to_numpy().astype(int)
-    fp_cache = _fp_cache_path(stem, MORGAN_RADIUS, MORGAN_N_BITS)
+    fp_cache = fp_cache_path(stem, MORGAN_RADIUS, MORGAN_N_BITS)
     X, feature_names = featurize(smiles, npz_path, featurization, fp_cache=fp_cache)
     groups = bemis_murcko_scaffolds(smiles)
     return Dataset(

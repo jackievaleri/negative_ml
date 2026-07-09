@@ -13,7 +13,7 @@ from collections.abc import Sequence
 import numpy as np
 import pandas as pd
 
-from negative_ml.core.config import RANDOM_SEED
+from negative_ml.core.config import RANDOM_SEED, SWEEP_N_SEEDS
 from negative_ml.core.dataset import Dataset
 from negative_ml.core.experiment import (
     EvalSplit,
@@ -34,7 +34,7 @@ def compare_strategies(
     model_factory: ModelFactory,
     budget: int,
     strategies: Sequence[str] = tuple(STRATEGIES),
-    n_seeds: int = 3,
+    n_seeds: int = SWEEP_N_SEEDS,
     scaffold_split: bool = False,
     include_weighted: bool = False,
     split: EvalSplit | None = None,
@@ -115,7 +115,7 @@ def budget_sweep(
     model_factory: ModelFactory,
     budgets: Sequence[int],
     strategies: Sequence[str] = BUDGET_VARYING,
-    n_seeds: int = 3,
+    n_seeds: int = SWEEP_N_SEEDS,
     scaffold_split: bool = False,
     include_weighted: bool = True,
     split: EvalSplit | None = None,
@@ -145,6 +145,11 @@ def budget_sweep(
     Returns:
         Long-format DataFrame: [strategy, seed, budget, n_train, <metrics>].
     """
+    # Resolved once and reused across every budget: it does not depend on
+    # budget, so re-resolving it per iteration would rebuild the same
+    # train/test split (and copy the training Dataset) once per budget point.
+    resolved_split = resolve_split(dataset, split, scaffold=scaffold_split, seed=seed)
+
     frames = []
     for budget in budgets:
         frames.append(
@@ -156,7 +161,7 @@ def budget_sweep(
                 n_seeds=n_seeds,
                 scaffold_split=scaffold_split,
                 include_weighted=False,
-                split=split,
+                split=resolved_split,
                 seed=seed,
             )
         )
@@ -170,7 +175,7 @@ def budget_sweep(
         n_seeds=n_seeds,
         scaffold_split=scaffold_split,
         include_weighted=include_weighted,
-        split=split,
+        split=resolved_split,
         seed=seed,
     )
     frames.append(reference)

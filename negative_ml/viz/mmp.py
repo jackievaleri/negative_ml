@@ -74,7 +74,9 @@ def molecules_describe(dataset: Dataset, idx: int) -> pd.Series:
     if dataset.groups is not None:
         row["scaffold"] = str(dataset.groups[idx])[:30]
     feat = dataset.feature_names or []
-    rdkit_cols = [f for f in feat if f.startswith("rdkit_")][:3]
+    # RDKit descriptor columns carry their raw descriptastorus names (e.g.
+    # "MolWt", "TPSA"); only the Morgan fingerprint columns are prefixed.
+    rdkit_cols = [f for f in feat if not f.startswith("morgan_")][:3]
     for col in rdkit_cols:
         row[col] = round(float(dataset.X[idx, feat.index(col)]), 3)
     if dataset.meta is not None and "SMILES" in dataset.meta.columns:
@@ -202,6 +204,13 @@ def plot_mmp_examples(
         The matplotlib Figure containing a styled table.
     """
     top = pairs.head(n_examples).reset_index(drop=True)
+    if top.empty:
+        fig, ax = plt.subplots(figsize=(6, 2))
+        ax.axis("off")
+        ax.set_title("No matched pairs found", fontsize=10)
+        fig.tight_layout()
+        return fig
+
     strategies = list(scored_by_strategy.keys())
     desc_keys = list(describe(dataset, int(top["idx_pos"].iloc[0])).index)
     strat_labels = [STRATEGY_LABELS.get(s, s) for s in strategies]

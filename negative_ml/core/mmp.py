@@ -19,6 +19,7 @@ import pandas as pd
 from loguru import logger
 from sklearn.neighbors import NearestNeighbors
 
+from negative_ml.core.config import SWEEP_N_SEEDS
 from negative_ml.core.dataset import Dataset
 from negative_ml.core.eval import compute_metrics
 from negative_ml.core.experiment import EvalSplit, ModelFactory, positive_scores
@@ -136,7 +137,7 @@ def run_mmp_evaluation(
     budget: int,
     *,
     strategies: tuple[str, ...] = BUDGET_VARYING,
-    n_seeds: int = 3,
+    n_seeds: int = SWEEP_N_SEEDS,
 ) -> pd.DataFrame:
     """Evaluate models trained with different selection strategies on matched pairs.
 

@@ -18,6 +18,9 @@ path as the real models, so the two are measured identically.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 import numpy as np
 import pandas as pd
 
@@ -29,30 +32,37 @@ from negative_ml.core.experiment import (
     fit_score,
     resolve_split,
 )
-from negative_ml.models import make_model
+
+#: Builds a fresh single-feature negative-control estimator for one feature
+#: column (e.g. a CorrelationModel). Injected by the caller so core stays
+#: model-agnostic instead of importing negative_ml.models directly.
+ControlFactory = Callable[[int], Any]
 
 
-def correlation_factory(feature_index: int) -> ModelFactory:
+def correlation_factory(
+    control_factory: ControlFactory, feature_index: int
+) -> ModelFactory:
     """A model factory that builds the single-feature control for feature_index.
 
     Absorbs any **kwargs (e.g. an ignored class_weight) so it satisfies the
     ModelFactory contract that fit_score expects.
 
     Args:
+        control_factory: Builds a fresh single-feature control estimator for a
+            given feature index.
         feature_index: Column of X this control is bound to.
 
     Returns:
         A zero-argument factory (accepting **kwargs) that returns a fresh
-        CorrelationModel for feature_index.
+        control estimator for feature_index.
     """
-    return lambda **_kw: make_model(
-        "classification", kind="correlation", feature_index=feature_index
-    )
+    return lambda **_kw: control_factory(feature_index)
 
 
 def run_negative_control(
     dataset: Dataset,
     full_model_factory: ModelFactory,
+    control_factory: ControlFactory,
     split: EvalSplit | None = None,
     scaffold_split: bool = False,
     seed: int = RANDOM_SEED,
@@ -62,6 +72,8 @@ def run_negative_control(
     Args:
         dataset: Full training domain (ignored when split is supplied).
         full_model_factory: Builds the full (all-feature) model to compare against.
+        control_factory: Builds a fresh single-feature control estimator for a
+            given feature index (e.g. a CorrelationModel).
         split: Pre-built EvalSplit (e.g. cross-season) to evaluate on;
             when None a stratified split of dataset is used.
         scaffold_split: Use scaffold/grouped instead of random eval split.
@@ -93,7 +105,11 @@ def run_negative_control(
             else 0.0
         )
         metrics = fit_score(
-            train_ds, train_rows, sp.X_test, sp.y_test, correlation_factory(j)
+            train_ds,
+            train_rows,
+            sp.X_test,
+            sp.y_test,
+            correlation_factory(control_factory, j),
         )
         rows.append(
             {

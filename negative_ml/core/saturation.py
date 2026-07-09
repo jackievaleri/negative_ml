@@ -16,7 +16,7 @@ from collections.abc import Sequence
 import numpy as np
 import pandas as pd
 
-from negative_ml.core.config import RANDOM_SEED
+from negative_ml.core.config import RANDOM_SEED, SWEEP_N_SEEDS
 from negative_ml.core.dataset import Dataset
 from negative_ml.core.experiment import (
     EvalSplit,
@@ -31,7 +31,7 @@ def fix_minority_vary_majority(
     dataset: Dataset,
     model_factory: ModelFactory,
     majority_sizes: Sequence[int],
-    n_seeds: int = 3,
+    n_seeds: int = SWEEP_N_SEEDS,
     scaffold_split: bool = False,
     split: EvalSplit | None = None,
     seed: int = RANDOM_SEED,
@@ -79,7 +79,7 @@ def scale_total_proportional(
     dataset: Dataset,
     model_factory: ModelFactory,
     fractions: Sequence[float],
-    n_seeds: int = 3,
+    n_seeds: int = SWEEP_N_SEEDS,
     scaffold_split: bool = False,
     split: EvalSplit | None = None,
     seed: int = RANDOM_SEED,

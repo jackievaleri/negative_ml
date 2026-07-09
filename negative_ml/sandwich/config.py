@@ -14,8 +14,10 @@ SANDWICH_GOOD_RATING_THRESHOLD = 9.0
 
 # Candidate thresholds swept by sandwiches_downselection.py to evaluate sensitivity
 # of the downselection results to the good/bad boundary. Lower thresholds admit more
-# sandwiches into the positive (good) class, making it less rare.
-SANDWICH_GOOD_RATING_THRESHOLDS: list[float] = [8.0]
+# sandwiches into the positive (good) class, making it less rare. Must include
+# SANDWICH_GOOD_RATING_THRESHOLD so the sweep covers the same boundary used
+# everywhere else in the domain (EDA, the classifier comparison).
+SANDWICH_GOOD_RATING_THRESHOLDS: list[float] = [7.5, 8.0, 8.5, 9.0, 9.5]
 
 # --- Sandwich classifier ---------------------------------------------------
 # The sandwich set is tiny (~240 rows), so a single hold-out split is too noisy

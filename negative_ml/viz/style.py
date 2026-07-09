@@ -21,6 +21,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 from cycler import cycler
 
 from negative_ml.core.config import FIGURE_DPI
@@ -143,6 +144,29 @@ def save_fig(fig: plt.Figure, path: Path, dpi: int = FIGURE_DPI) -> Path:
     fig.savefig(path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
     return path
+
+
+def subsample_indices(idx: np.ndarray, cap: int, seed: int) -> np.ndarray:
+    """Randomly subsample an index array down to at most cap entries.
+
+    Shared by every figure that draws a dense point cloud for legibility
+    (baseball's exit-velocity scatter, the feature-pair matrix, the selection
+    examples background): each caps a different array to a different budget
+    but needs the same "subsample when over cap" logic.
+
+    Args:
+        idx: Integer index array to subsample.
+        cap: Maximum number of indices to keep; idx is returned unchanged when
+            it already has cap or fewer entries.
+        seed: Random seed for the subsample.
+
+    Returns:
+        idx unchanged, or a random subset of size cap (order not preserved).
+    """
+    if len(idx) <= cap:
+        return idx
+    rng = np.random.default_rng(seed)
+    return rng.choice(idx, cap, replace=False)
 
 
 apply_house_style()  # apply the look on import of the viz package

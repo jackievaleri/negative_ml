@@ -317,6 +317,7 @@ def generate_xgboost() -> None:
             N_SEEDS,
             base_tag={"featurization": featurization},
             minority_label="train actives",
+            skip_single_class=True,
         )
         selection_frames.extend(sel_fs)
         sat_frames.extend(sat_fs)

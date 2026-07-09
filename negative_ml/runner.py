@@ -42,7 +42,7 @@ CLASSIFICATION_VIEW = {
 DEFAULT_BUDGETS = {
     "molecules": [250, 500, 1000, 2000, 4000, 8000],
     "baseball": [250, 500, 1000, 2000, 4000, 8000, 16000],
-    "sandwiches": [50, 100, 200, 400, 800],
+    "sandwiches": [20, 40, 60, 80, 100, 120, 150],
 }
 
 
