@@ -26,6 +26,7 @@ from negative_ml.sandwich import io as sandwiches
 from negative_ml.sandwich import split as sandwich_split
 from negative_ml.sandwich import viz
 from negative_ml.sandwich.config import (
+    SANDWICH_EDA_TOP_FEATURES,
     SANDWICH_FREQ_THRESHOLD_DISPLAY,
     SANDWICH_FREQ_THRESHOLD_VIOLIN,
 )
@@ -143,11 +144,20 @@ def make_leakage_figures() -> None:
     fig.tight_layout()
     save_figure(fig, "leakage", "leakage_label_corr.png", DOMAIN)
 
-    plot_covariate_shift_panels(shift, DOMAIN)
+    plot_covariate_shift_panels(
+        shift, DOMAIN, title_suffix=" (top features)", top_n=SANDWICH_EDA_TOP_FEATURES
+    )
 
-    fig, ax = plt.subplots(figsize=(max(8, 0.5 * len(per_main)), 4.5))
-    diag.plot_per_group_rate(per_main, ax, label="good sandwich")
-    ax.set_title("Good-sandwich rate by protein (Main ingredient)")
+    # Most Main values are one-off joke proteins used in a single episode; restrict
+    # to the same well-sampled proteins as eda_rating_by_main.png so the bar chart
+    # stays legible instead of drawing one bar per one-off value.
+    per_main_frequent = per_main[per_main["n"] >= SANDWICH_FREQ_THRESHOLD_VIOLIN]
+    fig, ax = plt.subplots(figsize=(max(8, 0.5 * len(per_main_frequent)), 4.5))
+    diag.plot_per_group_rate(per_main_frequent, ax, label="good sandwich")
+    ax.set_title(
+        "Good-sandwich rate by protein "
+        f"(Main ingredient, n>={SANDWICH_FREQ_THRESHOLD_VIOLIN})"
+    )
     fig.tight_layout()
     save_figure(fig, "leakage", "leakage_per_main_rate.png", DOMAIN)
 
