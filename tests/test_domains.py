@@ -202,6 +202,32 @@ def test_clean_ratings_parses_and_repairs():
     assert by_rating["4.9/10"] == 4.9
 
 
+def test_standardize_null_ingredients_merges_placeholders():
+    """A dash placeholder becomes the column's explicit "No X" label."""
+    frame = pd.DataFrame(
+        {
+            "Bread": ["Rye"],
+            "Main": ["Tuna"],
+            "Cheese": ["--"],
+            "Roughage": ["Tomato"],
+            "Wild Magic": ["-"],
+            "Sauce": ["Mustard"],
+        }
+    )
+    out = sandwiches.standardize_null_ingredients(frame)
+    assert out["Cheese"].tolist() == ["No cheese"]
+    assert out["Wild Magic"].tolist() == ["No wild magic"]
+    # Non-placeholder values are left untouched.
+    assert out["Bread"].tolist() == ["Rye"]
+
+
+def test_clean_ratings_standardizes_placeholder_ingredients():
+    """clean_ratings folds a dash placeholder into the column's "No X" label."""
+    cleaned = sandwiches.clean_ratings(synthetic_sandwiches())
+    row = cleaned[cleaned["Rating"] == "2.0/10"].iloc[0]
+    assert row["Wild Magic"] == "No wild magic"
+
+
 def test_validate_ratings_drops_unparseable():
     """A rating that is not numeric even after repair is dropped."""
     repaired = sandwiches.normalize_ratings(synthetic_sandwiches())
@@ -221,6 +247,26 @@ def test_encode_ingredients_is_multi_hot_and_reindexes():
     X2, names2 = sandwiches.encode_ingredients(cleaned, feature_names=names + ["X=Y"])
     assert names2 == names + ["X=Y"]
     assert (X2[:, -1] == 0).all()
+
+
+def test_encode_ingredients_merges_placeholder_with_explicit_choice():
+    """A dash placeholder and the explicit "No X" choice become one feature."""
+    frame = pd.DataFrame(
+        {
+            "Bread": ["Rye", "Wheat"],
+            "Main": ["Tuna", "Ham"],
+            "Cheese": ["--", "No cheese"],
+            "Roughage": ["Tomato", "Lettuce"],
+            "Wild Magic": ["Salt", "Pepper"],
+            "Sauce": ["Mustard", "Ketchup"],
+        }
+    )
+    standardized = sandwiches.standardize_null_ingredients(frame)
+    X, names = sandwiches.encode_ingredients(standardized)
+    assert "Cheese=--" not in names
+    assert names.count("Cheese=No cheese") == 1
+    cheese_idx = names.index("Cheese=No cheese")
+    assert X[:, cheese_idx].tolist() == [1.0, 1.0]
 
 
 def test_minority_mask_selects_low_rated_tail():
