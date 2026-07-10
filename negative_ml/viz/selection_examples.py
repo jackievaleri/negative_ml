@@ -26,7 +26,7 @@ from sklearn.neighbors import NearestNeighbors
 
 from negative_ml.core.config import RANDOM_SEED, VIZ_MAX_POINTS
 from negative_ml.core.dataset import Dataset
-from negative_ml.core.selection import BUDGET_VARYING, STRATEGIES, standardized_features
+from negative_ml.core.selection import BUDGET_VARYING, STRATEGIES, distance_features
 from negative_ml.viz.selection_results import STRATEGY_STYLE
 from negative_ml.viz.style import LIGHT_GRAY, PALETTE, style_axes, subsample_indices
 
@@ -34,18 +34,19 @@ from negative_ml.viz.style import LIGHT_GRAY, PALETTE, style_axes, subsample_ind
 def nearest_minority_distance(
     dataset: Dataset, rows: np.ndarray, nn: NearestNeighbors | None = None
 ) -> np.ndarray:
-    """Standardized distance from each given row to the nearest minority example.
+    """Distance from each given row to the nearest minority example.
 
     The same notion of "hardness" the hard strategy ranks on, reported here so a
     table reader can see how close each kept majority ball is to the minority
-    class.
+    class. Distance is computed in the feature space dataset.distance_metric
+    selects (z-scored Euclidean, or raw Hamming for multi-hot domains).
 
     Args:
         dataset: Dataset the rows index into.
         rows: Full-dataset row indices to score.
-        nn: Optional NearestNeighbors already fit on the standardized minority
-            features (see selection_examples_frame, which fits this once and
-            reuses it across strategies); fit fresh when not given.
+        nn: Optional NearestNeighbors already fit on the minority features (see
+            selection_examples_frame, which fits this once and reuses it across
+            strategies); fit fresh when not given.
 
     Returns:
         Distance to the nearest minority example for each row (zeros if there are
@@ -54,9 +55,11 @@ def nearest_minority_distance(
     minority = np.where(dataset.minority_mask())[0]
     if len(minority) == 0:
         return np.zeros(len(rows))
-    Xz = standardized_features(dataset)
+    Xz = distance_features(dataset)
     if nn is None:
-        nn = NearestNeighbors(n_neighbors=1).fit(Xz[minority])
+        nn = NearestNeighbors(n_neighbors=1, metric=dataset.distance_metric).fit(
+            Xz[minority]
+        )
     dist, _ = nn.kneighbors(Xz[np.asarray(rows)])
     return dist.ravel()
 
@@ -153,8 +156,10 @@ def selection_examples_frame(
     minority = np.where(dataset.minority_mask())[0]
     nn = None
     if len(minority) > 0:
-        Xz = standardized_features(dataset)
-        nn = NearestNeighbors(n_neighbors=1).fit(Xz[minority])
+        Xz = distance_features(dataset)
+        nn = NearestNeighbors(n_neighbors=1, metric=dataset.distance_metric).fit(
+            Xz[minority]
+        )
     frames = [
         selection_example_table(dataset, s, budget, describe=describe, seed=seed, nn=nn)
         for s in strategies

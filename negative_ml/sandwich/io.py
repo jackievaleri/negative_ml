@@ -298,6 +298,10 @@ def featurize(frame: pd.DataFrame) -> Dataset:
         feature_names=feature_names,
         groups=cleaned[GROUP_COLUMN].to_numpy(),
         meta=meta,
+        # Multi-hot ingredient encoding: every column is a nominal category
+        # indicator, so distance should count differing ingredients equally
+        # rather than z-score-weighting rare ones. See core.selection.
+        distance_metric="hamming",
     )
 
 
@@ -344,4 +348,5 @@ def to_classification(
         feature_names=dataset.feature_names,
         groups=dataset.groups,
         meta=dataset.meta,
+        distance_metric=dataset.distance_metric,
     )

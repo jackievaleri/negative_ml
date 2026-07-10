@@ -31,23 +31,34 @@ def find_matched_pairs(
     y: np.ndarray,
     *,
     max_pairs: int = 500,
+    metric: str = "euclidean",
 ) -> pd.DataFrame:
-    """Find cross-label pairs sorted by standardized Euclidean proximity.
+    """Find cross-label pairs sorted by proximity in the chosen distance metric.
 
-    For each positive example, finds its nearest negative in standardized
-    feature space. Deduplicates so each negative is used at most once. Returns
-    the top max_pairs pairs sorted by distance (closest first).
+    For each positive example, finds its nearest negative in feature space.
+    Deduplicates so each negative is used at most once. Returns the top
+    max_pairs pairs sorted by distance (closest first).
 
     Args:
-        X: Feature matrix (n_samples, n_features). Standardized internally.
+        X: Feature matrix (n_samples, n_features).
         y: Binary labels (1 = positive / minority, 0 = negative / majority).
         max_pairs: Maximum number of pairs to return.
+        metric: "euclidean" (default) z-scores X first, matching every other
+            distance-based strategy in negative_ml.core.selection. "hamming"
+            leaves X unscaled and counts differing positions -- for domains
+            built from multi-hot / one-hot features (e.g. sandwich
+            ingredients), where z-scoring would weight rare categories far more
+            heavily than common ones.
 
     Returns:
         DataFrame with columns [idx_pos, idx_neg, dist]. Indices reference
         rows in the original X / y arrays.
     """
-    X_std = standardize(np.asarray(X, dtype=float))
+    X_std = (
+        np.asarray(X, dtype=float)
+        if metric == "hamming"
+        else standardize(np.asarray(X, dtype=float))
+    )
     y = np.asarray(y)
     pos_idx = np.where(y == 1)[0]
     neg_idx = np.where(y == 0)[0]
@@ -56,7 +67,7 @@ def find_matched_pairs(
         return pd.DataFrame(columns=["idx_pos", "idx_neg", "dist"])
 
     # For each positive, find its single nearest negative (ball_tree is fast).
-    nn = NearestNeighbors(n_neighbors=1, algorithm="ball_tree")
+    nn = NearestNeighbors(n_neighbors=1, algorithm="ball_tree", metric=metric)
     nn.fit(X_std[neg_idx])
     dist_arr, local_neg_arr = nn.kneighbors(X_std[pos_idx])
     dist_arr = dist_arr.ravel()

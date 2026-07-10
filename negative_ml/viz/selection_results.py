@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
+from matplotlib.patches import Rectangle
 
 from negative_ml.viz.style import DARK2, INK, PALETTE, style_axes
 
@@ -304,6 +305,42 @@ def plot_saturation_curve(
     return style_axes(ax)
 
 
+def freeze_best_legend(ax: plt.Axes, legend: plt.Legend) -> Rectangle:
+    """Lock a loc="best" legend to its current spot; return its footprint.
+
+    A loc="best" legend recomputes its position on every draw. Left dynamic,
+    a second such legend can't avoid the first (Legend artists aren't part of
+    matplotlib's overlap-avoidance data, only lines/patches/text are) — and
+    worse, on a later draw the first legend can drift to dodge its own
+    reserved footprint, since it still sees itself as "best"-placed. Freezing
+    each legend the moment it's placed keeps both stable and lets the next
+    legend's own "best" pass treat this one's footprint as occupied.
+
+    Args:
+        ax: Axes the legend belongs to.
+        legend: A legend created with loc="best".
+
+    Returns:
+        An invisible Rectangle patch (already added to ax) marking the
+        legend's footprint in data coordinates, for the next legend to
+        avoid; remove it once every legend on ax is frozen.
+    """
+    ax.figure.canvas.draw()
+    axes_bbox = legend.get_window_extent().transformed(ax.transAxes.inverted())
+    legend.set_bbox_to_anchor((axes_bbox.x0, axes_bbox.y0), transform=ax.transAxes)
+    legend.set_loc("lower left")
+
+    data_bbox = legend.get_window_extent().transformed(ax.transData.inverted())
+    return ax.add_patch(
+        Rectangle(
+            (data_bbox.x0, data_bbox.y0),
+            data_bbox.width,
+            data_bbox.height,
+            visible=False,
+        )
+    )
+
+
 def plot_split_overlay(
     df: pd.DataFrame,
     metric: str,
@@ -376,11 +413,15 @@ def plot_split_overlay(
         Line2D([], [], color=INK, linestyle=SPLIT_LINESTYLE[s], label=SPLIT_LABEL[s])
         for s in present_splits
     ]
-    first = ax.legend(
-        handles=strat_handles, loc="lower right", fontsize=10, title="strategy"
-    )
+    first = ax.legend(handles=strat_handles, loc="best", fontsize=10, title="strategy")
     ax.add_artist(first)
-    ax.legend(handles=split_handles, loc="upper left", fontsize=10, title="split")
+    first_footprint = freeze_best_legend(ax, first)
+
+    second = ax.legend(handles=split_handles, loc="best", fontsize=10, title="split")
+    second_footprint = freeze_best_legend(ax, second)
+
+    first_footprint.remove()
+    second_footprint.remove()
     return style_axes(ax)
 
 

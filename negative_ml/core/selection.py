@@ -82,6 +82,47 @@ def standardized_features(dataset: Dataset) -> np.ndarray:
     return cached
 
 
+def distance_features(dataset: Dataset) -> np.ndarray:
+    """Feature matrix prepared for dataset.distance_metric.
+
+    "euclidean" datasets get z-scored features (standardized_features) so no
+    raw-scale feature dominates. "hamming" datasets get the raw feature matrix,
+    unscaled: Hamming distance is meant to count differing (typically one-hot)
+    positions with every position weighted equally, and z-scoring would
+    reintroduce a rarity-based weighting (rare categories get inflated) that
+    Hamming distance is chosen specifically to avoid.
+
+    Args:
+        dataset: Dataset whose distance_metric selects the treatment.
+
+    Returns:
+        The feature matrix to run distance / clustering computations on.
+    """
+    if dataset.distance_metric == "hamming":
+        return np.asarray(dataset.X, dtype=float)
+    return standardized_features(dataset)
+
+
+def vector_distances(Xz: np.ndarray, point: np.ndarray, metric: str) -> np.ndarray:
+    """Distance from every row of Xz to a single point, under the given metric.
+
+    Args:
+        Xz: Feature matrix, shape (n, d).
+        point: A single feature vector, shape (d,), e.g. Xz[i] or a centroid.
+        metric: "euclidean" (L2 norm) or "hamming" (L1 / count of differing
+            positions -- exact for 0/1 one-hot rows, and the natural continuous
+            extension when point is a real-valued centroid rather than another
+            0/1 row).
+
+    Returns:
+        Distance from every row of Xz to point, shape (n,).
+    """
+    diff = Xz - point
+    if metric == "hamming":
+        return np.abs(diff).sum(axis=1)
+    return np.linalg.norm(diff, axis=1)
+
+
 def clamp(budget: int | None, n_available: int) -> int:
     """Clamp a requested budget to [0, n_available].
 
@@ -97,27 +138,31 @@ def clamp(budget: int | None, n_available: int) -> int:
     return int(min(max(budget, 0), n_available))
 
 
-def greedy_k_center(Xz: np.ndarray, k: int, start: int) -> np.ndarray:
-    """Greedy k-center farthest-point selection on a standardized feature matrix.
+def greedy_k_center(
+    Xz: np.ndarray, k: int, start: int, metric: str = "euclidean"
+) -> np.ndarray:
+    """Greedy k-center farthest-point selection on a feature matrix.
 
     Starting from start, repeatedly adds the point farthest from the current
     selection using a vectorized min-distance update.
 
     Args:
-        Xz: Standardized feature matrix (n_pool, n_features).
+        Xz: Feature matrix (n_pool, n_features) already prepared for metric
+            (z-scored for "euclidean", raw for "hamming"; see distance_features).
         k: Number of points to select.
         start: Index of the initial seed point in Xz.
+        metric: "euclidean" or "hamming" (see vector_distances).
 
     Returns:
         Integer array of k indices into Xz, in selection order.
     """
     selected = np.empty(k, dtype=int)
     selected[0] = start
-    min_dist = np.linalg.norm(Xz - Xz[start], axis=1)
+    min_dist = vector_distances(Xz, Xz[start], metric)
     for i in range(1, k):
         nxt = int(np.argmax(min_dist))
         selected[i] = nxt
-        d = np.linalg.norm(Xz - Xz[nxt], axis=1)
+        d = vector_distances(Xz, Xz[nxt], metric)
         min_dist = np.minimum(min_dist, d)
     return selected
 
@@ -175,8 +220,8 @@ def hard_examples(
         dataset: Dataset whose majority examples are being sub-selected.
         budget: Number of majority examples to keep.
         metric: How "hardness" is scored. Only "nearest_minority" (distance to
-            the nearest minority example in standardized feature space) is
-            currently implemented.
+            the nearest minority example, in the feature space dataset.
+            distance_metric selects) is currently implemented.
         **_kwargs: Ignored; accepted so all selection strategies share a
             signature.
 
@@ -194,8 +239,10 @@ def hard_examples(
         # No boundary to measure against; fall back to a deterministic head.
         return np.sort(majority[:k])
 
-    Xz = standardized_features(dataset)
-    nn = NearestNeighbors(n_neighbors=HARDNESS_N_NEIGHBORS).fit(Xz[minority])
+    Xz = distance_features(dataset)
+    nn = NearestNeighbors(
+        n_neighbors=HARDNESS_N_NEIGHBORS, metric=dataset.distance_metric
+    ).fit(Xz[minority])
     dist, _ = nn.kneighbors(Xz[majority])
     dist = dist.ravel()
     # Smallest distances == hardest (closest to the minority class).
@@ -240,9 +287,9 @@ def diversity_selection(
     if k >= len(pool):
         return np.sort(pool)
 
-    Xz = standardized_features(dataset)[pool]
+    Xz = distance_features(dataset)[pool]
     start = int(rng.integers(len(pool)))
-    selected = greedy_k_center(Xz, k, start)
+    selected = greedy_k_center(Xz, k, start, metric=dataset.distance_metric)
     return np.sort(pool[selected])
 
 
@@ -254,9 +301,22 @@ def density_aware_diversity(
 ) -> np.ndarray:
     """Diversity selection that also respects local density / structure.
 
-    Clusters the majority into budget groups (MiniBatchKMeans on standardized
-    features) and keeps the point nearest each centroid. Coverage that, unlike
-    pure farthest-point, does not over-weight sparse outliers.
+    Clusters the majority into budget groups (MiniBatchKMeans on the dataset's
+    distance-metric feature space) and keeps the point nearest each centroid.
+    Coverage that, unlike pure farthest-point, does not over-weight sparse
+    outliers.
+
+    MiniBatchKMeans always fits by minimizing squared Euclidean distance to the
+    (real-valued) cluster centroids -- scikit-learn has no Hamming-native
+    k-medoids implementation available here. For "euclidean" datasets that is
+    exactly what's wanted. For "hamming" datasets (raw 0/1 features, no
+    z-scoring -- see distance_features) it is a standard, widely-used
+    approximation for clustering multi-hot data: every feature still carries
+    equal, unscaled weight during clustering, which is what avoids the
+    rare-category inflation Hamming distance is meant to avoid. The one step
+    that matters most for the returned picks -- choosing which single member
+    represents each cluster -- uses the dataset's real metric (Hamming/L1 for
+    "hamming" datasets) rather than Euclidean distance to the centroid.
 
     Args:
         dataset: Dataset whose majority rows to sub-select.
@@ -274,7 +334,7 @@ def density_aware_diversity(
     if k >= len(majority):
         return np.sort(majority)
 
-    Xz = standardized_features(dataset)[majority]
+    Xz = distance_features(dataset)[majority]
     km = MiniBatchKMeans(n_clusters=k, random_state=seed, n_init=KMEANS_N_INIT)
     labels = km.fit_predict(Xz)
     centers = km.cluster_centers_
@@ -284,7 +344,7 @@ def density_aware_diversity(
         members = np.where(labels == c)[0]
         if len(members) == 0:
             continue
-        d = np.linalg.norm(Xz[members] - centers[c], axis=1)
+        d = vector_distances(Xz[members], centers[c], dataset.distance_metric)
         chosen.append(int(members[np.argmin(d)]))
     chosen_arr = np.array(sorted(set(chosen)), dtype=int)
 
