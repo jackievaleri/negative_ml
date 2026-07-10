@@ -168,6 +168,7 @@ def build_regression_splits(
             groups=reg_train_ds.groups,
             meta=reg_train_ds.meta,
             label_y=binary_y[train_idx],
+            distance_metric=reg_train_ds.distance_metric,
         )
         return EvalSplit(
             train_ds=reg_train_ds,

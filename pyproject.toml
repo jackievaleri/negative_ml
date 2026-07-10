@@ -66,6 +66,7 @@ dependencies = [
     "numpy",
     "openpyxl",
     "xgboost",
+    "shap",
     "typer",
     "loguru",
     "pybaseball",

@@ -16,6 +16,14 @@ import pandas as pd
 
 Task = str  # "classification" | "regression"
 
+#: Distance metrics understood by negative_ml.core.selection / mmp. "euclidean"
+#: z-scores features first (appropriate for continuous features, e.g. baseball
+#: kinematics or molecule descriptors/fingerprints). "hamming" leaves features
+#: unscaled and counts differing positions (appropriate for the sandwich
+#: multi-hot ingredient encoding, where z-scoring would weight rare ingredient
+#: values far more heavily than common ones).
+DISTANCE_METRICS = ("euclidean", "hamming")
+
 
 @dataclass
 class Dataset:
@@ -36,6 +44,10 @@ class Dataset:
             a regression Dataset whose model trains on continuous ratings but
             whose minority class is still defined by a threshold-derived binary
             label). When None, mask logic falls back to y and task as usual.
+        distance_metric: Which distance the selection/mmp code should use over
+            X, one of DISTANCE_METRICS. Defaults to "euclidean" (z-scored L2);
+            domains built entirely from nominal/multi-hot features (currently
+            only sandwich) set this to "hamming".
     """
 
     X: np.ndarray
@@ -45,6 +57,7 @@ class Dataset:
     groups: np.ndarray | None = None
     meta: pd.DataFrame | None = field(default=None, repr=False)
     label_y: np.ndarray | None = field(default=None, repr=False)
+    distance_metric: str = "euclidean"
 
     def __post_init__(self) -> None:
         """Validate that shapes line up."""
@@ -53,6 +66,11 @@ class Dataset:
         if len(self.X) != len(self.y):
             raise ValueError(
                 f"X has {len(self.X)} rows but y has {len(self.y)} entries."
+            )
+        if self.distance_metric not in DISTANCE_METRICS:
+            raise ValueError(
+                f"Unknown distance_metric {self.distance_metric!r}; "
+                f"choose from {DISTANCE_METRICS}."
             )
 
     @property
@@ -125,4 +143,5 @@ class Dataset:
             groups=groups,
             meta=meta,
             label_y=label_y,
+            distance_metric=self.distance_metric,
         )

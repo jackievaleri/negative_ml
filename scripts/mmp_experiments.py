@@ -80,6 +80,7 @@ class MmpConfig:
     build_rescore_inputs: Callable[[EvalSplit, Any], tuple[Dataset, np.ndarray]]
     build_viz_dataset: Callable[[EvalSplit, Any], Dataset]
     full_ds_examples: bool = False
+    metric: str = "euclidean"
 
 
 def molecules_load() -> tuple[EvalSplit, Dataset]:
@@ -145,6 +146,7 @@ SANDWICHES = MmpConfig(
     build_rescore_inputs=lambda split, cds: (cds, cds.X),
     build_viz_dataset=lambda split, cds: cds,
     full_ds_examples=True,
+    metric="hamming",
 )
 
 
@@ -202,12 +204,14 @@ def generate(cfg: MmpConfig) -> tuple[EvalSplit, Any]:
     logger.info(f"=== {cfg.domain} MMP evaluation (budget={cfg.budget}) ===")
     split, extra_ds = cfg.load()
 
-    pairs_eval = find_matched_pairs(split.X_test, split.y_test, max_pairs=cfg.max_pairs)
+    pairs_eval = find_matched_pairs(
+        split.X_test, split.y_test, max_pairs=cfg.max_pairs, metric=cfg.metric
+    )
     logger.info(f"  Found {len(pairs_eval)} matched pairs in test set")
 
     if cfg.full_ds_examples:
         pairs_examples = find_matched_pairs(
-            extra_ds.X, extra_ds.y, max_pairs=cfg.max_pairs
+            extra_ds.X, extra_ds.y, max_pairs=cfg.max_pairs, metric=cfg.metric
         )
         logger.info(
             f"  Found {len(pairs_examples)} matched pairs in full dataset (examples)"
