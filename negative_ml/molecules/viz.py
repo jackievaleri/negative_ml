@@ -4,7 +4,7 @@ Realizes the core case study's headline result for the graph-neural-network mode
 on the gonorrhea screen (plan.md 3.1):
 
     y = model performance metric, x = number of negative examples used for training,
-    color/marker = how those negatives were selected (random, diverse, similar).
+    color/marker = how those negatives were selected (random, diverse, decoys).
 
 Two class-balance regimes are shown side by side: proportional keeps the actives
 (positives) at ~3% of the dataset as the negatives grow, and disproportional trains
@@ -32,13 +32,13 @@ from negative_ml.viz.style import DARK2, INK, style_axes
 #: same across every panel. The three strategies reuse the repo's existing Dark2
 #: assignments from negative_ml.viz.selection_results.STRATEGY_STYLE: random
 #: keeps its teal circle; diverse (a diversity strategy) keeps the diversity
-#: purple triangle; and similar (negatives drawn from near the actives) takes
-#: the near-miss "hard" orange square, since it is the same near-the-boundary
-#: idea.
+#: purple triangle; and similar (negatives drawn from near the actives, labeled
+#: "decoys" in the figure) takes the same orange square as the decoys strategy
+#: elsewhere, since it is the same near-the-boundary idea.
 SELECTION_STYLE = {
     "random": {"color": DARK2[0], "marker": "o", "label": "random"},
     "diverse": {"color": DARK2[2], "marker": "^", "label": "diverse"},
-    "similar": {"color": DARK2[1], "marker": "s", "label": "similar"},
+    "similar": {"color": DARK2[1], "marker": "s", "label": "decoys"},
 }
 
 #: Draw / legend order for the strategies (matches the source figure's ordering).

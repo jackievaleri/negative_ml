@@ -2,7 +2,7 @@
 
 The selection strategies in negative_ml.core.selection are easy to describe but
 their behavior is worth checking concretely: at a tiny budget, which majority
-batted balls does each one retain? near-miss (hard) should keep balls that just
+batted balls does each one retain? decoys should keep balls that just
 miss being home runs (high exit velocity, home-run-ish launch angle); diversity
 should reach for the extremes of the feature space (mishit grounders, weak
 pop-ups, bunts); density-diversity should keep typical cluster representatives;
@@ -36,7 +36,7 @@ def nearest_minority_distance(
 ) -> np.ndarray:
     """Distance from each given row to the nearest minority example.
 
-    The same notion of "hardness" the hard strategy ranks on, reported here so a
+    The same notion of "hardness" the decoys strategy ranks on, reported here so a
     table reader can see how close each kept majority ball is to the minority
     class. Distance is computed in the feature space dataset.distance_metric
     selects (z-scored Euclidean, or raw Hamming for multi-hot domains).
@@ -180,7 +180,7 @@ def plot_selection_examples(
 
     Each panel shows the full cloud in gray, the minority class faintly, and the
     strategy's selected majority balls highlighted in that strategy's color, so it
-    is visually obvious whether the picks cluster near the minority (hard), spread
+    is visually obvious whether the picks cluster near the minority (decoys), spread
     to the extremes (diversity), represent dense regions (density-diversity), or
     look like a random draw.
 
@@ -227,7 +227,7 @@ def plot_selection_examples(
             marker=style["marker"],
             edgecolors="black",
             linewidths=0.6,
-            label=f"{strat} picks",
+            label=f"{style.get('label', strat)} picks",
         )
         ax.set_xlabel("exit velocity (mph)")
         ax.set_ylabel("launch angle (deg)")

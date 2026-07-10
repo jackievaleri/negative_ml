@@ -205,6 +205,18 @@ def plot_baseball() -> None:
             fig, "downselection", f"downselection_overlay_{target}.png", BBALL_DOMAIN
         )
 
+        fig, ax = plt.subplots(figsize=(8.5, 5.5))
+        rviz.plot_split_overlay(
+            sel_t[sel_t["split"] == "random"], "auprc", ax, logx=True
+        )
+        ax.set_title(f"AUPRC vs. size — random split ({target})")
+        save_figure(
+            fig,
+            "downselection",
+            f"downselection_overlay_{target}_random.png",
+            BBALL_DOMAIN,
+        )
+
         plot_proportional_saturation_overlay(
             satp_t,
             ("random", "hard", "park"),
