@@ -73,7 +73,21 @@ SANDWICH_THRESHOLDS = SANDWICH_GOOD_RATING_THRESHOLDS
 SANDWICH_BUDGETS = [20, 40, 60, 80, 100, 120, 150]
 SANDWICH_FRACTIONS = [0.1, 0.25, 0.5, 0.75, 1.0]
 SANDWICH_N_SEEDS = 5
-SANDWICH_METRICS = ["auroc", "auprc"]
+#: Classifier metrics are AUROC/AUPRC (a binary good-vs-bad ranking); the
+#: regressor's target is a continuous 0-10 rating, so AUROC/AUPRC are undefined
+#: for it and it is scored by Spearman rank correlation instead (see
+#: negative_ml.core.eval.spearman and sandwich_split.build_regression_splits).
+SANDWICH_CLF_METRICS = ["auroc", "auprc"]
+SANDWICH_REG_METRICS = ["spearman"]
+SANDWICH_METRICS = SANDWICH_CLF_METRICS + SANDWICH_REG_METRICS
+SANDWICH_METRICS_BY_MODEL = {
+    "xgboost_clf": SANDWICH_CLF_METRICS,
+    "xgboost_reg": SANDWICH_REG_METRICS,
+}
+SANDWICH_SAT_METRIC_BY_MODEL = {
+    "xgboost_clf": "auprc",
+    "xgboost_reg": "spearman",
+}
 SANDWICH_EXAMPLE_BUDGET = 12
 
 
@@ -325,6 +339,11 @@ def plot_sandwich() -> None:
 
             prefix = f"thresh{threshold:g}_{model_type}_"
             title_label = f" (threshold={threshold:g}, {model_type})"
+            # The regressor's continuous rating target makes AUROC/AUPRC undefined,
+            # so it is plotted on Spearman correlation instead (see
+            # SANDWICH_METRICS_BY_MODEL / SANDWICH_SAT_METRIC_BY_MODEL).
+            plot_metrics = SANDWICH_METRICS_BY_MODEL[model_type]
+            sat_metric = SANDWICH_SAT_METRIC_BY_MODEL[model_type]
 
             plot_downselection_split_figures(
                 selection_df[mask],
@@ -332,18 +351,24 @@ def plot_sandwich() -> None:
                 sat_proportional[satp_mask],
                 splits=splits_present,
                 domain=SANDWICH_DOMAIN,
-                metrics=SANDWICH_METRICS,
+                metrics=plot_metrics,
                 fname_prefix=prefix,
                 title_label=title_label,
                 no_dd_fname_suffix="_no_density_diversity",
                 no_dd_title_suffix=" (no density-diversity)",
+                sat_metric=sat_metric,
             )
 
             overlay_df = selection_df[
                 mask & selection_df["split"].isin(["random", "season"])
             ]
-            fig, axes = plt.subplots(1, 2, figsize=(15, 5.5))
-            for ax, metric in zip(axes, SANDWICH_METRICS):
+            fig, axes = plt.subplots(
+                1,
+                len(plot_metrics),
+                figsize=(7.5 * len(plot_metrics), 5.5),
+                squeeze=False,
+            )
+            for ax, metric in zip(axes.ravel(), plot_metrics):
                 rviz.plot_split_overlay(overlay_df, metric, ax, logx=True)
                 ax.set_title(f"{rviz.METRIC_LABELS.get(metric, metric)}: across splits")
             fig.suptitle(
@@ -358,8 +383,13 @@ def plot_sandwich() -> None:
             )
 
             overlay_no_dd = overlay_df[overlay_df["strategy"] != "density_diversity"]
-            fig, axes = plt.subplots(1, 2, figsize=(15, 5.5))
-            for ax, metric in zip(axes, SANDWICH_METRICS):
+            fig, axes = plt.subplots(
+                1,
+                len(plot_metrics),
+                figsize=(7.5 * len(plot_metrics), 5.5),
+                squeeze=False,
+            )
+            for ax, metric in zip(axes.ravel(), plot_metrics):
                 rviz.plot_split_overlay(overlay_no_dd, metric, ax, logx=True)
                 ax.set_title(f"{rviz.METRIC_LABELS.get(metric, metric)}: across splits")
             fig.suptitle(
@@ -375,13 +405,17 @@ def plot_sandwich() -> None:
                 SANDWICH_DOMAIN,
             )
 
-    plot_proportional_saturation_overlay(
-        sat_proportional,
-        splits_present,
-        "Proportional saturation — all thresholds and models",
-        "saturation_overlay.png",
-        SANDWICH_DOMAIN,
-    )
+    for model_type in model_types:
+        satp_model = sat_proportional[sat_proportional["model_type"] == model_type]
+        sat_metric = SANDWICH_SAT_METRIC_BY_MODEL[model_type]
+        plot_proportional_saturation_overlay(
+            satp_model,
+            splits_present,
+            f"Proportional saturation — all thresholds ({model_type})",
+            f"saturation_overlay_{model_type}.png",
+            SANDWICH_DOMAIN,
+            metric=sat_metric,
+        )
 
 
 _GENERATE = {

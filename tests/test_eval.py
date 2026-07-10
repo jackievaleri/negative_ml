@@ -44,3 +44,34 @@ def test_compute_metrics_keys():
         "enrichment_factor",
     }
     assert all(isinstance(v, float) for v in metrics.values())
+
+
+def test_spearman_perfectly_ranked():
+    """A perfectly monotonic (but non-linear) relationship gives spearman = 1."""
+    y_true = np.array([1.0, 2.0, 3.0, 4.0])
+    y_score = np.array([1.0, 4.0, 9.0, 16.0])
+    assert ev.spearman(y_true, y_score) == 1.0
+
+
+def test_spearman_inverted_ranking():
+    """A perfectly reversed ranking gives spearman = -1."""
+    y_true = np.array([1.0, 2.0, 3.0, 4.0])
+    y_score = np.array([4.0, 3.0, 2.0, 1.0])
+    assert ev.spearman(y_true, y_score) == -1.0
+
+
+def test_spearman_undefined_when_constant():
+    """A constant score (or constant ground truth) has no rank to correlate."""
+    y_true = np.array([1.0, 2.0, 3.0, 4.0])
+    y_score = np.array([5.0, 5.0, 5.0, 5.0])
+    assert ev.spearman(y_true, y_score) == 0.0
+    assert ev.spearman(y_score, y_true) == 0.0
+
+
+def test_compute_regression_metrics_keys():
+    """compute_regression_metrics returns just spearman, not AUROC/AUPRC."""
+    y_true = np.array([1.0, 5.0, 3.0, 8.0, 2.0])
+    y_score = np.array([2.0, 6.0, 4.0, 7.0, 1.0])
+    metrics = ev.compute_regression_metrics(y_true, y_score)
+    assert set(metrics) == {"spearman"}
+    assert isinstance(metrics["spearman"], float)

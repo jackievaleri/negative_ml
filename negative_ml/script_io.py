@@ -12,6 +12,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from loguru import logger
 
@@ -191,6 +192,7 @@ def plot_saturation_panels(
     title: str,
     fname: str,
     domain: str,
+    metric: str = "auprc",
 ) -> None:
     """Two-panel saturation figure (fix-minority | proportional) for one slice.
 
@@ -200,16 +202,19 @@ def plot_saturation_panels(
         title: Figure suptitle.
         fname: Output filename (relative to the domain saturation figure dir).
         domain: Domain name (for routing to the right results directory).
+        metric: Metric column to plot ("auprc" by default; the sandwich
+            regression model uses "spearman" instead, since AUROC/AUPRC are
+            undefined for its continuous target).
     """
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     viz.plot_saturation_curve(
-        satm, "auprc", axes[0], color=DARK2[0], label="fix minority"
+        satm, metric, axes[0], color=DARK2[0], label="fix minority"
     )
     axes[0].set_xscale("log")
     axes[0].set_title("Fix minority, vary majority")
     axes[0].legend(loc="best")
     viz.plot_saturation_curve(
-        satp, "auprc", axes[1], color=DARK2[1], label="proportional"
+        satp, metric, axes[1], color=DARK2[1], label="proportional"
     )
     axes[1].set_xscale("log")
     axes[1].set_title("Scale total proportionally")
@@ -400,8 +405,10 @@ def run_splits_sweep(
             the context_key prefix for warn_small_fractions log messages.
         minority_label: Short description of the minority class used in
             warn_small_fractions log messages.
-        skip_single_class: If True, skip any split whose test set is
-            single-class (AUROC/AUPRC undefined).
+        skip_single_class: If True, skip any split whose test set has no
+            variation to rank against: single-class for a classification
+            split (AUROC/AUPRC undefined) or zero-variance for a regression
+            split (spearman undefined).
 
     Returns:
         (sel_frames, sat_frames, satp_frames): accumulated per-split DataFrames,
@@ -412,7 +419,14 @@ def run_splits_sweep(
     sat_frames: list[pd.DataFrame] = []
     satp_frames: list[pd.DataFrame] = []
     for split_name, sp in splits.items():
-        if skip_single_class and len(set(sp.y_test.tolist())) < 2:
+        if skip_single_class and sp.train_ds.task == "regression":
+            if np.std(sp.y_test) == 0:
+                logger.warning(
+                    f"  [{split_name}] held-out test set has zero variance; "
+                    "spearman is undefined, skipping this split."
+                )
+                continue
+        elif skip_single_class and len(set(sp.y_test.tolist())) < 2:
             logger.warning(
                 f"  [{split_name}] held-out test set is single-class; "
                 "AUROC/AUPRC are undefined, skipping this split."
@@ -454,6 +468,7 @@ def plot_downselection_split_figures(
     title_label: str,
     no_dd_fname_suffix: str | None = None,
     no_dd_title_suffix: str = "",
+    sat_metric: str = "auprc",
 ) -> None:
     """Selection grid + saturation panels for each split in one domain variant.
 
@@ -478,6 +493,8 @@ def plot_downselection_split_figures(
         no_dd_title_suffix: String appended to the regular suptitle for the
             no_dd variant (e.g. " (no density-diversity)"). Default "" keeps
             the same title as the regular grid.
+        sat_metric: Metric plotted in the two-panel saturation figure ("auprc"
+            by default; the sandwich regression model passes "spearman").
     """
     for split_name in splits:
         sel_s = sel_df[sel_df["split"] == split_name]
@@ -514,9 +531,13 @@ def plot_downselection_split_figures(
         plot_saturation_panels(
             sat_majority[sat_majority["split"] == split_name],
             sat_proportional[sat_proportional["split"] == split_name],
-            title=f"Saturation: AUPRC vs. size — {title_suffix}",
+            title=(
+                f"Saturation: {viz.METRIC_LABELS.get(sat_metric, sat_metric)} "
+                f"vs. size — {title_suffix}"
+            ),
             fname=f"saturation_curve_{fname_body}.png",
             domain=domain,
+            metric=sat_metric,
         )
 
 
@@ -526,8 +547,9 @@ def plot_proportional_saturation_overlay(
     title: str,
     fname: str,
     domain: str,
+    metric: str = "auprc",
 ) -> None:
-    """AUPRC proportional-saturation overlay across splits, saved as one figure.
+    """Proportional-saturation overlay across splits, saved as one figure.
 
     Args:
         satp: The scale-total-proportional saturation frame (all splits combined).
@@ -535,6 +557,8 @@ def plot_proportional_saturation_overlay(
         title: Figure title.
         fname: Output filename relative to the domain saturation figure dir.
         domain: Domain name (for routing to the right results directory).
+        metric: Metric column to plot ("auprc" by default; the sandwich
+            regression model passes "spearman").
     """
     fig, ax = plt.subplots(figsize=(8, 5.5))
     for split_name in splits:
@@ -542,7 +566,7 @@ def plot_proportional_saturation_overlay(
         if not d.empty:
             viz.plot_saturation_curve(
                 d,
-                "auprc",
+                metric,
                 ax,
                 color=viz.SPLIT_COLOR[split_name],
                 label=viz.SPLIT_LABEL[split_name],

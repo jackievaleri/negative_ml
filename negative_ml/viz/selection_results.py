@@ -28,18 +28,22 @@ METRIC_LABELS = {
     "f1": "F1",
     "precision_at_k": "Precision@k",
     "enrichment_factor": "Enrichment factor",
+    "spearman": "Spearman correlation",
 }
 
 #: Principled y-axis limits per metric so panels are comparable and not visually
 #: exaggerated by autoscaling. AUROC starts at chance (0.5); the probability-
 #: scaled metrics span the full [0, 1]; enrichment is unbounded above, so only its
-#: floor is fixed. A None bound is left to autoscale.
+#: floor is fixed. Spearman spans [-1, 1] (a regression model's rank-correlation
+#: metric, used in place of AUROC/AUPRC; see negative_ml.core.eval.spearman). A
+#: None bound is left to autoscale.
 METRIC_YLIM = {
     "auroc": (0.5, 1.0),
     "auprc": (0.0, 1.0),
     "f1": (0.0, 1.0),
     "precision_at_k": (0.0, 1.0),
     "enrichment_factor": (0.0, None),
+    "spearman": (-1.0, 1.0),
 }
 
 

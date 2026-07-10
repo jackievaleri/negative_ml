@@ -164,7 +164,9 @@ def positive_scores(model: object, X: np.ndarray) -> np.ndarray:
     matches the estimator's hard predictions instead of thresholding an unbounded
     margin at an arbitrary cutoff. When neither predict_proba nor decision_function
     is available (e.g. a plain XGBRegressor), predict() is used directly; its raw
-    continuous output serves as a ranking score for AUROC / AUPRC.
+    continuous output serves as a ranking score for AUROC / AUPRC (classification)
+    or is compared to the continuous target via Spearman correlation (regression;
+    see fit_score).
 
     Args:
         model: A fitted estimator exposing predict_proba, decision_function, or
@@ -191,6 +193,12 @@ def fit_score(
 ) -> dict[str, float]:
     """Fit a fresh model on train_ds rows and score it on the test set.
 
+    Dispatches on train_ds.task: a regression model (currently only the
+    sandwich domain) is scored by compute_regression_metrics (Spearman
+    correlation against the continuous target) since AUROC/AUPRC require
+    binary ground truth; every other task is scored by the classification
+    compute_metrics panel.
+
     Args:
         train_ds: The training-split Dataset rows are indexed into.
         train_rows: Row indices (into train_ds) to train on.
@@ -200,9 +208,13 @@ def fit_score(
         **model_kwargs: Hyper-parameters forwarded to model_factory.
 
     Returns:
-        The negative_ml.core.eval.compute_metrics panel.
+        The negative_ml.core.eval.compute_regression_metrics panel when
+        train_ds.task is "regression", otherwise the compute_metrics panel.
     """
     rows = np.asarray(train_rows)
     model = model_factory(**model_kwargs)
     model.fit(train_ds.X[rows], train_ds.y[rows])
-    return ev.compute_metrics(y_test, positive_scores(model, X_test))
+    y_score = positive_scores(model, X_test)
+    if train_ds.task == "regression":
+        return ev.compute_regression_metrics(y_test, y_score)
+    return ev.compute_metrics(y_test, y_score)
