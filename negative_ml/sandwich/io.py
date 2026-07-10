@@ -49,6 +49,12 @@ GROUP_COLUMN = "Main"
 #: Column added by clean_ratings holding the numeric 0-10 rating.
 CLEAN_RATING_COL = "Clean_Rating"
 
+#: Ingredient values that mark unrecorded data (one or more dashes, e.g. "--"
+#: for Cheese or "-" for Wild Magic), not an explicit choice like "No cheese"
+#: or "None!". ingredient_value_counts excludes these so a well-sampled value
+#: list never contains a category left blank rather than actually filled in.
+PLACEHOLDER_VALUE_RE = re.compile(r"^-+$")
+
 
 @lru_cache(maxsize=None)
 def read_ratings(path: str | Path | None = None) -> pd.DataFrame:
@@ -238,19 +244,24 @@ def ingredient_value_counts(
 
     The reference notebook's "interesting_items": restricts each ingredient
     column to its well-sampled values so the EDA panels and the deli search are
-    not dominated by one-off ingredients.
+    not dominated by one-off ingredients. Placeholder values that mark
+    unrecorded data (see PLACEHOLDER_VALUE_RE) are excluded even if they clear
+    the threshold, since they are not a real ingredient a candidate sandwich
+    could actually be built with.
 
     Args:
         frame: A cleaned frame with the six INGREDIENT_COLS.
         threshold: Minimum number of occurrences for a value to be kept.
 
     Returns:
-        Mapping of ingredient column to the list of values meeting the threshold.
+        Mapping of ingredient column to the list of values meeting the
+        threshold, excluding unrecorded-data placeholders.
     """
     frequent: dict[str, list[str]] = {}
     for col in INGREDIENT_COLS:
         counts = frame[col].value_counts()
-        frequent[col] = counts[counts >= threshold].index.tolist()
+        values = counts[counts >= threshold].index
+        frequent[col] = [v for v in values if not PLACEHOLDER_VALUE_RE.match(v)]
     return frequent
 
 
