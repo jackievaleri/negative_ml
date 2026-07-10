@@ -26,7 +26,7 @@ from negative_ml.viz.style import DARK2, style_axes
 #: Strategy display labels, matching the existing conventions in viz/results.py.
 STRATEGY_LABELS = {
     "random": "Random",
-    "hard": "Hard",
+    "hard": "Decoys",
     "diversity": "Diversity",
     "density_diversity": "Density div.",
 }

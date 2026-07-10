@@ -67,7 +67,7 @@ def apply_metric_ylim(ax: plt.Axes, metric: str) -> plt.Axes:
 #: The four size-varying strategies take the first four Dark2 colors in order.
 STRATEGY_STYLE = {
     "random": {"color": DARK2[0], "marker": "o", "label": "random"},
-    "hard": {"color": DARK2[1], "marker": "s", "label": "hard (near-miss)"},
+    "hard": {"color": DARK2[1], "marker": "s", "label": "decoys"},
     "diversity": {"color": DARK2[2], "marker": "^", "label": "diversity"},
     "density_diversity": {
         "color": DARK2[3],
@@ -88,8 +88,8 @@ REFERENCE_STYLE = {
 
 #: Per-split presentation. The split dimension is shown via linestyle (and a
 #: dedicated bar color), never color-coded against strategies, so the selection
-#: "hard" strategy (a color/marker) and the "hard" split (a linestyle)
-#: never collide in one legend.
+#: strategy labeled "decoys" (dict key "hard"; a color/marker) and the "hard"
+#: split (a linestyle) never collide in one legend.
 SPLIT_LINESTYLE = {
     "random": "-",
     "hard": "--",

@@ -43,7 +43,7 @@ ACQUISITION_LABELS: dict[str, str] = {
 NEG_COMP_LABELS: dict[str, str] = {
     "as_is": "As-is (all negatives)",
     "random": "Random undersample",
-    "hard": "Hard examples",
+    "hard": "Decoys",
     "diversity": "Diversity",
 }
 
