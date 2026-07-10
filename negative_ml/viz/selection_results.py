@@ -65,6 +65,8 @@ def apply_metric_ylim(ax: plt.Axes, metric: str) -> plt.Axes:
 
 #: Stable color + marker per strategy so a method looks the same across panels.
 #: The four size-varying strategies take the first four Dark2 colors in order.
+#: (The as-is-full and weighted-full full-data baselines are intentionally
+#: omitted from the downselection plots.)
 STRATEGY_STYLE = {
     "random": {"color": DARK2[0], "marker": "o", "label": "random"},
     "hard": {"color": DARK2[1], "marker": "s", "label": "decoys"},
@@ -73,16 +75,6 @@ STRATEGY_STYLE = {
         "color": DARK2[3],
         "marker": "D",
         "label": "density-diversity",
-    },
-}
-#: Full-data references drawn as horizontal lines, not size-varying curves.
-#: as_is is a neutral guide; weighted continues the Dark2 order.
-REFERENCE_STYLE = {
-    "as_is": {"color": INK, "linestyle": "--", "label": "as-is (full)"},
-    "weighted": {
-        "color": DARK2[4],
-        "linestyle": ":",
-        "label": "weighted (full)",
     },
 }
 
@@ -141,9 +133,9 @@ def plot_strategy_curves(
 ) -> plt.Axes:
     """One curve per selection strategy: metric vs. dataset size.
 
-    Size-varying strategies are drawn as lines with markers and a +/-1 std band;
-    as_is and weighted are drawn as horizontal dashed reference lines
-    spanning the x-range.
+    Each size-varying strategy in STRATEGY_STYLE is drawn as a line with
+    markers and a +/-1 std band. The as-is-full and weighted-full baselines
+    are not plotted, even if present in df.
 
     Args:
         df: Long-format frame with strategy, seed, x, and metric.
@@ -173,8 +165,8 @@ def plot_strategy_curves(
 
     x_all = df[x].to_numpy()
     x_lo, x_hi = float(np.min(x_all)), float(np.max(x_all))
-    # Cap the axis at the largest varying-strategy budget, not the full-data
-    # references (as-is/weighted), which sit at the full dataset size.
+    # Cap the axis at the largest varying-strategy budget, not any unplotted
+    # full-data baseline rows, which sit at the full dataset size.
     varying_x = df.loc[df["strategy"].isin(varying), x].to_numpy()
     x_hi_curve = float(np.max(varying_x)) if varying_x.size else x_hi
 
@@ -196,20 +188,6 @@ def plot_strategy_curves(
             g["mean"] + g["std"],
             color=style["color"],
             alpha=0.15,
-        )
-
-    for name, style in REFERENCE_STYLE.items():
-        if name not in present:
-            continue
-        mean = float(df.loc[df["strategy"] == name, metric].mean())
-        ax.hlines(
-            mean,
-            x_lo,
-            x_hi,
-            color=style["color"],
-            linestyle=style["linestyle"],
-            linewidth=1.6,
-            label=style["label"],
         )
 
     if logx:

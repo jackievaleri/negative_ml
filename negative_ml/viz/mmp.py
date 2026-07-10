@@ -157,9 +157,7 @@ def plot_mmp_performance(
         )
         ax.set_ylabel(ylabel)
         if metric == "concordance":
-            ax.axhline(0.5, color="gray", linestyle="--", linewidth=0.8, label="random")
             ax.set_ylim(0, 1.05)
-            ax.legend(fontsize=8)
         style_axes(ax)
 
     fig.suptitle(
