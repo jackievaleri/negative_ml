@@ -50,9 +50,10 @@ GROUP_COLUMN = "Main"
 CLEAN_RATING_COL = "Clean_Rating"
 
 #: Ingredient values that mark unrecorded data (one or more dashes, e.g. "--"
-#: for Cheese or "-" for Wild Magic), not an explicit choice like "No cheese"
-#: or "None!". ingredient_value_counts excludes these so a well-sampled value
-#: list never contains a category left blank rather than actually filled in.
+#: for Cheese or "-" for Wild Magic) rather than a deliberately entered choice.
+#: standardize_null_ingredients rewrites these onto each column's canonical
+#: "No <column>" label so an unrecorded Cheese cell and an explicitly chosen
+#: "No cheese" collapse onto the same feature instead of two different ones.
 PLACEHOLDER_VALUE_RE = re.compile(r"^-+$")
 
 
@@ -167,12 +168,39 @@ def validate_ratings(frame: pd.DataFrame) -> pd.DataFrame:
     return frame[valid]
 
 
+def standardize_null_ingredients(frame: pd.DataFrame) -> pd.DataFrame:
+    """Rewrite unrecorded-data placeholders onto each column's "No X" label.
+
+    A sandwich with no cheese was sometimes recorded as an explicit choice
+    ("No cheese") and sometimes as unrecorded data (a dash placeholder, e.g.
+    "--"; see PLACEHOLDER_VALUE_RE). Left alone, encode_ingredients one-hots
+    those as two different features even though both sandwiches have no
+    cheese. This maps every placeholder value in the six INGREDIENT_COLS onto
+    "No <column>" (the spelling already used for Cheese and Bread), so the
+    multi-hot encoding, the EDA value counts, and the deli-search candidate
+    menu all treat a blank cell the same as the equivalent explicit choice.
+
+    Args:
+        frame: A frame containing the six INGREDIENT_COLS.
+
+    Returns:
+        A copy of frame with placeholder ingredient values replaced.
+    """
+    out = frame.copy()
+    for col in INGREDIENT_COLS:
+        is_placeholder = out[col].str.match(PLACEHOLDER_VALUE_RE)
+        out.loc[is_placeholder, col] = f"No {col.lower()}"
+    return out
+
+
 def clean_ratings(frame: pd.DataFrame) -> pd.DataFrame:
     """Clean the long ratings frame and add the numeric Clean_Rating column.
 
     Drops rows with any null field (which also removes the off-season melt copies
-    whose Episode is null), repairs and validates the Rating, then parses the
-    "X.X/10" string into a float 0-10 rating.
+    whose Episode is null), repairs and validates the Rating, standardizes
+    unrecorded-data ingredient placeholders onto their column's explicit "No X"
+    label (see standardize_null_ingredients), then parses the "X.X/10" string
+    into a float 0-10 rating.
 
     Args:
         frame: The long frame from read_ratings.
@@ -183,6 +211,7 @@ def clean_ratings(frame: pd.DataFrame) -> pd.DataFrame:
     cleaned = frame.dropna(how="any")
     cleaned = normalize_ratings(cleaned)
     cleaned = validate_ratings(cleaned)
+    cleaned = standardize_null_ingredients(cleaned)
     cleaned = cleaned.reset_index(drop=True)
     rating = cleaned[RATING_COL].str.split("/").str[0].astype(float)
     return cleaned.assign(**{CLEAN_RATING_COL: rating})
@@ -244,10 +273,10 @@ def ingredient_value_counts(
 
     The reference notebook's "interesting_items": restricts each ingredient
     column to its well-sampled values so the EDA panels and the deli search are
-    not dominated by one-off ingredients. Placeholder values that mark
-    unrecorded data (see PLACEHOLDER_VALUE_RE) are excluded even if they clear
-    the threshold, since they are not a real ingredient a candidate sandwich
-    could actually be built with.
+    not dominated by one-off ingredients. Assumes frame has already been
+    through standardize_null_ingredients (see clean_ratings), so a well-sampled
+    "No X" value here already folds in sandwiches that recorded that
+    ingredient as unrecorded data rather than an explicit choice.
 
     Args:
         frame: A cleaned frame with the six INGREDIENT_COLS.
@@ -255,13 +284,12 @@ def ingredient_value_counts(
 
     Returns:
         Mapping of ingredient column to the list of values meeting the
-        threshold, excluding unrecorded-data placeholders.
+        threshold.
     """
     frequent: dict[str, list[str]] = {}
     for col in INGREDIENT_COLS:
         counts = frame[col].value_counts()
-        values = counts[counts >= threshold].index
-        frequent[col] = [v for v in values if not PLACEHOLDER_VALUE_RE.match(v)]
+        frequent[col] = counts[counts >= threshold].index.tolist()
     return frequent
 
 

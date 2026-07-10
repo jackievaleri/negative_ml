@@ -37,7 +37,7 @@ ACCENT = PALETTE["purple"]
 
 
 def plot_rating_distribution(clean_ratings: ArrayLike, ax: plt.Axes) -> plt.Axes:
-    """Histogram of the 0-10 ratings with a KDE overlay and the mean marked.
+    """Histogram of the 0-10 ratings with a KDE overlay.
 
     Shows the skew the study turns on: ratings pile up high (most sandwiches are
     well liked) with a thin low tail of "negative" examples.
@@ -59,13 +59,10 @@ def plot_rating_distribution(clean_ratings: ArrayLike, ax: plt.Axes) -> plt.Axes
         bin_width = edges[1] - edges[0]
         density = gaussian_kde(ratings)(grid) * len(ratings) * bin_width
         ax.plot(grid, density, color=ACCENT, lw=2)
-    mean = float(np.mean(ratings))
-    ax.axvline(mean, color=INK, ls="--", lw=1, label=f"mean = {mean:.2f}")
     ax.set_xlabel("rating")
-    ax.set_ylabel("number of episodes")
+    ax.set_ylabel("number of sandwiches")
     ax.set_xlim(0, 10)
     ax.set_title("Rating distribution (skewed high; low scores are rare)")
-    ax.legend(loc="upper left")
     return style_axes(ax)
 
 
