@@ -1,15 +1,24 @@
 """Evaluation metrics for the imbalance study (plan.md 4.3).
 
-Two families of metrics, all collected by compute_metrics:
+Two families of metrics for classification models, all collected by
+compute_metrics:
 
     A) Global discrimination - AUROC, AUPRC, F1 at a threshold.
     B) Early retrieval / top-k - precision@k, enrichment factor (the practical
        "we only act on the top predictions" scenario).
+
+Regression models (currently only the sandwich domain) are scored by
+compute_regression_metrics instead: AUROC/AUPRC require binary ground truth, so
+they are not meaningful once the target is a continuous rating. Spearman rank
+correlation is the regression analog of AUROC/AUPRC - both ask whether the
+model ranks examples correctly, without needing a threshold to binarize the
+target.
 """
 
 from __future__ import annotations
 
 import numpy as np
+from scipy.stats import spearmanr
 from sklearn.metrics import (
     average_precision_score,
     f1_score,
@@ -44,6 +53,43 @@ def compute_metrics(
         "precision_at_k": precision_at_k(y_true, y_score, k),
         "enrichment_factor": enrichment_factor(y_true, y_score, k),
     }
+
+
+def compute_regression_metrics(
+    y_true: np.ndarray, y_score: np.ndarray
+) -> dict[str, float]:
+    """Compute the metric panel for a regression model.
+
+    Args:
+        y_true: Ground-truth continuous target values.
+        y_score: Model's continuous predictions.
+
+    Returns:
+        Mapping of metric name to value (spearman).
+    """
+    return {"spearman": spearman(y_true, y_score)}
+
+
+def spearman(y_true: np.ndarray, y_score: np.ndarray) -> float:
+    """Spearman rank correlation between the true values and model scores.
+
+    The regression analog of AUROC/AUPRC: it asks whether the model ranks
+    examples in the same order as the ground truth, without requiring a
+    threshold to binarize the (continuous) target.
+
+    Args:
+        y_true: Ground-truth continuous target values.
+        y_score: Model scores (predictions).
+
+    Returns:
+        Spearman correlation in [-1, 1]; 0.0 when either side is constant
+        (correlation is undefined).
+    """
+    y_true = np.asarray(y_true, dtype=float)
+    y_score = np.asarray(y_score, dtype=float)
+    if y_true.std() == 0 or y_score.std() == 0:
+        return 0.0
+    return float(spearmanr(y_true, y_score).statistic)
 
 
 def auroc(y_true: np.ndarray, y_score: np.ndarray) -> float:

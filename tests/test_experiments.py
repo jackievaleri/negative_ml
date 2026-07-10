@@ -6,7 +6,11 @@ import pandas as pd
 from negative_ml.core import saturation
 from negative_ml.core import sweep as selection
 from negative_ml.core.dataset import Dataset
-from negative_ml.core.experiment import cross_dataset_split, split_from_dataset
+from negative_ml.core.experiment import (
+    cross_dataset_split,
+    fit_score,
+    split_from_dataset,
+)
 from negative_ml.models import make_model
 from negative_ml.sandwich.split import season_split_from_dataset
 
@@ -88,6 +92,26 @@ def test_scale_total_proportional_columns():
     # Larger fractions should use more training rows.
     means = df.groupby("fraction")["n_train"].mean()
     assert means.loc[0.5] > means.loc[0.25]
+
+
+def test_fit_score_regression_task_uses_spearman_not_auroc():
+    """A regression train_ds dispatches fit_score to spearman, not AUROC/AUPRC."""
+    rng = np.random.default_rng(2)
+    n = 200
+    X = rng.normal(size=(n, 2))
+    y = X[:, 0] * 3.0 + rng.normal(scale=0.05, size=n)  # strongly rank-correlated
+    ds = Dataset(X=X, y=y, task="regression")
+    train_rows = np.arange(150)
+    X_test, y_test = X[150:], y[150:]
+
+    def regression_factory(**kw):
+        """Build a fresh ridge regressor, ignoring classification-only kwargs."""
+        kw.pop("class_weight", None)
+        return make_model("regression", kind="ridge", **kw)
+
+    metrics = fit_score(ds, train_rows, X_test, y_test, regression_factory)
+    assert set(metrics) == {"spearman"}
+    assert metrics["spearman"] > 0.9
 
 
 def test_cross_dataset_split_uses_test_dataset():

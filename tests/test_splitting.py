@@ -9,6 +9,8 @@ import pytest
 from negative_ml.baseball.split import ballpark_split
 from negative_ml.core.dataset import Dataset
 from negative_ml.core.splitting import random_split
+from negative_ml.sandwich import split as sandwich_split
+from negative_ml.sandwich.config import SANDWICH_TEST_SEASON
 from negative_ml.sandwich.split import season_split
 
 
@@ -115,3 +117,44 @@ def test_season_split_requires_season_meta():
     ds = Dataset(X=np.zeros((4, 2)), y=np.zeros(4), task="classification")
     with pytest.raises(ValueError):
         season_split(ds, test_season="S1")
+
+
+def sandwich_regression_dataset() -> Dataset:
+    """A synthetic regression Dataset shaped like the sandwich domain.
+
+    Five Main-ingredient groups (for scaffold_split) each with one row per
+    season S1-S5 (for season_split, which holds out SANDWICH_TEST_SEASON).
+    """
+    mains = ["Ham", "Turkey", "Tuna", "Egg", "Lamb"]
+    seasons = ["S1", "S2", "S3", "S4", "S5"]
+    rows = [(main, season) for main in mains for season in seasons]
+    rng = np.random.default_rng(0)
+    return Dataset(
+        X=rng.normal(size=(len(rows), 3)),
+        y=np.linspace(2.0, 9.5, len(rows)),
+        task="regression",
+        groups=np.array([main for main, _ in rows]),
+        meta=pd.DataFrame({"Season": [season for _, season in rows]}),
+    )
+
+
+def test_build_regression_splits_keeps_continuous_targets():
+    """train_ds.y and y_test stay the continuous rating, unlike build_splits."""
+    reg_ds = sandwich_regression_dataset()
+    splits = sandwich_split.build_regression_splits(reg_ds, threshold=9.0)
+
+    for sp in splits.values():
+        assert sp.train_ds.task == "regression"
+        # label_y still gives a binary good/bad split of the training pool for
+        # the majority-class selection strategies.
+        assert set(sp.train_ds.label_y.tolist()) <= {0, 1}
+        # y_test carries real ratings, not a {0, 1} good/bad label.
+        assert not set(np.round(sp.y_test, 4).tolist()) <= {0.0, 1.0}
+        assert set(np.round(sp.y_test, 6).tolist()) <= set(
+            np.round(reg_ds.y, 6).tolist()
+        )
+
+    _, season_test_idx = season_split(reg_ds, test_season=SANDWICH_TEST_SEASON)
+    assert sorted(splits["season"].y_test.tolist()) == sorted(
+        reg_ds.y[season_test_idx].tolist()
+    )

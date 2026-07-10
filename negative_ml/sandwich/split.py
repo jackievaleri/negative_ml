@@ -119,13 +119,15 @@ def build_regression_splits(
 ) -> dict[str, EvalSplit]:
     """The three sandwich evaluation regimes for a regression model.
 
-    Produces EvalSplits where the training Dataset carries continuous 0-10
-    ratings as y (so an XGBRegressor trains on the real rating signal) while
-    the held-out test labels are binarized at threshold for metric computation.
-    The label_y attribute on each train_ds is set to the corresponding binary
-    labels so that minority_mask / majority_mask work correctly for the
-    selection and saturation experiment runners without needing a threshold
-    argument.
+    Produces EvalSplits where both the training Dataset and the held-out test
+    labels carry the continuous 0-10 rating: the model (an XGBRegressor) trains
+    on and is scored against the real rating signal, via Spearman rank
+    correlation (see negative_ml.core.eval.spearman) rather than binarizing at
+    threshold for AUROC/AUPRC. The label_y attribute on each train_ds is set to
+    the threshold-derived binary labels so that minority_mask / majority_mask
+    (used by the majority-class selection strategies, which still operate on a
+    good/bad split of the training pool) work correctly without needing a
+    threshold argument.
 
     Split indices are derived from the classification version of reg_ds so the
     stratified random split and the grouped scaffold split are seeded with the
@@ -135,11 +137,12 @@ def build_regression_splits(
         reg_ds: The sandwich regression Dataset (see load), whose y holds
             continuous 0-10 ratings and whose meta carries season information.
         threshold: Rating at or above which a sandwich is the good (positive)
-            minority class. Defaults to SANDWICH_GOOD_RATING_THRESHOLD.
+            minority class, used only to derive the training pool's label_y.
+            Defaults to SANDWICH_GOOD_RATING_THRESHOLD.
 
     Returns:
-        Mapping of split name to an EvalSplit whose train_ds.y is continuous
-        and whose y_test is binary.
+        Mapping of split name to an EvalSplit whose train_ds.y and y_test are
+        both the continuous 0-10 rating.
     """
     cds = to_classification(reg_ds, threshold)
     binary_y = cds.y
@@ -157,7 +160,8 @@ def build_regression_splits(
             name: Split-regime label carried into result frames.
 
         Returns:
-            EvalSplit whose train_ds.y is continuous and y_test is binary.
+            EvalSplit whose train_ds.y and y_test are both the continuous
+            0-10 rating.
         """
         reg_train_ds = reg_ds.subset(train_idx)
         reg_train_ds = Dataset(
@@ -173,7 +177,7 @@ def build_regression_splits(
         return EvalSplit(
             train_ds=reg_train_ds,
             X_test=reg_ds.X[test_idx],
-            y_test=binary_y[test_idx],
+            y_test=reg_ds.y[test_idx],
             name=name,
         )
 
