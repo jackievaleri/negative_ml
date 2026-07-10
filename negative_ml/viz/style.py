@@ -3,9 +3,9 @@
 Centralizes the things that must look the same across all plots: the
 categorical palette, the sequential colormaps used for density / probability
 surfaces, the save resolution, and the axis cleanup (no top/right spines, no
-gridlines). Importing this module applies the house style (see
-apply_house_style) so the scripts, the EDA helpers, the results helpers,
-and the notebooks all share one look.
+gridlines). Importing this module applies the style (see apply_style) so the
+scripts, the EDA helpers, the results helpers, and the notebooks all share
+one look.
 
 The categorical palette is Matplotlib's Dark2 (the ColorBrewer qualitative
 set). Use the colors in order for categorical series — DARK2 is the
@@ -21,6 +21,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 from cycler import cycler
 
 from negative_ml.core.config import FIGURE_DPI
@@ -83,8 +84,8 @@ def dark2(i: int) -> str:
     return DARK2[i % len(DARK2)]
 
 
-def apply_house_style() -> None:
-    """Install the house style into Matplotlib's global rcParams.
+def apply_style() -> None:
+    """Install the style into Matplotlib's global rcParams.
 
     Sets the default color cycle to DARK2 (so unstyled plots use the
     palette in order) and the saved-figure resolution to FIGURE_DPI.
@@ -93,10 +94,17 @@ def apply_house_style() -> None:
     """
     plt.rcParams["axes.prop_cycle"] = cycler(color=DARK2)
     plt.rcParams["savefig.dpi"] = FIGURE_DPI
+    plt.rcParams["font.size"] = 12
+    plt.rcParams["axes.titlesize"] = 13
+    plt.rcParams["axes.labelsize"] = 12
+    plt.rcParams["xtick.labelsize"] = 11
+    plt.rcParams["ytick.labelsize"] = 11
+    plt.rcParams["legend.fontsize"] = 10
+    plt.rcParams["legend.title_fontsize"] = 11
 
 
 def style_axes(ax: plt.Axes, despine: Sequence[str] = ("top", "right")) -> plt.Axes:
-    """Apply the house style to a single axes in place.
+    """Apply the style to a single axes in place.
 
     Removes the requested spines and disables gridlines so every panel reads
     the same regardless of which helper drew it.
@@ -138,4 +146,27 @@ def save_fig(fig: plt.Figure, path: Path, dpi: int = FIGURE_DPI) -> Path:
     return path
 
 
-apply_house_style()  # apply the look on import of the viz package
+def subsample_indices(idx: np.ndarray, cap: int, seed: int) -> np.ndarray:
+    """Randomly subsample an index array down to at most cap entries.
+
+    Shared by every figure that draws a dense point cloud for legibility
+    (baseball's exit-velocity scatter, the feature-pair matrix, the selection
+    examples background): each caps a different array to a different budget
+    but needs the same "subsample when over cap" logic.
+
+    Args:
+        idx: Integer index array to subsample.
+        cap: Maximum number of indices to keep; idx is returned unchanged when
+            it already has cap or fewer entries.
+        seed: Random seed for the subsample.
+
+    Returns:
+        idx unchanged, or a random subset of size cap (order not preserved).
+    """
+    if len(idx) <= cap:
+        return idx
+    rng = np.random.default_rng(seed)
+    return rng.choice(idx, cap, replace=False)
+
+
+apply_style()  # apply the look on import of the viz package

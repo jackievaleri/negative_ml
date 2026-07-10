@@ -1,7 +1,7 @@
 """Plotting helpers for the downselection results frames (plan.md 4.1/4.2).
 
 Domain-agnostic: anything that returns the long-format frames produced by
-negative_ml.experiments.selection / .saturation can be plotted here.
+negative_ml.core.sweep / .saturation can be plotted here.
 The headline figure realizes the talk's main result axes:
 
     y = model performance metric, x = dataset size, color/marker = selection method.
@@ -102,12 +102,12 @@ SPLIT_COLOR = {
     "time": DARK2[1],
 }
 SPLIT_LABEL = {
-    "random": "random split (within 2023)",
-    "hard": "hard split (2023→2024)",
-    "park": "park split (outlier parks held out)",
+    "random": "random split",
+    "hard": "time split (2024)",
+    "park": "ballpark split",
     "scaffold": "scaffold split (held-out fillings)",
     "season": "season split (newest season held out)",
-    "time": "time split (easy/med/hard validation)",
+    "time": "time/similarity split",
 }
 
 
@@ -260,7 +260,7 @@ def plot_selection_grid(
         ncol=min(len(labels), 6),
         bbox_to_anchor=(0.5, -0.02),
     )
-    fig.suptitle("Majority-class selection: performance vs. dataset size", fontsize=14)
+    fig.suptitle("Majority-class selection: performance vs. dataset size", fontsize=16)
     fig.tight_layout(rect=(0, 0.03, 1, 0.97))
     return fig
 
@@ -377,10 +377,10 @@ def plot_split_overlay(
         for s in present_splits
     ]
     first = ax.legend(
-        handles=strat_handles, loc="lower right", fontsize=8, title="strategy"
+        handles=strat_handles, loc="lower right", fontsize=10, title="strategy"
     )
     ax.add_artist(first)
-    ax.legend(handles=split_handles, loc="upper left", fontsize=8, title="split")
+    ax.legend(handles=split_handles, loc="upper left", fontsize=10, title="split")
     return style_axes(ax)
 
 
@@ -442,7 +442,7 @@ def plot_negative_control(
                     f"r={r:+.2f}",
                     ha="center",
                     va="bottom",
-                    fontsize=7,
+                    fontsize=9,
                     rotation=90,
                 )
 
@@ -456,5 +456,5 @@ def plot_negative_control(
         f"Negative control: single feature vs. full model "
         f"({METRIC_LABELS.get(metric, metric)})"
     )
-    ax.legend(loc="best", fontsize=8)
+    ax.legend(loc="best", fontsize=10)
     return style_axes(ax)

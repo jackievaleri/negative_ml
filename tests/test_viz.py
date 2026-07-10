@@ -8,10 +8,10 @@ import numpy as np
 import pandas as pd
 
 from negative_ml.core.dataset import Dataset
+from negative_ml.sandwich import viz as swviz
 from negative_ml.viz import diagnostics as diag
-from negative_ml.viz import sandwiches as swviz
 from negative_ml.viz import selection_examples as selviz
-from negative_ml.viz.results import METRIC_YLIM, apply_metric_ylim
+from negative_ml.viz.selection_results import METRIC_YLIM, apply_metric_ylim
 
 
 def test_ks_statistic_bounds():

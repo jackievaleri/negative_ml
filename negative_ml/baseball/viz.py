@@ -33,6 +33,7 @@ from negative_ml.viz.style import (
     PALETTE,
     PROBABILITY_CMAP,
     style_axes,
+    subsample_indices,
 )
 
 #: Stable color per outcome. out is the dominant background class, so it
@@ -52,11 +53,17 @@ TARGET_ABBR = {"home_run": "HR", "triple": "3B", "double": "2B", "single": "1B"}
 
 
 def target_label(target: str) -> str:
-    """Human-readable target name for titles, e.g. home_run -> home run."""
+    """Human-readable target name for titles, e.g. home_run -> home run.
+
+    Args:
+        target: Internal target name with underscores (e.g. "home_run").
+
+    Returns:
+        Display string with underscores replaced by spaces (e.g. "home run").
+    """
     return target.replace("_", " ")
 
 
-# --- EDA (reproduce the blog geometry) -----------------------------------
 def plot_class_balance(meta: Any, ax: plt.Axes) -> plt.Axes:
     """Bar chart of batted-ball outcome counts (shows home-run rarity).
 
@@ -100,13 +107,12 @@ def plot_exit_velo_launch_angle(
     """
     meta = dataset.meta
     ev_, la = dataset.X[:, 0], dataset.X[:, 1]
-    rng = np.random.default_rng(0)
     for outcome in OUTCOME_ORDER:
         mask = (meta["outcome"] == outcome).to_numpy()
         idx = np.flatnonzero(mask)
         # Subsample the dense majority outcomes; keep every home run.
-        if outcome != "home_run" and len(idx) > max_points // 4:
-            idx = rng.choice(idx, max_points // 4, replace=False)
+        if outcome != "home_run":
+            idx = subsample_indices(idx, max_points // 4, seed=0)
         ax.scatter(
             ev_[idx],
             la[idx],
@@ -177,7 +183,6 @@ def plot_minority_density(
     return style_axes(ax)
 
 
-# --- Model performance (driven by negative_ml.core.eval) ----------------------
 def plot_roc(y_true: ArrayLike, y_score: ArrayLike, ax: plt.Axes) -> plt.Axes:
     """ROC curve annotated with AUROC.
 
@@ -266,11 +271,23 @@ def plot_precision_at_k(
     Returns:
         The styled ax (left/precision axis).
     """
+    y_true = np.asarray(y_true)
     n_pos = int(np.sum(y_true))
     if ks is None:
         ks = np.unique(np.linspace(10, max(20, 5 * n_pos), 40).astype(int))
-    prec = [ev.precision_at_k(y_true, y_score, int(k)) for k in ks]
-    enr = [ev.enrichment_factor(y_true, y_score, int(k)) for k in ks]
+    # precision_at_k/enrichment_factor each independently re-sort y_score from
+    # scratch; sorting once here and reading precision@k off the cumulative
+    # hit count avoids up to 2*len(ks) redundant full sorts of the same array.
+    base_rate = float(np.mean(y_true))
+    order = np.argsort(np.asarray(y_score))[::-1]
+    cumulative_hits = np.cumsum(y_true[order])
+    prec = []
+    enr = []
+    for k in ks:
+        k = min(int(k), len(y_true))
+        p = float(cumulative_hits[k - 1] / k) if k > 0 else 0.0
+        prec.append(p)
+        enr.append(p / base_rate if base_rate > 0.0 else 0.0)
     ax.plot(ks, prec, color=DARK2[0], label="precision@k")
     ax.axhline(float(np.mean(y_true)), color=INK, ls="--", lw=1, label="base rate")
     ax.set_xlabel("k (top-scored balls)")

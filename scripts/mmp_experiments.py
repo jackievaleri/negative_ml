@@ -15,10 +15,10 @@ Supports three domains:
 
 Run modes::
 
-    python scripts/mmps.py --domain molecules               # generate + plot
-    python scripts/mmps.py --domain sandwiches --generate-only
-    python scripts/mmps.py --domain baseball --plot-only
-    python scripts/mmps.py                                  # all domains
+    python scripts/mmp_experiments.py --domain molecules               # generate + plot
+    python scripts/mmp_experiments.py --domain sandwiches --generate-only
+    python scripts/mmp_experiments.py --domain baseball --plot-only
+    python scripts/mmp_experiments.py                                  # all domains
 """
 
 from __future__ import annotations
@@ -36,23 +36,25 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from negative_ml.core.config import (
-    RANDOM_SEED,
-    SANDWICH_CLF_TOP_FEATURES,
-    SANDWICH_RIDGE_ALPHA,
-)
+from negative_ml.baseball import io as baseball
+from negative_ml.core.config import RANDOM_SEED
 from negative_ml.core.dataset import Dataset
 from negative_ml.core.experiment import (
     EvalSplit,
     cross_dataset_split,
     split_from_dataset,
 )
-from negative_ml.core.mmp import find_matched_pairs, run_mmp_evaluation
+from negative_ml.core.mmp import (
+    find_matched_pairs,
+    rescore_examples,
+    run_mmp_evaluation,
+)
 from negative_ml.core.splitting import random_split
-from negative_ml.domains import baseball, molecules, sandwiches
-from negative_ml.experiments.mmp import rescore_examples
 from negative_ml.models import feature_selected_ridge_classifier, model_factory
+from negative_ml.molecules import io as molecules
 from negative_ml.runner import metrics_path
+from negative_ml.sandwich import io as sandwiches
+from negative_ml.sandwich.config import SANDWICH_CLF_TOP_FEATURES, SANDWICH_RIDGE_ALPHA
 from negative_ml.script_io import read_result_frames, save_figure, save_frame
 from negative_ml.viz.mmp import (
     baseball_describe,
@@ -80,17 +82,14 @@ class MmpConfig:
     full_ds_examples: bool = False
 
 
-# --- molecules ----------------------------------------------------------------
-
-
-def _molecules_load() -> tuple[EvalSplit, Dataset]:
+def molecules_load() -> tuple[EvalSplit, Dataset]:
     """Load the molecule screen (rdkit featurization) with a random 80/20 split."""
     ds = molecules.load(featurization="rdkit")
     split = split_from_dataset(ds, scaffold=False, name="random")
     return split, ds
 
 
-def _molecules_viz_dataset(split: EvalSplit, ds: Dataset) -> Dataset:
+def molecules_viz_dataset(split: EvalSplit, ds: Dataset) -> Dataset:
     """Reconstruct the test Dataset with correct groups and meta for visualization."""
     _, test_idx = random_split(ds, seed=RANDOM_SEED)
     return Dataset(
@@ -113,23 +112,20 @@ MOLECULES = MmpConfig(
     max_pairs=500,
     classifier_factory=model_factory("classification"),
     describe=molecules_describe,
-    load=_molecules_load,
+    load=molecules_load,
     build_rescore_inputs=lambda split, ds: (split.train_ds, split.X_test),
-    build_viz_dataset=_molecules_viz_dataset,
+    build_viz_dataset=molecules_viz_dataset,
 )
 
 
-# --- sandwiches ---------------------------------------------------------------
-
-
-def _sandwiches_classifier_factory():
+def sandwiches_classifier_factory():
     """Return a fresh feature-selected Ridge classifier for the sandwich domain."""
     return feature_selected_ridge_classifier(
         k=SANDWICH_CLF_TOP_FEATURES, alpha=SANDWICH_RIDGE_ALPHA
     )
 
 
-def _sandwiches_load() -> tuple[EvalSplit, Dataset]:
+def sandwiches_load() -> tuple[EvalSplit, Dataset]:
     """Load the sandwich dataset (classification view) with a random 80/20 split."""
     ds_reg = sandwiches.load()
     cds = sandwiches.to_classification(ds_reg)
@@ -143,19 +139,16 @@ SANDWICHES = MmpConfig(
     n_seeds=3,
     n_examples=8,
     max_pairs=200,
-    classifier_factory=_sandwiches_classifier_factory,
+    classifier_factory=sandwiches_classifier_factory,
     describe=sandwiches_describe,
-    load=_sandwiches_load,
+    load=sandwiches_load,
     build_rescore_inputs=lambda split, cds: (cds, cds.X),
     build_viz_dataset=lambda split, cds: cds,
     full_ds_examples=True,
 )
 
 
-# --- baseball -----------------------------------------------------------------
-
-
-def _baseball_load() -> tuple[EvalSplit, Dataset]:
+def baseball_load() -> tuple[EvalSplit, Dataset]:
     """Load 2023 train / 2024 test seasons as a cross-dataset split."""
     ds_train = baseball.load_season(2023, target="home_run")
     ds_test = baseball.load_season(2024, target="home_run")
@@ -163,7 +156,7 @@ def _baseball_load() -> tuple[EvalSplit, Dataset]:
     return split, ds_test
 
 
-def _baseball_viz_dataset(split: EvalSplit, ds_test: Dataset) -> Dataset:
+def baseball_viz_dataset(split: EvalSplit, ds_test: Dataset) -> Dataset:
     """Wrap the test arrays with ds_test metadata for visualization."""
     return Dataset(
         X=split.X_test,
@@ -182,9 +175,9 @@ BASEBALL = MmpConfig(
     max_pairs=500,
     classifier_factory=model_factory("classification"),
     describe=baseball_describe,
-    load=_baseball_load,
+    load=baseball_load,
     build_rescore_inputs=lambda split, ds_test: (split.train_ds, split.X_test),
-    build_viz_dataset=_baseball_viz_dataset,
+    build_viz_dataset=baseball_viz_dataset,
 )
 
 
@@ -195,11 +188,17 @@ ALL_CONFIGS: dict[str, MmpConfig] = {
 }
 
 
-# --- shared generate / plot ---------------------------------------------------
+def generate(cfg: MmpConfig) -> tuple[EvalSplit, Any]:
+    """Train models with each strategy and evaluate on matched pairs; save frames.
 
+    Args:
+        cfg: Per-domain MMP configuration.
 
-def generate(cfg: MmpConfig) -> None:
-    """Train models with each strategy and evaluate on matched pairs; save frames."""
+    Returns:
+        The (split, extra_ds) pair from cfg.load(), so a caller that also runs
+        plot(cfg, ...) in the same process can reuse it instead of loading the
+        domain a second time.
+    """
     logger.info(f"=== {cfg.domain} MMP evaluation (budget={cfg.budget}) ===")
     split, extra_ds = cfg.load()
 
@@ -230,23 +229,32 @@ def generate(cfg: MmpConfig) -> None:
         "\nMean concordance by strategy:\n"
         + results.groupby("strategy")["concordance"].mean().to_string()
     )
+    return split, extra_ds
 
 
-def plot(cfg: MmpConfig) -> None:
-    """Rebuild MMP figures from saved frames."""
-    (results,) = read_result_frames(["mmps"], cfg.domain, "mmps.py")
+def plot(cfg: MmpConfig, loaded: tuple[EvalSplit, Any] | None = None) -> None:
+    """Rebuild MMP figures from saved frames.
+
+    Args:
+        cfg: Per-domain MMP configuration.
+        loaded: Optional (split, extra_ds) pair already returned by generate(cfg)
+            in this process; reused instead of calling cfg.load() again. When
+            None (e.g. a standalone --plot-only run), loads it here.
+    """
+    (results,) = read_result_frames(["mmps"], cfg.domain, "mmp_experiments.py")
     pairs_path = metrics_path("mmp_examples", cfg.domain)
     if not pairs_path.exists():
         raise FileNotFoundError(
-            f"Missing {pairs_path.name}; run generation first "
-            f"(python scripts/mmps.py --domain {cfg.domain} --generate-only)."
+            f"Missing {pairs_path.name}; run: "
+            f"python scripts/mmp_experiments.py "
+            f"--domain {cfg.domain} --generate-only"
         )
     pairs = pd.read_csv(pairs_path)
 
     fig = plot_mmp_performance(results, cfg.domain)
     save_figure(fig, "mmp", "mmp_performance.png", cfg.domain)
 
-    split, extra_ds = cfg.load()
+    split, extra_ds = loaded if loaded is not None else cfg.load()
     train_ds, score_X = cfg.build_rescore_inputs(split, extra_ds)
     scored_by_strategy = rescore_examples(
         train_ds, score_X, pairs, cfg.classifier_factory, cfg.budget
@@ -279,10 +287,11 @@ def main() -> None:
 
     configs = [ALL_CONFIGS[args.domain]] if args.domain else list(ALL_CONFIGS.values())
     for cfg in configs:
+        loaded = None
         if not args.plot_only:
-            generate(cfg)
+            loaded = generate(cfg)
         if not args.generate_only:
-            plot(cfg)
+            plot(cfg, loaded)
 
 
 if __name__ == "__main__":

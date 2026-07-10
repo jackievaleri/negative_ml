@@ -1,89 +1,64 @@
-"""Roll-for-Sandwich exploratory data analysis (EDA panels + leakage checks).
+"""Sandwich EDA: rating distribution, per-ingredient spreads, and leakage checks.
 
-Reproduces the Roll-for-Sandwich exploratory analysis from the reference notebook
-in the house style — rating distribution, ratings over time, per-ingredient rating
-spreads, ingredient frequencies, and season-level rating trends — then extends it
-with the same leakage and covariate-shift diagnostics applied to the baseball
-domain: which ingredient indicators correlate with good ratings (the label-
-correlation smell-test), how the ingredient distribution shifts across the random,
-scaffold, and season evaluation splits (covariate shift), and which protein
-families (Main ingredient) yield good sandwiches most often (per-group rate).
+Rating distribution, timeline, per-ingredient spreads, ingredient frequencies,
+label correlations, covariate shift, and per-protein rates.
 
-Following the baseball pipeline, plotting is a first-class, independent step.
-Generation computes the diagnostic tables once and persists them under
-results/sandwiches/data/metrics/; plotting rebuilds every figure from those
-artifacts::
+Usage::
 
-    python scripts/sandwiches_eda.py                 # generate + plot
-    python scripts/sandwiches_eda.py --plot-only      # replot saved artifacts
-    python scripts/sandwiches_eda.py --generate-only  # compute tables, no figures
-
-Figures are written under results/sandwiches/figures/eda/.
+    python scripts/sandwich_eda.py                  # generate + plot
+    python scripts/sandwich_eda.py --plot-only       # replot saved artifacts
+    python scripts/sandwich_eda.py --generate-only   # compute tables, no figures
 """
 
 from __future__ import annotations
 
+import warnings
+
 import matplotlib
 
-matplotlib.use("Agg")  # headless: write PNGs without a display
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 from loguru import logger
 
-from negative_ml.core.config import (
+from negative_ml.runner import metrics_path
+from negative_ml.sandwich import io as sandwiches
+from negative_ml.sandwich import split as sandwich_split
+from negative_ml.sandwich import viz
+from negative_ml.sandwich.config import (
+    SANDWICH_EDA_TOP_FEATURES,
     SANDWICH_FREQ_THRESHOLD_DISPLAY,
     SANDWICH_FREQ_THRESHOLD_VIOLIN,
 )
-from negative_ml.domains import sandwiches
-from negative_ml.runner import metrics_path
 from negative_ml.script_io import (
+    compute_covariate_shift,
     plot_covariate_shift_panels,
     require_artifacts,
     run_script,
     save_figure,
+    save_frame,
 )
 from negative_ml.viz import diagnostics as diag
-from negative_ml.viz import sandwiches as viz
+
+warnings.filterwarnings("ignore", message="invalid value encountered in divide")
 
 DOMAIN = "sandwiches"
 
 
-def generate() -> None:
-    """Compute leakage + diagnostic tables and persist them as CSVs.
-
-    Loads the sandwich dataset in its good-vs-bad classification framing and
-    builds the three evaluation splits. Writes:
-
-    - label_correlation.csv: Pearson / Spearman correlation of each ingredient
-      indicator with the good-sandwich label (leakage smell-test).
-    - covariate_shift.csv: per-feature KS statistics for each split's train/test
-      divide, tagged with a split column.
-    - per_main_rate.csv: good-sandwich rate per Main (protein) ingredient.
-    - feature_corr_pearson.csv: ingredient indicator co-occurrence matrix.
-    """
+def generate_eda() -> None:
+    """Compute leakage + diagnostic tables and persist them as CSVs."""
     raw = sandwiches.read_ratings()
     reg_ds = sandwiches.featurize(raw)
     cds = sandwiches.to_classification(reg_ds)
-    splits = sandwiches.build_splits(cds)
+    splits = sandwich_split.build_splits(cds)
 
     label_corr = diag.label_correlation_table(cds.X, cds.y, cds.feature_names)
-    label_corr.to_csv(metrics_path("label_correlation", DOMAIN), index=False)
-    logger.info(f"  wrote {metrics_path('label_correlation', DOMAIN).name}")
+    save_frame(label_corr, "label_correlation", DOMAIN)
 
-    shift_frames = []
-    for split_name, sp in splits.items():
-        shift_frames.append(
-            diag.covariate_shift_table(
-                sp.train_ds.X, sp.X_test, cds.feature_names
-            ).assign(split=split_name)
-        )
-    shift_df = pd.concat(shift_frames, ignore_index=True)
-    shift_df.to_csv(metrics_path("covariate_shift", DOMAIN), index=False)
-    logger.info(f"  wrote {metrics_path('covariate_shift', DOMAIN).name}")
+    compute_covariate_shift(splits, cds.feature_names, DOMAIN)
 
     per_main = diag.per_group_positive_rate(cds.groups, cds.y)
-    per_main.to_csv(metrics_path("per_main_rate", DOMAIN), index=False)
-    logger.info(f"  wrote {metrics_path('per_main_rate', DOMAIN).name}")
+    save_frame(per_main, "per_main_rate", DOMAIN)
 
     feature_corr = diag.feature_correlation_matrix(cds.X, cds.feature_names)
     feature_corr.to_csv(metrics_path("feature_corr_pearson", DOMAIN))
@@ -91,11 +66,7 @@ def generate() -> None:
 
 
 def make_eda_figures() -> None:
-    """Rating distribution, timeline, season trends, and per-ingredient spreads.
-
-    Re-loads the cleaned ratings frame so these panels are pure views of the raw
-    data and do not depend on any generation artifacts.
-    """
+    """Rating distribution, timeline, season trends, and per-ingredient spreads."""
     logger.info("EDA figures:")
     raw = sandwiches.read_ratings()
     ds = sandwiches.featurize(raw)
@@ -128,7 +99,6 @@ def make_eda_figures() -> None:
             fig, "eda", f"eda_rating_by_{col.lower().replace(' ', '_')}.png", DOMAIN
         )
 
-    # Ingredient frequencies — how often each value appears across all sandwiches.
     frequent_display = sandwiches.ingredient_value_counts(
         frame, SANDWICH_FREQ_THRESHOLD_DISPLAY
     )
@@ -145,17 +115,18 @@ def make_eda_figures() -> None:
 
 
 def make_leakage_figures() -> None:
-    """Leakage smell-test, covariate shift, per-protein rate, and feature heatmap.
-
-    Rebuilds every diagnostic figure from the CSVs written by generate().
-    """
+    """Leakage smell-test, covariate shift, per-protein rate, and feature heatmap."""
     logger.info("Leakage / diagnostic figures:")
     label_corr_path = metrics_path("label_correlation", DOMAIN)
     shift_path = metrics_path("covariate_shift", DOMAIN)
     per_main_path = metrics_path("per_main_rate", DOMAIN)
     corr_path = metrics_path("feature_corr_pearson", DOMAIN)
     require_artifacts(
-        "sandwiches_eda.py", label_corr_path, shift_path, per_main_path, corr_path
+        "sandwich_eda.py",
+        label_corr_path,
+        shift_path,
+        per_main_path,
+        corr_path,
     )
 
     label_corr = pd.read_csv(label_corr_path)
@@ -163,9 +134,6 @@ def make_leakage_figures() -> None:
     per_main = pd.read_csv(per_main_path)
     pearson = pd.read_csv(corr_path, index_col=0)
 
-    # Label correlation: which ingredient indicators associate with good ratings?
-    # Show the top features by |Pearson| so the figure stays legible (the
-    # multi-hot encoding produces many near-zero columns).
     top_n = min(30, len(label_corr))
     top_corr = label_corr.head(top_n)
     fig, ax = plt.subplots(figsize=(max(8, 0.4 * top_n), 4.5))
@@ -176,18 +144,23 @@ def make_leakage_figures() -> None:
     fig.tight_layout()
     save_figure(fig, "leakage", "leakage_label_corr.png", DOMAIN)
 
-    plot_covariate_shift_panels(shift, DOMAIN)
+    plot_covariate_shift_panels(
+        shift, DOMAIN, title_suffix=" (top features)", top_n=SANDWICH_EDA_TOP_FEATURES
+    )
 
-    # Per-Main (protein) good-sandwich rate.
-    fig, ax = plt.subplots(figsize=(max(8, 0.5 * len(per_main)), 4.5))
-    diag.plot_per_group_rate(per_main, ax, label="good sandwich")
-    ax.set_title("Good-sandwich rate by protein (Main ingredient)")
+    # Most Main values are one-off joke proteins used in a single episode; restrict
+    # to the same well-sampled proteins as eda_rating_by_main.png so the bar chart
+    # stays legible instead of drawing one bar per one-off value.
+    per_main_frequent = per_main[per_main["n"] >= SANDWICH_FREQ_THRESHOLD_VIOLIN]
+    fig, ax = plt.subplots(figsize=(max(8, 0.5 * len(per_main_frequent)), 4.5))
+    diag.plot_per_group_rate(per_main_frequent, ax, label="good sandwich")
+    ax.set_title(
+        "Good-sandwich rate by protein "
+        f"(Main ingredient, n>={SANDWICH_FREQ_THRESHOLD_VIOLIN})"
+    )
     fig.tight_layout()
     save_figure(fig, "leakage", "leakage_per_main_rate.png", DOMAIN)
 
-    # Feature correlation heatmap: ingredient indicator co-occurrence.
-    # Restrict to a manageable slice (top features by row-sum absolute correlation
-    # to see the most co-occurring ingredients).
     top_feats = pearson.abs().sum().sort_values(ascending=False).head(20).index.tolist()
     pearson_top = pearson.loc[top_feats, top_feats]
     fig, ax = plt.subplots(figsize=(10, 9))
@@ -198,11 +171,16 @@ def make_leakage_figures() -> None:
     save_figure(fig, "leakage", "leakage_feature_correlation.png", DOMAIN)
 
 
-def plot() -> None:
+def plot_eda() -> None:
     """Rebuild every EDA + leakage figure from raw data and saved artifacts."""
     make_eda_figures()
     make_leakage_figures()
 
 
+def main() -> None:
+    """Parse CLI flags and dispatch generate/plot."""
+    run_script(generate_eda, plot_eda, __doc__)
+
+
 if __name__ == "__main__":
-    run_script(generate, plot, __doc__)
+    main()

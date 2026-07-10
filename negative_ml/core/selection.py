@@ -29,9 +29,15 @@ from negative_ml.core.config import (
 from negative_ml.core.dataset import Dataset
 
 
-# --- shared helpers -------------------------------------------------------
 def majority_indices(dataset: Dataset) -> np.ndarray:
-    """Full-dataset row indices of the majority class."""
+    """Full-dataset row indices of the majority class.
+
+    Args:
+        dataset: Dataset to query.
+
+    Returns:
+        Sorted integer array of majority-class row indices.
+    """
     return np.where(dataset.majority_mask())[0]
 
 
@@ -39,6 +45,12 @@ def standardize(X: np.ndarray) -> np.ndarray:
     """Z-score features so distances are not dominated by raw scale.
 
     Zero-variance columns are left centered (their std is treated as 1).
+
+    Args:
+        X: Feature matrix to standardize, shape (n_samples, n_features).
+
+    Returns:
+        A standardized copy of X with zero mean and unit variance per column.
     """
     X = np.asarray(X, dtype=float)
     mu = X.mean(axis=0)
@@ -71,16 +83,24 @@ def standardized_features(dataset: Dataset) -> np.ndarray:
 
 
 def clamp(budget: int | None, n_available: int) -> int:
-    """Clamp a requested budget to [0, n_available]."""
+    """Clamp a requested budget to [0, n_available].
+
+    Args:
+        budget: Requested number of examples; None means keep all.
+        n_available: Total number of available examples.
+
+    Returns:
+        The clamped budget as an int in [0, n_available].
+    """
     if budget is None:
         return n_available
     return int(min(max(budget, 0), n_available))
 
 
-def _greedy_k_center(Xz: np.ndarray, k: int, start: int) -> np.ndarray:
+def greedy_k_center(Xz: np.ndarray, k: int, start: int) -> np.ndarray:
     """Greedy k-center farthest-point selection on a standardized feature matrix.
 
-    Starting from `start`, repeatedly adds the point farthest from the current
+    Starting from start, repeatedly adds the point farthest from the current
     selection using a vectorized min-distance update.
 
     Args:
@@ -102,9 +122,17 @@ def _greedy_k_center(Xz: np.ndarray, k: int, start: int) -> np.ndarray:
     return selected
 
 
-# --- strategies -----------------------------------------------------------
 def as_is(dataset: Dataset, budget: int | None = None, **_kwargs) -> np.ndarray:
-    """Full-dataset baseline: keep every majority example (ignores budget)."""
+    """Full-dataset baseline: keep every majority example (ignores budget).
+
+    Args:
+        dataset: Dataset whose majority rows to return.
+        budget: Ignored; accepted to match the strategy signature.
+        **_kwargs: Ignored; accepted to match the strategy signature.
+
+    Returns:
+        All majority-class row indices in the dataset.
+    """
     return majority_indices(dataset)
 
 
@@ -114,7 +142,17 @@ def random_undersample(
     seed: int = RANDOM_SEED,
     **_kwargs,
 ) -> np.ndarray:
-    """Uniformly sample budget majority examples - the standard baseline."""
+    """Uniformly sample budget majority examples - the standard baseline.
+
+    Args:
+        dataset: Dataset whose majority rows to sample from.
+        budget: Number of majority examples to keep.
+        seed: Random seed for reproducibility.
+        **_kwargs: Ignored; accepted to match the strategy signature.
+
+    Returns:
+        Sorted integer indices of the sampled majority examples.
+    """
     majority = majority_indices(dataset)
     k = clamp(budget, len(majority))
     rng = np.random.default_rng(seed)
@@ -176,6 +214,15 @@ def diversity_selection(
     Greedy farthest-point (k-center) sampling on standardized features (H3). For
     very large majorities the candidate pool is randomly subsampled to
     DIVERSITY_POOL_CAP first to bound the O(n*budget) cost.
+
+    Args:
+        dataset: Dataset whose majority rows to sub-select.
+        budget: Number of majority examples to keep.
+        seed: Random seed for the candidate-pool subsample and starting point.
+        **_kwargs: Ignored; accepted to match the strategy signature.
+
+    Returns:
+        Sorted integer indices of the selected majority examples.
     """
     majority = majority_indices(dataset)
     k = clamp(budget, len(majority))
@@ -195,7 +242,7 @@ def diversity_selection(
 
     Xz = standardized_features(dataset)[pool]
     start = int(rng.integers(len(pool)))
-    selected = _greedy_k_center(Xz, k, start)
+    selected = greedy_k_center(Xz, k, start)
     return np.sort(pool[selected])
 
 
@@ -210,6 +257,15 @@ def density_aware_diversity(
     Clusters the majority into budget groups (MiniBatchKMeans on standardized
     features) and keeps the point nearest each centroid. Coverage that, unlike
     pure farthest-point, does not over-weight sparse outliers.
+
+    Args:
+        dataset: Dataset whose majority rows to sub-select.
+        budget: Number of majority examples to keep (= number of k-means clusters).
+        seed: Random seed for k-means and the empty-cluster fill.
+        **_kwargs: Ignored; accepted to match the strategy signature.
+
+    Returns:
+        Sorted integer indices of the selected majority examples (one per cluster).
     """
     majority = majority_indices(dataset)
     k = clamp(budget, len(majority))

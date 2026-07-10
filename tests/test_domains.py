@@ -4,9 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from negative_ml.core.config import MORGAN_N_BITS, SANDWICH_GOOD_RATING_THRESHOLD
+from negative_ml.baseball import io as baseball
 from negative_ml.core.dataset import Dataset
-from negative_ml.domains import baseball, molecules, sandwiches
+from negative_ml.molecules import io as molecules
+from negative_ml.molecules.config import MORGAN_N_BITS
+from negative_ml.sandwich import io as sandwiches
+from negative_ml.sandwich.config import SANDWICH_GOOD_RATING_THRESHOLD
 
 
 def test_dataset_validates_shapes():
@@ -268,7 +271,6 @@ def test_prune_rare_features_keeps_well_sampled_columns():
     assert X[:, keep].shape == (3, 2)
 
 
-# --- Molecule (antibacterial screen) featurization ------------------------
 def test_compute_fingerprints_shape_and_invalid_zero_row():
     """Morgan fingerprints are (n, n_bits) uint8; unparseable SMILES are zeros."""
     fps = molecules.compute_fingerprints(["c1ccccc1", "CCO", "not-a-smiles"], n_bits=64)
@@ -301,20 +303,22 @@ def test_load_rdkit_descriptors_imputes_non_finite(tmp_path):
 
 def test_featurize_modes_widths_and_names(tmp_path):
     """Each featurization yields the expected width and feature-name prefix."""
-    features = np.zeros((2, 5))
+    rdkit_names = molecules.get_rdkit_feature_names()
+    n_rdkit = len(rdkit_names)
+    features = np.zeros((2, n_rdkit))
     path = tmp_path / "s.npz"
     np.savez(path, features=features)
     smiles = ["c1ccccc1", "CCO"]
 
     Xr, names_r = molecules.featurize(smiles, path, "rdkit")
-    assert Xr.shape == (2, 5) and names_r[0] == "rdkit_0"
+    assert Xr.shape == (2, n_rdkit) and names_r[0] == rdkit_names[0]
 
     Xm, names_m = molecules.featurize(smiles, path, "morgan")
     assert Xm.shape == (2, MORGAN_N_BITS) and names_m[0] == "morgan_0"
 
     Xb, names_b = molecules.featurize(smiles, path, "both")
-    assert Xb.shape == (2, 5 + MORGAN_N_BITS)
-    assert names_b[0] == "rdkit_0" and names_b[5] == "morgan_0"
+    assert Xb.shape == (2, n_rdkit + MORGAN_N_BITS)
+    assert names_b[0] == rdkit_names[0] and names_b[n_rdkit] == "morgan_0"
 
 
 def test_featurize_rejects_unknown_and_misaligned(tmp_path):

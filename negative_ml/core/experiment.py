@@ -15,21 +15,16 @@ build the default split, preserving their original behavior.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
 from scipy.special import expit
 
 from negative_ml.core import eval as ev
-from negative_ml.core.config import OUTLIER_BALLPARKS, RANDOM_SEED
+from negative_ml.core.config import RANDOM_SEED
 from negative_ml.core.dataset import Dataset
-from negative_ml.core.splitting import (
-    ballpark_split,
-    random_split,
-    scaffold_split,
-    season_split,
-)
+from negative_ml.core.splitting import random_split, scaffold_split
 
 #: A model factory: (**kwargs) -> unfitted estimator (see models.make_model).
 #: Accepting kwargs lets callers pass e.g. class_weight for the H4 baseline.
@@ -60,7 +55,16 @@ def make_split(
     scaffold: bool = False,
     seed: int = RANDOM_SEED,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Train/test split, scaffold/grouped when requested and available."""
+    """Train/test split, scaffold/grouped when requested and available.
+
+    Args:
+        dataset: Dataset to split.
+        scaffold: Use a scaffold/grouped split when True (requires dataset.groups).
+        seed: Random seed for the split.
+
+    Returns:
+        (train_idx, test_idx) integer index arrays.
+    """
     if scaffold:
         return scaffold_split(dataset, seed=seed)
     return random_split(dataset, seed=seed)
@@ -76,69 +80,17 @@ def split_from_dataset(
 
     This is the default regime: a stratified random (or scaffold) split where the
     train pool and test set come from the same dataset.
+
+    Args:
+        dataset: Dataset to split.
+        scaffold: Use a scaffold/grouped split when True.
+        seed: Random seed for the split.
+        name: Split-regime label carried into result frames.
+
+    Returns:
+        An EvalSplit built from train and test halves of dataset.
     """
     train_idx, test_idx = make_split(dataset, scaffold=scaffold, seed=seed)
-    return EvalSplit(
-        train_ds=dataset.subset(train_idx),
-        X_test=dataset.X[test_idx],
-        y_test=dataset.y[test_idx],
-        name=name,
-    )
-
-
-def park_split_from_dataset(
-    dataset: Dataset,
-    test_parks: Sequence[str] = OUTLIER_BALLPARKS,
-    name: str = "park",
-) -> EvalSplit:
-    """Build an EvalSplit that holds entire ballparks out of training.
-
-    Wraps ballpark_split into an EvalSplit (parallel to split_from_dataset). The
-    train pool and test set come from the same season, so this isolates a
-    park-factor distribution shift from the season shift of cross_dataset_split.
-
-    Args:
-        dataset: Dataset whose groups hold the per-row ballpark identifier.
-        test_parks: Ballpark identifiers (home_team codes) to hold out for test.
-        name: Split-regime label carried into result frames.
-
-    Returns:
-        An EvalSplit whose train pool excludes the held-out parks.
-    """
-    train_idx, test_idx = ballpark_split(dataset, test_parks=test_parks)
-    return EvalSplit(
-        train_ds=dataset.subset(train_idx),
-        X_test=dataset.X[test_idx],
-        y_test=dataset.y[test_idx],
-        name=name,
-    )
-
-
-def season_split_from_dataset(
-    dataset: Dataset,
-    test_season: str,
-    season_col: str = "Season",
-    name: str = "season",
-) -> EvalSplit:
-    """Build an EvalSplit that holds one entire season out of training.
-
-    Wraps season_split into an EvalSplit (parallel to park_split_from_dataset): the
-    train pool is every other season and the test set is the held-out season, so
-    this isolates a season distribution shift the way the scaffold split isolates a
-    held-out filling family. The per-row season labels are read from the dataset's
-    own meta (they live there rather than in groups, which carries the scaffold
-    family), so the split stays aligned with the dataset and needs no side array.
-
-    Args:
-        dataset: Dataset whose meta carries the per-row season column.
-        test_season: The season value to hold out for testing.
-        season_col: Name of the meta column holding each row's season.
-        name: Split-regime label carried into result frames.
-
-    Returns:
-        An EvalSplit whose train pool excludes the held-out season.
-    """
-    train_idx, test_idx = season_split(dataset, test_season, season_col)
     return EvalSplit(
         train_ds=dataset.subset(train_idx),
         X_test=dataset.X[test_idx],
@@ -157,6 +109,14 @@ def cross_dataset_split(
     The cross-season ("hard") regime: e.g. train_dataset is the full 2023 season
     and test_dataset the full 2024 season, so the model is scored under genuine
     distribution shift rather than an in-distribution random holdout.
+
+    Args:
+        train_dataset: Dataset used entirely for training.
+        test_dataset: Dataset used entirely for evaluation.
+        name: Split-regime label carried into result frames.
+
+    Returns:
+        An EvalSplit with train_dataset as the pool and test_dataset as the test set.
     """
     return EvalSplit(
         train_ds=train_dataset,
@@ -176,6 +136,15 @@ def resolve_split(
 
     Lets every runner accept an optional pre-built split while keeping their
     original dataset + scaffold + seed behavior when none is supplied.
+
+    Args:
+        dataset: Dataset to split when split is None.
+        split: Pre-built EvalSplit to return as-is; when None a new split is built.
+        scaffold: Use a scaffold/grouped split when building a new split.
+        seed: Random seed forwarded when building a new split.
+
+    Returns:
+        The provided split, or a freshly built in-dataset split.
     """
     if split is not None:
         return split

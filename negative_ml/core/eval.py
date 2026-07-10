@@ -46,28 +46,60 @@ def compute_metrics(
     }
 
 
-# --- A) Global discrimination --------------------------------------------
 def auroc(y_true: np.ndarray, y_score: np.ndarray) -> float:
-    """Area under the ROC curve."""
+    """Area under the ROC curve.
+
+    Args:
+        y_true: Ground-truth binary labels.
+        y_score: Model scores for the positive class.
+
+    Returns:
+        AUROC value in [0, 1].
+    """
     return float(roc_auc_score(y_true, y_score))
 
 
 def auprc(y_true: np.ndarray, y_score: np.ndarray) -> float:
-    """Area under the precision-recall curve (average precision)."""
+    """Area under the precision-recall curve (average precision).
+
+    Args:
+        y_true: Ground-truth binary labels.
+        y_score: Model scores for the positive class.
+
+    Returns:
+        AUPRC value in [0, 1].
+    """
     return float(average_precision_score(y_true, y_score))
 
 
 def f1_at_threshold(
     y_true: np.ndarray, y_score: np.ndarray, threshold: float = DEFAULT_THRESHOLD
 ) -> float:
-    """F1 score after thresholding scores into hard labels."""
+    """F1 score after thresholding scores into hard labels.
+
+    Args:
+        y_true: Ground-truth binary labels.
+        y_score: Model scores for the positive class.
+        threshold: Score cutoff above which a prediction is treated as positive.
+
+    Returns:
+        F1 score in [0, 1].
+    """
     y_pred = (np.asarray(y_score) >= threshold).astype(int)
     return float(f1_score(y_true, y_pred, zero_division=0))
 
 
-# --- B) Early retrieval / top-k ------------------------------------------
 def precision_at_k(y_true: np.ndarray, y_score: np.ndarray, k: int) -> float:
-    """Fraction of the top-k highest-scored items that are true positives."""
+    """Fraction of the top-k highest-scored items that are true positives.
+
+    Args:
+        y_true: Ground-truth binary labels.
+        y_score: Model scores for the positive class.
+        k: Number of top-scored items to consider.
+
+    Returns:
+        Precision@k value in [0, 1].
+    """
     y_true = np.asarray(y_true)
     k = min(k, len(y_true))
     if k <= 0:
@@ -77,7 +109,16 @@ def precision_at_k(y_true: np.ndarray, y_score: np.ndarray, k: int) -> float:
 
 
 def enrichment_factor(y_true: np.ndarray, y_score: np.ndarray, k: int) -> float:
-    """Top-k hit rate relative to the dataset-wide positive rate."""
+    """Top-k hit rate relative to the dataset-wide positive rate.
+
+    Args:
+        y_true: Ground-truth binary labels.
+        y_score: Model scores for the positive class.
+        k: Number of top-scored items to consider.
+
+    Returns:
+        Enrichment factor (precision@k / base rate); 0.0 when base rate is zero.
+    """
     y_true = np.asarray(y_true)
     base_rate = float(np.mean(y_true))
     if base_rate == 0.0:

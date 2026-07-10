@@ -1,47 +1,23 @@
-"""Roll-for-Sandwich ratings domain — skewed regression (plan.md 3.3).
+"""Roll-for-Sandwich ratings domain — I/O, featurization, and constants.
 
-Ingredient combinations (bread, main, cheese, roughage, wild magic, sauce) each
-carry a human rating from 0-10. Ratings are skewed high (~50% above 7) while low
-scores are rare (~11% below 3), so this reframes the central question in a
-regression setting where the "negative" examples are the low-rated sandwiches.
-Combinations are multi-hot encoded (one indicator per ingredient value) so that
-one-ingredient "matched pairs" can be constructed for evaluation.
-
-The source workbook (RFS Sandwiches.xlsx) has one sheet per season. Each sheet
-carries the six ingredient columns, a Rating like "6.5/10", the dice columns used
-to roll the sandwich (ignored here), and a per-season episode-number column named
-after the season ("S1" on the Season 1 sheet, "S2" on Season 2, and so on). The
-six season columns are melted into a single (Season, Episode) pair, mirroring the
-reference notebook: every sandwich row gets one melted copy per season column and
-the four that do not match its season fall out as nulls in the dropna. Only the
-first five seasons are read (the workbook has a sixth that the reference ignores).
-
-The Main (protein / filling) column is retained as Dataset.groups so a
-scaffold-style split can hold an entire filling family out of training, the
-regression analogue of the molecule scaffold split and the baseball ballpark
-split.
+See negative_ml.sandwich for the full domain description.
 """
 
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from negative_ml.core.config import (
-    RAW_DATA_DIR,
-    SANDWICH_GOOD_RATING_THRESHOLD,
-    SANDWICH_TEST_SEASON,
-)
+from negative_ml.core.config import RAW_DATA_DIR
 from negative_ml.core.dataset import Dataset
-from negative_ml.core.experiment import (
-    EvalSplit,
-    season_split_from_dataset,
-    split_from_dataset,
+from negative_ml.sandwich.config import (
+    SANDWICH_GOOD_RATING_THRESHOLD,
+    SANDWICH_MIN_INGREDIENT_COUNT,
 )
-from negative_ml.core.splitting import random_split, scaffold_split, season_split
 
 #: Source workbook, read from data/raw by default (see RAW_DATA_DIR).
 SANDWICH_FILENAME = "RFS Sandwiches.xlsx"
@@ -73,7 +49,14 @@ GROUP_COLUMN = "Main"
 #: Column added by clean_ratings holding the numeric 0-10 rating.
 CLEAN_RATING_COL = "Clean_Rating"
 
+#: Ingredient values that mark unrecorded data (one or more dashes, e.g. "--"
+#: for Cheese or "-" for Wild Magic), not an explicit choice like "No cheese"
+#: or "None!". ingredient_value_counts excludes these so a well-sampled value
+#: list never contains a category left blank rather than actually filled in.
+PLACEHOLDER_VALUE_RE = re.compile(r"^-+$")
 
+
+@lru_cache(maxsize=None)
 def read_ratings(path: str | Path | None = None) -> pd.DataFrame:
     """Read and reshape the raw ratings workbook into a long frame.
 
@@ -81,7 +64,10 @@ def read_ratings(path: str | Path | None = None) -> pd.DataFrame:
     first NUM_SEASONS season sheets, harmonizes the Season 1 "Other / Wild Magic"
     header to "Wild Magic", concatenates them, drops the dice / date / name
     columns by keeping only the ingredient, rating, and season columns, and melts
-    the per-season episode columns into a single (Season, Episode) pair.
+    the per-season episode columns into a single (Season, Episode) pair. The
+    result is memoized per path: a single script run asks for the ratings
+    several times (across EDA, classifier, and downselection figures), and each
+    call would otherwise re-read all five workbook sheets from scratch.
 
     Args:
         path: Path to the workbook. Defaults to RAW_DATA_DIR / SANDWICH_FILENAME.
@@ -94,7 +80,7 @@ def read_ratings(path: str | Path | None = None) -> pd.DataFrame:
     if path is None:
         path = RAW_DATA_DIR / SANDWICH_FILENAME
 
-    frame = pd.DataFrame()
+    sheets = []
     for season in range(NUM_SEASONS):
         sheet = pd.read_excel(path, sheet_name=f"Season {season + 1}")
         # Season 1 labels the column "Other / Wild Magic"; later seasons use the
@@ -102,7 +88,8 @@ def read_ratings(path: str | Path | None = None) -> pd.DataFrame:
         # up across sheets.
         if "Wild Magic" not in sheet.columns:
             sheet = sheet.rename(columns={"Other / Wild Magic": "Wild Magic"})
-        frame = pd.concat([frame, sheet], ignore_index=True)
+        sheets.append(sheet)
+    frame = pd.concat(sheets, ignore_index=True)
 
     keep = INGREDIENT_COLS + [RATING_COL] + SEASON_COLS
     return frame[keep].melt(
@@ -131,7 +118,14 @@ def normalize_ratings(frame: pd.DataFrame) -> pd.DataFrame:
     bare_number = re.compile(r"^\d+(\.\d+)?$")
 
     def repair(value: object) -> object:
-        """Strip whitespace and append /10 to a bare numeric rating."""
+        """Strip whitespace and append /10 to a bare numeric rating.
+
+        Args:
+            value: Raw rating cell value (may be str, float, or other).
+
+        Returns:
+            The repaired string, or the original value stringified if not repairable.
+        """
         text = str(value).replace(" ", "")
         if bare_number.match(text):
             text = f"{text}/10"
@@ -250,19 +244,24 @@ def ingredient_value_counts(
 
     The reference notebook's "interesting_items": restricts each ingredient
     column to its well-sampled values so the EDA panels and the deli search are
-    not dominated by one-off ingredients.
+    not dominated by one-off ingredients. Placeholder values that mark
+    unrecorded data (see PLACEHOLDER_VALUE_RE) are excluded even if they clear
+    the threshold, since they are not a real ingredient a candidate sandwich
+    could actually be built with.
 
     Args:
         frame: A cleaned frame with the six INGREDIENT_COLS.
         threshold: Minimum number of occurrences for a value to be kept.
 
     Returns:
-        Mapping of ingredient column to the list of values meeting the threshold.
+        Mapping of ingredient column to the list of values meeting the
+        threshold, excluding unrecorded-data placeholders.
     """
     frequent: dict[str, list[str]] = {}
     for col in INGREDIENT_COLS:
         counts = frame[col].value_counts()
-        frequent[col] = counts[counts >= threshold].index.tolist()
+        values = counts[counts >= threshold].index
+        frequent[col] = [v for v in values if not PLACEHOLDER_VALUE_RE.match(v)]
     return frequent
 
 
@@ -270,9 +269,11 @@ def featurize(frame: pd.DataFrame) -> Dataset:
     """Turn a raw long ratings frame into a featurized regression Dataset.
 
     Pure and offline-testable (parallel to baseball.featurize): cleans the frame,
-    multi-hot encodes the ingredients, and packages the 0-10 rating as the
-    regression target. The raw ingredient columns plus Season / Episode / Rating /
-    Clean_Rating are retained in meta for the EDA and matched-pair construction.
+    multi-hot encodes the ingredients, prunes ingredient-value columns seen in
+    fewer than SANDWICH_MIN_INGREDIENT_COUNT sandwiches (see prune_rare_features),
+    and packages the 0-10 rating as the regression target. The raw ingredient
+    columns plus Season / Episode / Rating / Clean_Rating are retained in meta for
+    the EDA and matched-pair construction.
 
     Args:
         frame: The long frame from read_ratings.
@@ -284,6 +285,9 @@ def featurize(frame: pd.DataFrame) -> Dataset:
     """
     cleaned = clean_ratings(frame)
     X, feature_names = encode_ingredients(cleaned)
+    keep = prune_rare_features(X, min_count=SANDWICH_MIN_INGREDIENT_COUNT)
+    X = X[:, keep]
+    feature_names = [name for name, k in zip(feature_names, keep) if k]
     meta = cleaned[
         INGREDIENT_COLS + [RATING_COL, "Season", "Episode", CLEAN_RATING_COL]
     ].reset_index(drop=True)
@@ -341,88 +345,3 @@ def to_classification(
         groups=dataset.groups,
         meta=dataset.meta,
     )
-
-
-def build_splits(cds: Dataset) -> dict[str, EvalSplit]:
-    """The three sandwich evaluation regimes keyed by name.
-
-    random is a stratified holdout within the menu; scaffold holds entire filling
-    families (the Main ingredient, carried in cds.groups) out of training; season
-    holds one entire season (SANDWICH_TEST_SEASON, read from cds.meta) out of
-    training, a chronological-style shift to an unseen season. Shared by the
-    sandwich scripts so the regimes are defined once.
-
-    Args:
-        cds: The good-vs-bad classification Dataset (see to_classification).
-
-    Returns:
-        Mapping of split name to its EvalSplit.
-    """
-    return {
-        "random": split_from_dataset(cds, name="random"),
-        "scaffold": split_from_dataset(cds, scaffold=True, name="scaffold"),
-        "season": season_split_from_dataset(
-            cds, test_season=SANDWICH_TEST_SEASON, name="season"
-        ),
-    }
-
-
-def build_regression_splits(
-    reg_ds: Dataset,
-    threshold: float = SANDWICH_GOOD_RATING_THRESHOLD,
-) -> dict[str, EvalSplit]:
-    """The three sandwich evaluation regimes for a regression model.
-
-    Produces EvalSplits where the training Dataset carries continuous 0-10
-    ratings as y (so an XGBRegressor trains on the real rating signal) while
-    the held-out test labels are binarized at threshold for metric computation.
-    The label_y attribute on each train_ds is set to the corresponding binary
-    labels so that minority_mask / majority_mask work correctly for the
-    selection and saturation experiment runners without needing a threshold
-    argument.
-
-    Split indices are derived from the classification version of reg_ds so the
-    stratified random split and the grouped scaffold split are seeded with the
-    same binary label information as build_splits.
-
-    Args:
-        reg_ds: The sandwich regression Dataset (see load), whose y holds
-            continuous 0-10 ratings and whose meta carries season information.
-        threshold: Rating at or above which a sandwich is the good (positive)
-            minority class. Defaults to SANDWICH_GOOD_RATING_THRESHOLD.
-
-    Returns:
-        Mapping of split name to an EvalSplit whose train_ds.y is continuous
-        and whose y_test is binary.
-    """
-    cds = to_classification(reg_ds, threshold)
-    binary_y = cds.y
-
-    rand_train, rand_test = random_split(cds)
-    scaf_train, scaf_test = scaffold_split(cds)
-    seas_train, seas_test = season_split(cds, SANDWICH_TEST_SEASON)
-
-    def make(train_idx: np.ndarray, test_idx: np.ndarray, name: str) -> EvalSplit:
-        """Build one EvalSplit from raw index arrays."""
-        reg_train_ds = reg_ds.subset(train_idx)
-        reg_train_ds = Dataset(
-            X=reg_train_ds.X,
-            y=reg_train_ds.y,
-            task="regression",
-            feature_names=reg_train_ds.feature_names,
-            groups=reg_train_ds.groups,
-            meta=reg_train_ds.meta,
-            label_y=binary_y[train_idx],
-        )
-        return EvalSplit(
-            train_ds=reg_train_ds,
-            X_test=reg_ds.X[test_idx],
-            y_test=binary_y[test_idx],
-            name=name,
-        )
-
-    return {
-        "random": make(rand_train, rand_test, "random"),
-        "scaffold": make(scaf_train, scaf_test, "scaffold"),
-        "season": make(seas_train, seas_test, "season"),
-    }

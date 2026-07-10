@@ -47,7 +47,16 @@ def resolve_class_weight(
         An sklearn-ready class_weight (dict, "balanced", or None).
     """
     if isinstance(class_weight, bool):
-        return class_weight
+        # bool is an int subclass, so this must be checked before the
+        # numeric branch below; a bool is neither a valid up-weight ratio nor
+        # a valid sklearn class_weight, so fail loudly here instead of
+        # silently forwarding True/False and deferring an sklearn error to a
+        # confusing point at .fit() time.
+        raise TypeError(
+            f"class_weight must not be a bool; got {class_weight!r}. Pass a "
+            "numeric up-weight ratio, an sklearn class_weight dict, "
+            "'balanced', or None."
+        )
     if isinstance(class_weight, (int, float)):
         return {0: 1.0, 1: float(class_weight)}
     return class_weight
@@ -106,7 +115,14 @@ def logistic_classifier(
 
 
 def ridge_regressor(**params: Any) -> Ridge:
-    """Build a ridge regressor for the latent-rating sandwich classifier."""
+    """Build a ridge regressor for the latent-rating sandwich classifier.
+
+    Args:
+        **params: Additional Ridge hyper-parameters (e.g. alpha).
+
+    Returns:
+        A configured Ridge regressor instance.
+    """
     kwargs: dict[str, Any] = {"random_state": RANDOM_SEED, **params}
     return Ridge(**kwargs)
 

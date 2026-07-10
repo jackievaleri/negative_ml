@@ -34,8 +34,8 @@ NEG_COMP_LINES: dict[str, str] = {
 
 #: Human-readable labels for the acquisition strategies.
 ACQUISITION_LABELS: dict[str, str] = {
-    "uncertainty": "Uncertainty (margin)",
-    "diversity_uncertainty": "Diversity-uncertainty",
+    "ucb": "UCB",
+    "gp_ei": "GP + EI",
     "random": "Random",
 }
 

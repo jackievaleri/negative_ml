@@ -1,34 +1,6 @@
-"""MLB batted-ball outcomes domain — intuitive geometry (plan.md 3.2).
+"""MLB batted-ball outcomes domain — I/O, featurization, and constants.
 
-The core features are exit velocity, launch angle, and an adjusted (pull-positive)
-spray angle, extended with pitch context (plate location, release speed, release
-spin rate) and a coarse pitch-class indicator (fastball / breaking / offspeed);
-the task is to predict a rare batted-ball outcome. The default minority target is
-the home run — it occupies a small, well-defined region of the exit-velocity /
-launch-angle plane (high exit velocity, ~12-50 deg launch angle), which makes
-"near-miss" majority examples (balls that just miss being home runs) a natural
-selection target. The target can instead be any hit type; triple is a
-deliberately harder, more imbalanced minority (rarer than home runs, and
-geometrically diffuse rather than a tight high-exit-velocity cluster).
-
-Two groups of available Statcast columns are deliberately left out of the feature
-matrix. hit_distance_sc, estimated_ba_using_speedangle,
-estimated_woba_using_speedangle, and launch_speed_angle (the barrel class) are
-measured or modeled consequences of the outcome itself, so they would leak the
-label. bat_speed and swing_length (bat tracking) are ~58% missing in 2023 and
-would break the NaN-intolerant distance and clustering used by the selection
-strategies; they can be added if the study moves to a 2024+ training season.
-
-The batter's home team is retained as Dataset.groups so a ballpark-based split can
-hold entire (quirky) parks out of training — a harder, park-factor distribution
-shift than the chronological cross-season split.
-
-Data is pulled with pybaseball one MLB season at a time — see SEASONS and
-load_season. For the binary framing used
-throughout the imbalance study, the chosen target is the minority class
-(y == 1) and every other batted ball is the majority class; the full
-multiclass outcome (out / single / double / triple / home_run) is retained in
-meta.
+See negative_ml.baseball for the full domain description.
 """
 
 from __future__ import annotations
@@ -42,12 +14,6 @@ from pybaseball import statcast
 
 from negative_ml.core.config import RAW_DATA_DIR
 from negative_ml.core.dataset import Dataset
-from negative_ml.core.experiment import (
-    EvalSplit,
-    cross_dataset_split,
-    park_split_from_dataset,
-    split_from_dataset,
-)
 
 # Default Statcast pull: the full 2024 MLB regular season.
 DEFAULT_START = "2024-03-20"
@@ -180,29 +146,6 @@ def load_season(year: int, target: str = "home_run", binary: bool = True) -> Dat
     return load(binary=binary, start=start, end=end, target=target)
 
 
-def build_splits(ds_train: Dataset, ds_test: Dataset) -> dict[str, EvalSplit]:
-    """The three baseball evaluation regimes keyed by name.
-
-    random is a stratified holdout within the training season; hard trains on the
-    full training season and tests on the full held-out season (a chronological
-    cross-season shift); park holds the quirky outlier ballparks (carried in
-    ds_train.groups) entirely out of training (a park-factor shift). Shared by
-    every baseball script so the regimes are defined once.
-
-    Args:
-        ds_train: The training-season Dataset (its groups hold the ballpark).
-        ds_test: The held-out-season Dataset used for the hard split.
-
-    Returns:
-        Mapping of split name to its EvalSplit.
-    """
-    return {
-        "random": split_from_dataset(ds_train, name="random"),
-        "hard": cross_dataset_split(ds_train, ds_test, name="hard"),
-        "park": park_split_from_dataset(ds_train, name="park"),
-    }
-
-
 def fetch_statcast(start: str, end: str) -> pd.DataFrame:
     """Fetch and cache Statcast batted-ball events for a date range.
 
@@ -228,7 +171,14 @@ def fetch_statcast(start: str, end: str) -> pd.DataFrame:
 
 
 def read_cached(path: Path) -> pd.DataFrame:
-    """Read a cached events frame (parquet or CSV) by file extension."""
+    """Read a cached events frame (parquet or CSV) by file extension.
+
+    Args:
+        path: Path to a .parquet or .csv events file.
+
+    Returns:
+        The events DataFrame loaded from disk.
+    """
     if path.suffix == ".parquet":
         return pd.read_parquet(path)
     return pd.read_csv(path)
@@ -244,6 +194,14 @@ def adjusted_spray_angle(
     hand so that, for every batter, positive means pulled and negative means
     opposite field — right-handers pull to left field (raw < 0) and left-handers
     pull to right field (raw > 0), so the sign is flipped only for right-handers.
+
+    Args:
+        hc_x: Statcast hit-coordinate x values (home-plate origin).
+        hc_y: Statcast hit-coordinate y values (home-plate origin).
+        stand: Batter handedness per row ("L" or "R").
+
+    Returns:
+        Pull-positive spray angle in degrees, shape (n,).
     """
     raw = np.degrees(np.arctan2(hc_x - _HC_X_ORIGIN, _HC_Y_ORIGIN - hc_y))
     handed = np.where(np.asarray(stand) == "L", 1.0, -1.0)
@@ -251,7 +209,14 @@ def adjusted_spray_angle(
 
 
 def outcome_label(events: pd.Series) -> pd.Series:
-    """Map raw Statcast events to the 5-class outcome (out is the default)."""
+    """Map raw Statcast events to the 5-class outcome (out is the default).
+
+    Args:
+        events: Raw Statcast "events" column, one value per batted ball.
+
+    Returns:
+        Series of outcome strings (single / double / triple / home_run / out).
+    """
     return events.map(_HIT_EVENTS).fillna("out")
 
 
@@ -357,7 +322,12 @@ def featurize(
     return Dataset(
         X=X,
         y=y,
-        task="classification",
+        # A 5-class integer-coded y (binary=False) is neither the binary
+        # {0, 1} minority label "classification" implies nor a continuous
+        # "regression" target; labeling it "multiclass" keeps minority_mask /
+        # majority_mask from silently mistaking one outcome class for the
+        # minority instead of failing loudly.
+        task="classification" if binary else "multiclass",
         feature_names=list(_FEATURE_NAMES),
         groups=df["home_team"].to_numpy(),
         meta=meta,

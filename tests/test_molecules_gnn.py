@@ -7,9 +7,9 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
 
-from negative_ml.core.config import MOLECULE_GNN_N_POSITIVES
-from negative_ml.domains import molecules
-from negative_ml.viz import molecules as mviz
+from negative_ml.molecules import io as molecules
+from negative_ml.molecules import viz as mviz
+from negative_ml.molecules.config import MOLECULE_GNN_N_POSITIVES
 
 
 def raw_frame(with_total: bool) -> pd.DataFrame:

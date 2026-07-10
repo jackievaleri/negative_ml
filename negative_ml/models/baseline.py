@@ -37,7 +37,15 @@ class CorrelationModel:
         self.feature_index = int(feature_index)
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "CorrelationModel":
-        """Store the feature's correlation sign and its signed training moments."""
+        """Store the feature's correlation sign and its signed training moments.
+
+        Args:
+            X: Feature matrix; only the column at feature_index is used.
+            y: Binary label aligned with X rows.
+
+        Returns:
+            Self (fitted in place).
+        """
         col = np.asarray(X, dtype=float)[:, self.feature_index]
         y = np.asarray(y, dtype=float)
         if col.std() == 0 or y.std() == 0:
@@ -62,7 +70,30 @@ class CorrelationModel:
         out-of-range values to a tied 0.0 or 1.0 and distort the ranking under
         distribution shift. A constant training feature (zero std) maps every row
         to 0.5.
+
+        Args:
+            X: Feature matrix to score; only the column at feature_index is used.
+
+        Returns:
+            Array of shape (n_samples, 2) with [P(negative), P(positive)] per row.
         """
         signed = self.sign_ * np.asarray(X, dtype=float)[:, self.feature_index]
         p1 = expit((signed - self.mean_) / self.scale_)
         return np.column_stack([1.0 - p1, p1])
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Return the hard 0/1 classification decision for each row.
+
+        Thresholds the positive-class probability from predict_proba at 0.5,
+        matching the sklearn classifier convention of a discrete class label so
+        CorrelationModel satisfies the same Estimator surface as every other
+        model make_model can return.
+
+        Args:
+            X: Feature matrix to predict on; only the column at feature_index
+                is used.
+
+        Returns:
+            Array of shape (n_samples,) with 0/1 class predictions.
+        """
+        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)

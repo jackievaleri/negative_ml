@@ -15,12 +15,12 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from loguru import logger
 
+from negative_ml.core import saturation as sat
+from negative_ml.core import sweep as sel
 from negative_ml.core.config import REPO_ROOT
-from negative_ml.experiments import saturation as sat
-from negative_ml.experiments import selection as sel
 from negative_ml.runner import figure_path, metrics_path
 from negative_ml.viz import diagnostics as diag
-from negative_ml.viz import results as viz
+from negative_ml.viz import selection_results as viz
 from negative_ml.viz.style import DARK2, save_fig
 
 
@@ -126,6 +126,35 @@ def read_result_frames(
     return tuple(pd.read_csv(p) for p in paths.values())
 
 
+def compute_covariate_shift(
+    splits: dict, feature_names: Sequence[str], domain: str
+) -> pd.DataFrame:
+    """Per-split covariate-shift table, concatenated, saved, and returned.
+
+    Every domain EDA script needs the same three steps before it can plot or
+    tabulate shift: run diag.covariate_shift_table for each split, tag each
+    block with its split name, and concatenate. Centralizing that here (as
+    with plot_covariate_shift_panels below) avoids repeating it per domain.
+
+    Args:
+        splits: {split_name: EvalSplit} dict (e.g. from a domain's build_splits()).
+        feature_names: Column names aligned with each split's feature matrices.
+        domain: Domain name for metrics-path routing.
+
+    Returns:
+        The concatenated covariate-shift frame with a 'split' column.
+    """
+    frames = [
+        diag.covariate_shift_table(sp.train_ds.X, sp.X_test, feature_names).assign(
+            split=split_name
+        )
+        for split_name, sp in splits.items()
+    ]
+    shift_df = pd.concat(frames, ignore_index=True)
+    save_frame(shift_df, "covariate_shift", domain)
+    return shift_df
+
+
 def plot_covariate_shift_panels(
     shift: pd.DataFrame,
     domain: str,
@@ -213,6 +242,41 @@ def run_script(
         generate()
     if not args.generate_only:
         plot()
+
+
+def run_sectioned_script(
+    doc: str,
+    default: tuple[Callable[[], None], Callable[[], None]],
+    sections: dict[str, tuple[Callable[[], None], Callable[[], None]]],
+) -> None:
+    """Parse --plot-only / --generate-only / --section flags and dispatch.
+
+    Shared CLI scaffold for the reproducible scripts that support running
+    everything or a single named section (e.g. "eda", "down"): each domain
+    script implemented this identically before being unified here.
+
+    Args:
+        doc: Module docstring to pass as the argparse description.
+        default: (generate, plot) pair run when --section is omitted.
+        sections: {name: (generate, plot)} pairs selectable via --section.
+    """
+    parser = argparse.ArgumentParser(description=doc)
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--plot-only", action="store_true")
+    group.add_argument("--generate-only", action="store_true")
+    parser.add_argument(
+        "--section",
+        choices=list(sections),
+        default=None,
+        help="Run only this section (default: everything).",
+    )
+    args = parser.parse_args()
+
+    gen_fn, plot_fn = sections.get(args.section, default)
+    if not args.plot_only:
+        gen_fn()
+    if not args.generate_only:
+        plot_fn()
 
 
 def run_downselection_sweeps(

@@ -23,11 +23,27 @@ class Estimator(Protocol):
     """Minimal sklearn-style estimator contract used by the experiments."""
 
     def fit(self, X: Any, y: Any, **kwargs: Any) -> "Estimator":
-        """Fit the estimator to features X and targets y."""
+        """Fit the estimator to features X and targets y.
+
+        Args:
+            X: Feature matrix.
+            y: Target array aligned with X.
+            **kwargs: Additional keyword arguments forwarded to the estimator.
+
+        Returns:
+            The fitted estimator (self).
+        """
         ...
 
     def predict(self, X: Any) -> Any:
-        """Return predictions for features X."""
+        """Return predictions for features X.
+
+        Args:
+            X: Feature matrix to predict on.
+
+        Returns:
+            Predicted values aligned with X.
+        """
         ...
 
 
@@ -69,7 +85,11 @@ def make_model(
     if kind == "ridge":
         if task == "classification":
             return ridge_classifier(class_weight=class_weight, **params)
-        return ridge_regressor(**params)
+        if task == "regression":
+            return ridge_regressor(**params)
+        raise ValueError(
+            f"Unknown task {task!r}; expected 'classification' or 'regression'."
+        )
     if kind != "xgboost":
         raise ValueError(
             f"Unsupported model kind {kind!r}; expected 'xgboost', 'logistic', "
@@ -96,10 +116,23 @@ def model_factory(task: str) -> Callable[..., Estimator]:
     The experiment runners expect a callable that accepts keyword overrides
     (e.g. class_weight) and returns an unfitted estimator; this binds the task
     so callers do not repeat the make_model wiring.
+
+    Args:
+        task: "classification" or "regression" — forwarded to make_model.
+
+    Returns:
+        A callable (**kwargs) -> Estimator that builds a fresh model on each call.
     """
 
     def build(**params: Any) -> Estimator:
-        """Build a fresh estimator for the bound task, forwarding overrides."""
+        """Build a fresh estimator for the bound task, forwarding overrides.
+
+        Args:
+            **params: Hyper-parameters forwarded to make_model (e.g. class_weight).
+
+        Returns:
+            An unfitted estimator for the bound task.
+        """
         return make_model(task, **params)
 
     return build

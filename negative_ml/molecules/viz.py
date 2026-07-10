@@ -15,7 +15,7 @@ negatives resemble the actives.
 As with the rest of negative_ml.viz, every function draws onto a caller-supplied
 Axes so the same code backs both the reproducible script and the notebooks. Colors,
 markers, and axis styling come from negative_ml.viz.style; the seed-averaging and
-metric labels are reused from negative_ml.viz.results.
+metric labels are reused from negative_ml.viz.selection_results.
 """
 
 from __future__ import annotations
@@ -25,15 +25,16 @@ import pandas as pd
 from matplotlib.lines import Line2D
 from matplotlib.ticker import FixedLocator, ScalarFormatter
 
-from negative_ml.viz.results import METRIC_LABELS, aggregate
+from negative_ml.viz.selection_results import METRIC_LABELS, aggregate
 from negative_ml.viz.style import DARK2, INK, style_axes
 
 #: Stable color + marker + label per selection strategy, so a method looks the
 #: same across every panel. The three strategies reuse the repo's existing Dark2
-#: assignments from negative_ml.viz.results.STRATEGY_STYLE: random keeps its teal
-#: circle; diverse (a diversity strategy) keeps the diversity purple triangle; and
-#: similar (negatives drawn from near the actives) takes the near-miss "hard"
-#: orange square, since it is the same near-the-boundary idea.
+#: assignments from negative_ml.viz.selection_results.STRATEGY_STYLE: random
+#: keeps its teal circle; diverse (a diversity strategy) keeps the diversity
+#: purple triangle; and similar (negatives drawn from near the actives) takes
+#: the near-miss "hard" orange square, since it is the same near-the-boundary
+#: idea.
 SELECTION_STYLE = {
     "random": {"color": DARK2[0], "marker": "o", "label": "random"},
     "diverse": {"color": DARK2[2], "marker": "^", "label": "diverse"},

@@ -81,7 +81,10 @@ tests = [
 ]
 docs = [
     "mkdocs-material",
-    "mkdocs"
+    "mkdocs",
+    "mkdocstrings",
+    "mkdocstrings-python",
+    "mknotebooks",
 ]
 
 [project.scripts]
