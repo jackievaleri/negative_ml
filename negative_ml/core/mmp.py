@@ -6,10 +6,11 @@ Evaluating trained models on such pairs tests whether a selection strategy
 teaches fine-grained decision-boundary discrimination rather than broad class
 separation.
 
-The headline metric is concordance: the fraction of pairs in which the model
-assigns the positive a higher score than the negative. A random classifier
-scores ~0.5; a perfect boundary learner scores 1.0. This is the pairwise AUC
-restricted to the hardest, closest cross-label pairs.
+The headline metric is pair_auroc: AUROC computed over the pooled positive
+and negative scores from the matched pairs. A random classifier scores ~0.5;
+a perfect boundary learner scores 1.0. Because the pairs are the hardest,
+closest cross-label examples, pair_auroc is normally lower than the model's
+global test-set AUROC -- that gap is the signal.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from sklearn.neighbors import NearestNeighbors
 
 from negative_ml.core.config import SWEEP_N_SEEDS
 from negative_ml.core.dataset import Dataset
-from negative_ml.core.eval import compute_metrics
+from negative_ml.core.eval import auroc, compute_metrics
 from negative_ml.core.experiment import EvalSplit, ModelFactory, positive_scores
 from negative_ml.core.selection import BUDGET_VARYING, STRATEGIES, standardize
 
@@ -127,16 +128,22 @@ def mmp_metrics(scored_pairs: pd.DataFrame) -> dict[str, float]:
     """Pairwise performance metrics over a set of scored matched pairs.
 
     Args:
-        scored_pairs: Output of score_pairs with correct and margin columns.
+        scored_pairs: Output of score_pairs with score_pos, score_neg, and
+            margin columns.
 
     Returns:
-        Dict with concordance (fraction correct) and mean_margin
-        (mean score_pos - score_neg).
+        Dict with pair_auroc (AUROC over the pooled positive/negative scores
+        from the matched pairs) and mean_margin (mean score_pos - score_neg).
     """
     if scored_pairs.empty:
-        return {"concordance": float("nan"), "mean_margin": float("nan")}
+        return {"pair_auroc": float("nan"), "mean_margin": float("nan")}
+    n = len(scored_pairs)
+    y_true = np.concatenate([np.ones(n), np.zeros(n)])
+    y_score = np.concatenate(
+        [scored_pairs["score_pos"].to_numpy(), scored_pairs["score_neg"].to_numpy()]
+    )
     return {
-        "concordance": float(scored_pairs["correct"].mean()),
+        "pair_auroc": auroc(y_true, y_score),
         "mean_margin": float(scored_pairs["margin"].mean()),
     }
 
@@ -171,8 +178,9 @@ def run_mmp_evaluation(
 
     Returns:
         Long-format DataFrame with one row per (strategy, seed) and columns:
-        [strategy, seed, budget, n_train, concordance, mean_margin, n_pairs,
-         auroc, auprc, f1].
+        [strategy, seed, budget, n_train, pair_auroc, mean_margin, n_pairs,
+         auroc, auprc, f1]. auroc is the model's global test-set AUROC;
+         pair_auroc is AUROC restricted to the matched hard pairs.
     """
     n_pairs = len(test_pairs)
     minority_idx = np.where(split.train_ds.minority_mask())[0]
@@ -194,7 +202,7 @@ def run_mmp_evaluation(
                 scored = score_pairs(model, split.X_test, test_pairs)
                 pair_m = mmp_metrics(scored)
             else:
-                pair_m = {"concordance": float("nan"), "mean_margin": float("nan")}
+                pair_m = {"pair_auroc": float("nan"), "mean_margin": float("nan")}
 
             rows.append(
                 {
@@ -202,7 +210,7 @@ def run_mmp_evaluation(
                     "seed": seed,
                     "budget": budget,
                     "n_train": len(train_rows),
-                    "concordance": pair_m["concordance"],
+                    "pair_auroc": pair_m["pair_auroc"],
                     "mean_margin": pair_m["mean_margin"],
                     "n_pairs": n_pairs,
                     **{k: global_m[k] for k in ("auroc", "auprc", "f1")},
@@ -210,7 +218,7 @@ def run_mmp_evaluation(
             )
             logger.info(
                 f"  [{strat_name} seed={seed}] "
-                f"concordance={pair_m['concordance']:.3f} "
+                f"pair_auroc={pair_m['pair_auroc']:.3f} "
                 f"auroc={global_m['auroc']:.3f} "
                 f"n_train={len(train_rows):,}"
             )

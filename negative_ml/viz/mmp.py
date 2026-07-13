@@ -1,8 +1,9 @@
 """Visualization helpers for matched-pair (MMP) evaluation results.
 
 Two figure types:
-  - plot_mmp_performance: bar chart comparing concordance and mean_margin
-    across selection strategies, with per-seed scatter overlay.
+  - plot_mmp_performance: bar chart comparing pairwise AUROC (AUROC restricted
+    to the matched hard pairs) and mean_margin across selection strategies,
+    with per-seed scatter overlay.
   - plot_mmp_examples: styled table showing 5-10 example pairs with their
     domain-specific descriptors and model scores, color-coded by correctness.
 
@@ -114,7 +115,7 @@ def plot_mmp_performance(
     *,
     strategies: tuple[str, ...] = BUDGET_VARYING,
 ) -> plt.Figure:
-    """Two-panel bar chart: concordance (left) and mean_margin (right).
+    """Two-panel bar chart: pairwise AUROC (left) and mean_margin (right).
 
     Each bar is the mean across seeds; individual seed values are overlaid as
     scatter points so variability is visible. Dark2 colors match the selection
@@ -122,7 +123,7 @@ def plot_mmp_performance(
 
     Args:
         results: Output of run_mmp_evaluation — long-format DataFrame with
-            strategy, concordance, mean_margin, and seed columns.
+            strategy, pair_auroc, mean_margin, and seed columns.
         domain: Domain name used only for the figure title.
         strategies: Ordered list of strategies to display.
 
@@ -132,7 +133,7 @@ def plot_mmp_performance(
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
 
     for ax, metric, ylabel in (
-        (axes[0], "concordance", "Concordance"),
+        (axes[0], "pair_auroc", "AUROC (hard pairs)"),
         (axes[1], "mean_margin", "Mean margin"),
     ):
         x = np.arange(len(strategies))
@@ -146,7 +147,7 @@ def plot_mmp_performance(
                 np.full(len(sub), xi),
                 sub.values,
                 color="k",
-                s=20,
+                s=10,
                 zorder=3,
                 alpha=0.7,
             )
@@ -156,8 +157,8 @@ def plot_mmp_performance(
             [STRATEGY_LABELS.get(s, s) for s in strategies], rotation=15, ha="right"
         )
         ax.set_ylabel(ylabel)
-        if metric == "concordance":
-            ax.set_ylim(0, 1.05)
+        if metric == "pair_auroc":
+            ax.set_ylim(0.5, 1.0)
         style_axes(ax)
 
     fig.suptitle(
