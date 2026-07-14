@@ -26,6 +26,7 @@ from sklearn.metrics import (
 from negative_ml.core import eval as ev
 from negative_ml.core.config import DEFAULT_THRESHOLD, VIZ_MAX_POINTS
 from negative_ml.core.dataset import Dataset
+from negative_ml.viz.selection_results import apply_metric_ylim
 from negative_ml.viz.style import (
     DARK2,
     DENSITY_CMAP,
@@ -203,13 +204,21 @@ def plot_roc(y_true: ArrayLike, y_score: ArrayLike, ax: plt.Axes) -> plt.Axes:
     return style_axes(ax)
 
 
-def plot_pr(y_true: ArrayLike, y_score: ArrayLike, ax: plt.Axes) -> plt.Axes:
+def plot_pr(
+    y_true: ArrayLike,
+    y_score: ArrayLike,
+    ax: plt.Axes,
+    domain: str | None = None,
+) -> plt.Axes:
     """Precision-recall curve annotated with AUPRC, with the base rate line.
 
     Args:
         y_true: Binary ground-truth labels.
         y_score: Predicted scores / probabilities for the positive class.
         ax: Target matplotlib axes.
+        domain: Domain name, for the per-domain AUPRC y-limit override (see
+            negative_ml.viz.selection_results.apply_metric_ylim). Recall (the
+            x-axis) always stays pinned to the full [0, 1].
 
     Returns:
         The styled ax.
@@ -217,9 +226,8 @@ def plot_pr(y_true: ArrayLike, y_score: ArrayLike, ax: plt.Axes) -> plt.Axes:
     PrecisionRecallDisplay.from_predictions(y_true, y_score, ax=ax, name="XGBoost")
     base = float(np.mean(y_true))
     ax.axhline(base, color=INK, ls="--", lw=1, label=f"base rate = {base:.3f}")
-    # Precision and recall are both in [0, 1]; pin the axes.
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
+    ax.set_xlim(0, 1)  # recall is a fraction in [0, 1]
+    apply_metric_ylim(ax, "auprc", domain=domain)
     ax.set_title(f"Precision-Recall (AUPRC = {ev.auprc(y_true, y_score):.3f})")
     ax.legend(loc="upper right")
     return style_axes(ax)

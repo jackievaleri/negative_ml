@@ -1,12 +1,17 @@
 """Saturation experiments — how much majority-class data is enough? (4.1, H1).
 
-Two complementary sweeps, both returning a tidy results frame (one row per
+Three complementary sweeps, all returning a tidy results frame (one row per
 budget x seed) ready for plotting a saturation curve:
 
     A) fix_minority_vary_majority — keep all minority examples, grow the
        majority count; find where performance plateaus.
     B) scale_total_proportional — subsample the whole dataset at a fixed
        class ratio; separates "more majority data" from "more data overall".
+    C) fix_ratio_vary_majority — grow the majority count like A, but hold the
+       minority:majority ratio fixed at the training pool's natural balance
+       (e.g. ~3% active in the antibacterial screen) instead of keeping every
+       minority example; isolates the value of class balance itself from
+       majority-class volume, on the same majority-size axis as A.
 """
 
 from __future__ import annotations
@@ -24,7 +29,7 @@ from negative_ml.core.experiment import (
     fit_score,
     resolve_split,
 )
-from negative_ml.core.selection import random_undersample
+from negative_ml.core.selection import clamp, random_undersample
 
 
 def fix_minority_vary_majority(
@@ -123,6 +128,78 @@ def scale_total_proportional(
             rows.append(
                 {
                     "fraction": float(frac),
+                    "seed": s,
+                    "n_train": int(len(train_rows)),
+                    **metrics,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def fix_ratio_vary_majority(
+    dataset: Dataset,
+    model_factory: ModelFactory,
+    majority_sizes: Sequence[int],
+    n_seeds: int = SWEEP_N_SEEDS,
+    scaffold_split: bool = False,
+    split: EvalSplit | None = None,
+    seed: int = RANDOM_SEED,
+) -> pd.DataFrame:
+    """Hold the minority:majority ratio fixed while the majority count grows.
+
+    Complements fix_minority_vary_majority (A), which instead keeps every
+    minority example fixed and lets the class ratio skew as the majority
+    grows. Here the minority count is subsampled in step with the majority so
+    the positive share stays anchored to the training pool's own class
+    balance (e.g. ~3% active in the antibacterial screen) at every point on
+    the same majority-size axis A sweeps, isolating the value of class
+    balance itself from majority-class volume.
+
+    Draws majority examples via the same random_undersample(train_ds, size,
+    seed=seed + s) call fix_minority_vary_majority uses, so at a matched
+    (seed, majority_size) the two sweeps train on the identical negative
+    examples and differ only in how many positives are included.
+
+    Args:
+        dataset: Full training domain (ignored when split is supplied).
+        model_factory: Builds a fresh model for each fit.
+        majority_sizes: Majority-class counts to evaluate.
+        n_seeds: Repeats per size for error bars.
+        scaffold_split: Use scaffold/grouped instead of random eval split.
+        split: Pre-built EvalSplit (e.g. cross-season) to evaluate on;
+            when None a stratified split of dataset is used.
+        seed: Base seed for the (fixed) split and per-repeat selection.
+
+    Returns:
+        Long-format DataFrame with columns
+        [majority_size, minority_size, seed, n_train, auroc, auprc, ...].
+    """
+    sp = resolve_split(dataset, split, scaffold=scaffold_split, seed=seed)
+    train_ds = sp.train_ds
+    X_test, y_test = sp.X_test, sp.y_test
+    minority_idx = np.where(train_ds.minority_mask())[0]
+    n_majority = int(train_ds.majority_mask().sum())
+    n_minority = len(minority_idx)
+    # Ratio anchored to the training pool's own class balance, not a
+    # hardcoded target -- mirrors how the reference negative-dataset study
+    # computes neg_to_pos_ratio from the source dataframe once and reuses it
+    # for every size.
+    neg_to_pos_ratio = n_majority / n_minority
+
+    rows = []
+    for size in majority_sizes:
+        maj_count = min(size, n_majority)
+        min_count = clamp(round(maj_count / neg_to_pos_ratio), n_minority)
+        for s in range(n_seeds):
+            selected_majority = random_undersample(train_ds, maj_count, seed=seed + s)
+            rng = np.random.default_rng(seed + s)
+            selected_minority = rng.choice(minority_idx, size=min_count, replace=False)
+            train_rows = np.concatenate([selected_minority, selected_majority])
+            metrics = fit_score(train_ds, train_rows, X_test, y_test, model_factory)
+            rows.append(
+                {
+                    "majority_size": int(maj_count),
+                    "minority_size": int(min_count),
                     "seed": s,
                     "n_train": int(len(train_rows)),
                     **metrics,

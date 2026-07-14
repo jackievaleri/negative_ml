@@ -119,6 +119,16 @@ Subsample the entire dataset while keeping the class ratio roughly constant. Thi
 separates gains from *more majority-class data* from gains from *simply having
 more data overall*.
 
+**C) Fix ratio, vary majority size.**
+Grow the majority-class count like (A), but instead of keeping every minority
+example, subsample the minority class in step so the class ratio stays pinned
+to the training pool's natural balance (e.g. ~3% active for the antibacterial
+screen) at every size. Evaluated on the same majority-size axis as (A), and
+drawing the identical majority examples at each matched size/seed, so the two
+curves isolate the effect of the positive-count choice alone: does keeping
+every available positive example (A) actually help once the majority is large,
+compared to holding the class balance fixed (C)?
+
 ### 4.2 Majority-Class Selection Strategies (Fixed Budget)
 
 For a fixed number of majority-class examples, compare:

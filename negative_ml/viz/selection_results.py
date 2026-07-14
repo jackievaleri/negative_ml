@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
+from matplotlib.ticker import FixedLocator, ScalarFormatter
 
 from negative_ml.viz.style import DARK2, INK, PALETTE, style_axes
 
@@ -46,18 +47,47 @@ METRIC_YLIM = {
     "spearman": (-1.0, 1.0),
 }
 
+#: Per-domain AUPRC y-limit overrides for the downselection figures, tighter
+#: than the generic [0, 1] METRIC_YLIM so small differences between selection
+#: strategies are legible instead of compressed near the bottom of the axis.
+AUPRC_YLIM_BY_DOMAIN = {
+    "molecules": (0.4, 0.85),
+    "baseball": (0.3, 0.9),
+    "sandwiches": (0.25, 0.75),
+}
 
-def apply_metric_ylim(ax: plt.Axes, metric: str) -> plt.Axes:
-    """Set ax's y-limits from METRIC_YLIM (no-op for an unmapped metric).
+
+def apply_metric_ylim(
+    ax: plt.Axes,
+    metric: str,
+    domain: str | None = None,
+    ylim: tuple[float | None, float | None] | None = None,
+) -> plt.Axes:
+    """Set ax's y-limits, the single place every AUPRC (and other metric) plot
+    in downselection/saturation/performance figures should route through.
+
+    Precedence: an explicit ylim wins outright; otherwise "auprc" checks
+    AUPRC_YLIM_BY_DOMAIN[domain]; otherwise METRIC_YLIM[metric]. A no-op if
+    none of those apply.
 
     Args:
         ax: Axes whose y-limits to set.
-        metric: Metric key into METRIC_YLIM.
+        metric: Metric key into METRIC_YLIM / AUPRC_YLIM_BY_DOMAIN.
+        domain: Domain name ("molecules" / "baseball" / "sandwiches"); for
+            "auprc", overrides the generic [0, 1] bound with
+            AUPRC_YLIM_BY_DOMAIN[domain] if present there.
+        ylim: Explicit (lo, hi) override, bypassing both AUPRC_YLIM_BY_DOMAIN
+            and METRIC_YLIM. For a one-off custom range (e.g. a study whose
+            curves legitimately need the full axis regardless of domain).
 
     Returns:
         The same ax, for chaining.
     """
-    lim = METRIC_YLIM.get(metric)
+    lim = ylim
+    if lim is None:
+        lim = AUPRC_YLIM_BY_DOMAIN.get(domain) if metric == "auprc" else None
+    if lim is None:
+        lim = METRIC_YLIM.get(metric)
     if lim is not None:
         ax.set_ylim(lim[0], lim[1])
     return ax
@@ -130,6 +160,7 @@ def plot_strategy_curves(
     ax: plt.Axes,
     x: str = "n_train",
     logx: bool = False,
+    domain: str | None = None,
 ) -> plt.Axes:
     """One curve per selection strategy: metric vs. dataset size.
 
@@ -144,6 +175,8 @@ def plot_strategy_curves(
         x: Column for the x-axis ("n_train" total training size by default).
         logx: Log-scale the x-axis (recommended when budgets span orders of
             magnitude up to the full-data reference).
+        domain: Domain name, for the per-domain AUPRC y-limit override (see
+            apply_metric_ylim).
 
     Returns:
         The styled ax.
@@ -193,12 +226,22 @@ def plot_strategy_curves(
     if logx:
         ax.set_xscale("log")
         ax.set_xlim(right=x_hi_curve * 1.05)  # tight margin past the largest budget
+        # Restrict ticks to the plotted (varying-strategy) budgets rather than the
+        # default log locator's per-decade minor ticks, which crowd and overlap at
+        # this range -- and rather than x_all, which also holds unplotted full-data
+        # baseline rows that would otherwise add a stray distant tick.
+        ticks = sorted({int(v) for v in varying_x})
+        ax.xaxis.set_major_locator(FixedLocator(ticks))
+        ax.xaxis.set_major_formatter(ScalarFormatter())
+        ax.minorticks_off()
+        ax.set_xticks(ticks)
+        ax.set_xticklabels([str(t) for t in ticks], rotation=45, ha="right")
     else:
         ax.set_xlim(right=x_hi_curve + 0.02 * (x_hi_curve - x_lo))
     ax.set_xlabel(f"training set size ({x})")
     ax.set_ylabel(METRIC_LABELS.get(metric, metric))
     ax.set_title(METRIC_LABELS.get(metric, metric))
-    apply_metric_ylim(ax, metric)
+    apply_metric_ylim(ax, metric, domain=domain)
     return style_axes(ax)
 
 
@@ -208,6 +251,7 @@ def plot_selection_grid(
     x: str = "n_train",
     logx: bool = True,
     figsize: tuple[float, float] | None = None,
+    domain: str | None = None,
 ) -> plt.Figure:
     """Multi-panel headline figure: one subplot per metric, shared legend.
 
@@ -218,6 +262,8 @@ def plot_selection_grid(
         x: Column for the shared x-axis.
         logx: Log-scale the x-axis on every panel.
         figsize: Figure size; defaults to a 2-column grid sized to the panels.
+        domain: Domain name, for the per-domain AUPRC y-limit override (see
+            apply_metric_ylim).
 
     Returns:
         The created Figure (caller saves / displays it).
@@ -231,7 +277,7 @@ def plot_selection_grid(
     flat = axes.ravel()
 
     for ax, metric in zip(flat, metrics):
-        plot_strategy_curves(df, metric, ax, x=x, logx=logx)
+        plot_strategy_curves(df, metric, ax, x=x, logx=logx, domain=domain)
     for ax in flat[n:]:  # hide any unused panel
         ax.set_visible(False)
 
@@ -255,6 +301,7 @@ def plot_saturation_curve(
     x: str = "n_train",
     label: str | None = None,
     color: str = PALETTE["gray"],
+    domain: str | None = None,
 ) -> plt.Axes:
     """Single saturation curve (mean +/-1 std over seeds) for one frame.
 
@@ -265,6 +312,8 @@ def plot_saturation_curve(
         x: Column for the x-axis (training set size by default).
         label: Legend label for the curve, if any.
         color: Line and band color for the curve.
+        domain: Domain name, for the per-domain AUPRC y-limit override (see
+            apply_metric_ylim).
 
     Returns:
         The styled ax.
@@ -283,7 +332,7 @@ def plot_saturation_curve(
     )
     ax.set_xlabel(f"training set size ({x})")
     ax.set_ylabel(METRIC_LABELS.get(metric, metric))
-    apply_metric_ylim(ax, metric)
+    apply_metric_ylim(ax, metric, domain=domain)
     return style_axes(ax)
 
 
@@ -329,6 +378,7 @@ def plot_split_overlay(
     ax: plt.Axes,
     x: str = "n_train",
     logx: bool = True,
+    domain: str | None = None,
 ) -> plt.Axes:
     """Overlay the same strategy curves across every evaluation split present.
 
@@ -347,6 +397,8 @@ def plot_split_overlay(
         ax: Target matplotlib axes.
         x: Column for the x-axis (total training size by default).
         logx: Log-scale the x-axis.
+        domain: Domain name, for the per-domain AUPRC y-limit override (see
+            apply_metric_ylim).
 
     Returns:
         The styled ax.
@@ -376,7 +428,7 @@ def plot_split_overlay(
         ax.set_xscale("log")
     ax.set_xlabel(f"training set size ({x})")
     ax.set_ylabel(METRIC_LABELS.get(metric, metric))
-    apply_metric_ylim(ax, metric)
+    apply_metric_ylim(ax, metric, domain=domain)
     split_names = " vs. ".join(present_splits) if present_splits else "splits"
     ax.set_title(f"{METRIC_LABELS.get(metric, metric)}: {split_names} split")
 

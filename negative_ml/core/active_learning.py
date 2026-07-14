@@ -218,6 +218,59 @@ def make_init_labeled(
     return np.sort(np.concatenate([chosen_pos, chosen_neg]))
 
 
+def make_cold_start_labeled(
+    train_pool_ds: Dataset,
+    n_pos: int,
+    n_neg: int,
+    neg_pool_size: int,
+    neg_strategy: str,
+    seed: int = RANDOM_SEED,
+) -> np.ndarray:
+    """Initial labeled bolus whose negatives are drawn from a capped candidate pool.
+
+    Seeds n_pos positives directly, then draws a neg_pool_size-example candidate
+    pool of negatives at random and sub-selects n_neg of them with a
+    selection.STRATEGIES entry (neg_strategy). This isolates the cold-start
+    question -- does the negative selection strategy used to seed a study
+    matter -- from ongoing active-learning acquisition, which is unaffected by
+    neg_pool_size. The candidate pool passed to the strategy includes the
+    seeded positives alongside the pool negatives, so strategies that need a
+    minority reference (e.g. "hard"/decoys, scored by distance to the nearest
+    positive) see one.
+
+    Args:
+        train_pool_ds: The full training pool Dataset.
+        n_pos: Number of positive (minority) examples to seed.
+        n_neg: Number of negative (majority) examples to keep after
+            neg_strategy sub-selects from the candidate pool.
+        neg_pool_size: Size of the random candidate pool of negatives that
+            neg_strategy chooses n_neg from.
+        neg_strategy: Name in selection.STRATEGIES used to sub-select the
+            negatives.
+        seed: Random seed for reproducibility.
+
+    Returns:
+        Sorted integer indices into train_pool_ds for the initial labeled bolus.
+    """
+    rng = np.random.default_rng(seed)
+    pos_all = np.where(train_pool_ds.minority_mask())[0]
+    neg_all = np.where(train_pool_ds.majority_mask())[0]
+
+    k_pos = clamp(n_pos, len(pos_all))
+    chosen_pos = rng.choice(pos_all, size=k_pos, replace=False)
+
+    k_pool = clamp(neg_pool_size, len(neg_all))
+    neg_pool = rng.choice(neg_all, size=k_pool, replace=False)
+
+    candidate_idx = np.sort(np.concatenate([chosen_pos, neg_pool]))
+    candidate_ds = train_pool_ds.subset(candidate_idx)
+    strategy_fn = STRATEGIES[neg_strategy]
+    local_neg_idx = strategy_fn(candidate_ds, n_neg, seed=seed)
+    chosen_neg = candidate_idx[local_neg_idx]
+
+    return np.sort(np.concatenate([chosen_pos, chosen_neg]))
+
+
 def run_active_learning(
     train_pool_ds: Dataset,
     X_test: np.ndarray,

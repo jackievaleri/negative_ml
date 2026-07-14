@@ -6,11 +6,13 @@ from sklearn.linear_model import LogisticRegression
 
 from negative_ml.core.active_learning import (
     ACQUISITION_FNS,
+    make_cold_start_labeled,
     make_init_labeled,
     random_acquisition,
     run_active_learning,
     ucb_acquisition,
 )
+from negative_ml.core.config import COLD_START_NEG_STRATEGIES
 from negative_ml.core.dataset import Dataset
 
 
@@ -231,6 +233,59 @@ def test_run_active_learning_positives_nonnegative():
         seed=0,
     )
     assert (df["positives_in_batch"] >= 0).all()
+
+
+def test_make_cold_start_labeled_counts():
+    """make_cold_start_labeled returns n_pos positives and n_neg negatives."""
+    ds = synthetic_dataset(n=300, pos_rate=0.1)
+    init_idx = make_cold_start_labeled(
+        ds, n_pos=10, n_neg=20, neg_pool_size=100, neg_strategy="random", seed=0
+    )
+    labeled_ds = ds.subset(init_idx)
+    assert int(labeled_ds.minority_mask().sum()) == 10
+    assert int(labeled_ds.majority_mask().sum()) == 20
+
+
+def test_make_cold_start_labeled_sorted():
+    """Returned indices are sorted."""
+    ds = synthetic_dataset(n=300, pos_rate=0.1)
+    init_idx = make_cold_start_labeled(
+        ds, n_pos=10, n_neg=20, neg_pool_size=100, neg_strategy="random", seed=0
+    )
+    assert list(init_idx) == sorted(init_idx.tolist())
+
+
+def test_make_cold_start_labeled_clamped_to_pos_available():
+    """If n_pos exceeds available positives, all positives are returned."""
+    ds = synthetic_dataset(n=300, pos_rate=0.05)
+    n_pos_available = int(ds.minority_mask().sum())
+    init_idx = make_cold_start_labeled(
+        ds, n_pos=1000, n_neg=20, neg_pool_size=100, neg_strategy="random", seed=0
+    )
+    labeled_ds = ds.subset(init_idx)
+    assert int(labeled_ds.minority_mask().sum()) == n_pos_available
+
+
+def test_make_cold_start_labeled_clamped_to_neg_pool_size():
+    """n_neg is clamped to neg_pool_size when the pool is the smaller cap."""
+    ds = synthetic_dataset(n=300, pos_rate=0.1)
+    init_idx = make_cold_start_labeled(
+        ds, n_pos=10, n_neg=20, neg_pool_size=5, neg_strategy="random", seed=0
+    )
+    labeled_ds = ds.subset(init_idx)
+    assert int(labeled_ds.majority_mask().sum()) == 5
+
+
+@pytest.mark.parametrize("neg_strategy", list(COLD_START_NEG_STRATEGIES))
+def test_make_cold_start_labeled_all_strategies(neg_strategy):
+    """Every COLD_START_NEG_STRATEGIES entry works as a bolus neg_strategy."""
+    ds = synthetic_dataset(n=300, pos_rate=0.1)
+    init_idx = make_cold_start_labeled(
+        ds, n_pos=10, n_neg=20, neg_pool_size=100, neg_strategy=neg_strategy, seed=0
+    )
+    labeled_ds = ds.subset(init_idx)
+    assert int(labeled_ds.minority_mask().sum()) == 10
+    assert int(labeled_ds.majority_mask().sum()) == 20
 
 
 @pytest.mark.parametrize("neg_comp", ["as_is", "random", "hard", "diversity"])
