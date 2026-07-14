@@ -51,12 +51,14 @@ NEG_STRATEGY_LABELS: dict[str, str] = {
 }
 
 
-def add_legend(fig: plt.Figure, ax: plt.Axes) -> None:
-    """Add a bolus-negative-strategy legend outside the panels.
+def add_legend(fig: plt.Figure) -> None:
+    """Add a bolus-negative-strategy legend below the panels.
+
+    Placed as a figure-level legend under the axes (rather than inset in a
+    panel) so it never overlaps the plotted lines.
 
     Args:
-        fig: The figure containing the axes.
-        ax: Any axis to use for the legend call.
+        fig: The figure to attach the legend to.
     """
     handles = [
         plt.Line2D(
@@ -69,10 +71,12 @@ def add_legend(fig: plt.Figure, ax: plt.Axes) -> None:
         )
         for s in COLD_START_NEG_STRATEGIES
     ]
-    ax.legend(
+    fig.legend(
         handles=handles,
         title="Bolus negative strategy",
-        loc="upper left",
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.0),
+        ncol=len(handles),
         fontsize=8,
         title_fontsize=8,
         frameon=False,
@@ -140,11 +144,11 @@ def plot_positives_recovered(
         style_axes(ax)
 
     axes[0].set_ylabel("Cumulative positives labeled", fontsize=8)
-    add_legend(fig, axes[0])
     fig.suptitle(
         f"{domain.capitalize()} — cold start: positives recovered", fontsize=10, y=1.02
     )
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0.12, 1, 1))
+    add_legend(fig)
     return fig
 
 
@@ -222,11 +226,11 @@ def plot_performance_curves(
         floor = max(0.4, float(np.floor(y_min * 10) / 10 - 0.05))
         axes[0].set_ylim(floor, 1.0)
 
-    add_legend(fig, axes[0])
     fig.suptitle(
         f"{domain.capitalize()} — cold start: {metric_label} over AL rounds",
         fontsize=10,
         y=1.02,
     )
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0.12, 1, 1))
+    add_legend(fig)
     return fig
