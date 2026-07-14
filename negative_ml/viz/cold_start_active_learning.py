@@ -11,7 +11,9 @@ post-bolus acquisition strategies (random, UCB) this experiment runs:
         encoding.
 
 Both figures show mean +/- 1 std across seeds so uncertainty in the initial
-bolus draw is visible without obscuring the trends.
+bolus draw is visible without obscuring the trends. The shared per-acquisition
+panel/line drawing lives in negative_ml.viz.faceted_curves, which
+negative_ml.viz.active_learning also draws on.
 """
 
 from __future__ import annotations
@@ -21,19 +23,21 @@ import numpy as np
 import pandas as pd
 
 from negative_ml.core.config import COLD_START_ACQUISITIONS, COLD_START_NEG_STRATEGIES
-from negative_ml.viz.style import DARK2, LIGHT_GRAY, style_axes
+from negative_ml.viz.faceted_curves import place_outside_legend, plot_group_curves
+from negative_ml.viz.selection_results import METRIC_LABELS
+from negative_ml.viz.style import DARK2
 
-#: Color per bolus negative strategy, in the COLD_START_NEG_STRATEGIES order.
-NEG_STRATEGY_COLORS: dict[str, str] = {
-    name: DARK2[i] for i, name in enumerate(COLD_START_NEG_STRATEGIES)
-}
-
-#: Linestyle per bolus negative strategy (same order).
-NEG_STRATEGY_LINES: dict[str, str] = {
-    "random": "--",
-    "hard": "-.",
-    "diversity": ":",
-    "density_diversity": "-",
+#: Color, linestyle, and display label per bolus negative strategy, in
+#: COLD_START_NEG_STRATEGIES order.
+NEG_STRATEGY_STYLE: dict[str, dict[str, str]] = {
+    "random": {"color": DARK2[0], "linestyle": "--", "label": "Random"},
+    "hard": {"color": DARK2[1], "linestyle": "-.", "label": "Decoys"},
+    "diversity": {"color": DARK2[2], "linestyle": ":", "label": "Diversity"},
+    "density_diversity": {
+        "color": DARK2[3],
+        "linestyle": "-",
+        "label": "Density diversity",
+    },
 }
 
 #: Human-readable labels for the post-bolus acquisition strategies.
@@ -42,51 +46,15 @@ ACQUISITION_LABELS: dict[str, str] = {
     "ucb": "UCB",
 }
 
-#: Human-readable labels for the bolus negative-selection strategies.
-NEG_STRATEGY_LABELS: dict[str, str] = {
-    "random": "Random",
-    "hard": "Decoys",
-    "diversity": "Diversity",
-    "density_diversity": "Density diversity",
-}
+#: Legend title shared by both figures below.
+LEGEND_TITLE = "Bolus negative strategy"
+
+#: fig.tight_layout(rect=...) margin reserved for the figure-level legend below
+#: the panels (see negative_ml.viz.faceted_curves.place_outside_legend).
+LEGEND_MARGIN_RECT = (0, 0.12, 1, 1)
 
 
-def add_legend(fig: plt.Figure) -> None:
-    """Add a bolus-negative-strategy legend below the panels.
-
-    Placed as a figure-level legend under the axes (rather than inset in a
-    panel) so it never overlaps the plotted lines.
-
-    Args:
-        fig: The figure to attach the legend to.
-    """
-    handles = [
-        plt.Line2D(
-            [0],
-            [0],
-            color=NEG_STRATEGY_COLORS[s],
-            linestyle=NEG_STRATEGY_LINES[s],
-            linewidth=1.8,
-            label=NEG_STRATEGY_LABELS[s],
-        )
-        for s in COLD_START_NEG_STRATEGIES
-    ]
-    fig.legend(
-        handles=handles,
-        title="Bolus negative strategy",
-        loc="lower center",
-        bbox_to_anchor=(0.5, 0.0),
-        ncol=len(handles),
-        fontsize=8,
-        title_fontsize=8,
-        frameon=False,
-    )
-
-
-def plot_positives_recovered(
-    results: pd.DataFrame,
-    domain: str,
-) -> plt.Figure:
+def plot_positives_recovered(results: pd.DataFrame, domain: str) -> plt.Figure:
     """Cumulative positives recovered vs. active-learning batch round.
 
     One panel per post-bolus acquisition strategy; lines colored and styled by
@@ -102,54 +70,20 @@ def plot_positives_recovered(
     Returns:
         The matplotlib Figure.
     """
-    acquisitions = [
-        a for a in COLD_START_ACQUISITIONS if a in results["acquisition"].unique()
-    ]
-    n_panels = len(acquisitions)
-    fig, axes = plt.subplots(
-        1, n_panels, figsize=(4.5 * n_panels, 4), sharey=False, sharex=True
+    return plot_group_curves(
+        results,
+        group_col="bolus_neg_strategy",
+        group_order=COLD_START_NEG_STRATEGIES,
+        group_style=NEG_STRATEGY_STYLE,
+        acquisitions=COLD_START_ACQUISITIONS,
+        acquisition_labels=ACQUISITION_LABELS,
+        value_col="n_positives_labeled",
+        ylabel="Cumulative positives labeled",
+        suptitle=f"{domain.capitalize()} — cold start: positives recovered",
+        legend_title=LEGEND_TITLE,
+        place_legend=place_outside_legend,
+        tight_layout_rect=LEGEND_MARGIN_RECT,
     )
-    if n_panels == 1:
-        axes = [axes]
-
-    for ax, acq in zip(axes, acquisitions):
-        sub = results[results["acquisition"] == acq]
-        for strategy in COLD_START_NEG_STRATEGIES:
-            ssub = sub[sub["bolus_neg_strategy"] == strategy]
-            if ssub.empty:
-                continue
-            grouped = ssub.groupby("batch")["n_positives_labeled"]
-            mean = grouped.mean()
-            std = grouped.std().fillna(0)
-            batches = mean.index.to_numpy()
-            ax.plot(
-                batches,
-                mean.to_numpy(),
-                color=NEG_STRATEGY_COLORS[strategy],
-                linestyle=NEG_STRATEGY_LINES[strategy],
-                linewidth=1.8,
-                label=NEG_STRATEGY_LABELS[strategy],
-            )
-            ax.fill_between(
-                batches,
-                (mean - std).to_numpy(),
-                (mean + std).to_numpy(),
-                color=NEG_STRATEGY_COLORS[strategy],
-                alpha=0.15,
-                linewidth=0,
-            )
-        ax.set_title(ACQUISITION_LABELS.get(acq, acq), fontsize=9)
-        ax.set_xlabel("Batch", fontsize=8)
-        ax.set_xticks(sorted(results["batch"].unique()))
-        style_axes(ax)
-
-    axes[0].set_ylabel("Cumulative positives labeled", fontsize=8)
-    fig.suptitle(
-        f"{domain.capitalize()} — cold start: positives recovered", fontsize=10, y=1.02
-    )
-    fig.tight_layout(rect=(0, 0.12, 1, 1))
-    add_legend(fig)
-    return fig
 
 
 def plot_performance_curves(
@@ -173,64 +107,26 @@ def plot_performance_curves(
     Returns:
         The matplotlib Figure.
     """
-    metric_labels = {"auroc": "AUROC", "auprc": "AUPRC", "f1": "F1"}
-    metric_label = metric_labels.get(metric, metric.upper())
-
-    acquisitions = [
-        a for a in COLD_START_ACQUISITIONS if a in results["acquisition"].unique()
-    ]
-    n_panels = len(acquisitions)
-    fig, axes = plt.subplots(
-        1, n_panels, figsize=(4.5 * n_panels, 4), sharey=True, sharex=True
-    )
-    if n_panels == 1:
-        axes = [axes]
-
+    metric_label = METRIC_LABELS.get(metric, metric.upper())
     y_min = results[metric].min() if metric in results.columns else 0.0
-
-    for ax, acq in zip(axes, acquisitions):
-        sub = results[results["acquisition"] == acq]
-        for strategy in COLD_START_NEG_STRATEGIES:
-            ssub = sub[sub["bolus_neg_strategy"] == strategy]
-            if ssub.empty:
-                continue
-            grouped = ssub.groupby("batch")[metric]
-            mean = grouped.mean()
-            std = grouped.std().fillna(0)
-            batches = mean.index.to_numpy()
-            ax.plot(
-                batches,
-                mean.to_numpy(),
-                color=NEG_STRATEGY_COLORS[strategy],
-                linestyle=NEG_STRATEGY_LINES[strategy],
-                linewidth=1.8,
-                label=NEG_STRATEGY_LABELS[strategy],
-            )
-            ax.fill_between(
-                batches,
-                np.clip((mean - std).to_numpy(), 0, 1),
-                np.clip((mean + std).to_numpy(), 0, 1),
-                color=NEG_STRATEGY_COLORS[strategy],
-                alpha=0.15,
-                linewidth=0,
-            )
-        if metric == "auroc":
-            ax.axhline(0.5, color=LIGHT_GRAY, linestyle="--", linewidth=0.8)
-        ax.set_title(ACQUISITION_LABELS.get(acq, acq), fontsize=9)
-        ax.set_xlabel("Batch", fontsize=8)
-        ax.set_xticks(sorted(results["batch"].unique()))
-        style_axes(ax)
-
-    axes[0].set_ylabel(metric_label, fontsize=8)
-    if metric == "auroc":
-        floor = max(0.4, float(np.floor(y_min * 10) / 10 - 0.05))
-        axes[0].set_ylim(floor, 1.0)
-
-    fig.suptitle(
-        f"{domain.capitalize()} — cold start: {metric_label} over AL rounds",
-        fontsize=10,
-        y=1.02,
+    y_floor = (
+        max(0.4, float(np.floor(y_min * 10) / 10 - 0.05)) if metric == "auroc" else None
     )
-    fig.tight_layout(rect=(0, 0.12, 1, 1))
-    add_legend(fig)
-    return fig
+
+    return plot_group_curves(
+        results,
+        group_col="bolus_neg_strategy",
+        group_order=COLD_START_NEG_STRATEGIES,
+        group_style=NEG_STRATEGY_STYLE,
+        acquisitions=COLD_START_ACQUISITIONS,
+        acquisition_labels=ACQUISITION_LABELS,
+        value_col=metric,
+        ylabel=metric_label,
+        suptitle=f"{domain.capitalize()} — cold start: {metric_label} over AL rounds",
+        legend_title=LEGEND_TITLE,
+        place_legend=place_outside_legend,
+        sharey=True,
+        chance_line=0.5 if metric == "auroc" else None,
+        y_floor=y_floor,
+        tight_layout_rect=LEGEND_MARGIN_RECT,
+    )

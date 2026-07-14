@@ -22,6 +22,7 @@ import pandas as pd
 
 from negative_ml.core.dataset import Dataset
 from negative_ml.core.selection import BUDGET_VARYING
+from negative_ml.viz.selection_results import STRATEGY_STYLE
 from negative_ml.viz.style import DARK2, style_axes
 
 #: Strategy display labels, matching the existing conventions in viz/results.py.
@@ -32,8 +33,11 @@ STRATEGY_LABELS = {
     "density_diversity": "Density div.",
 }
 
-#: One color per strategy, in BUDGET_VARYING order, from the Dark2 palette.
-STRATEGY_COLORS = dict(zip(BUDGET_VARYING, DARK2))
+#: Reuse the same per-strategy colors as every other figure in the study
+#: (selection_results.STRATEGY_STYLE) instead of re-deriving them positionally
+#: from BUDGET_VARYING, which only agreed with STRATEGY_STYLE by coincidence of
+#: ordering.
+STRATEGY_COLORS = {name: style["color"] for name, style in STRATEGY_STYLE.items()}
 
 
 def baseball_describe(dataset: Dataset, idx: int) -> pd.Series:
