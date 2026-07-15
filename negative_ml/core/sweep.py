@@ -21,7 +21,7 @@ from negative_ml.core.experiment import (
     fit_score,
     resolve_split,
 )
-from negative_ml.core.selection import BUDGET_VARYING, STRATEGIES
+from negative_ml.core.selection import BUDGET_VARYING, STRATEGIES, clamp
 
 #: Pseudo-strategy: keep ALL majority data but up-weight the minority via
 #: scale_pos_weight instead of deleting examples (tests H4). Handled
@@ -39,6 +39,7 @@ def compare_strategies(
     include_weighted: bool = False,
     split: EvalSplit | None = None,
     seed: int = RANDOM_SEED,
+    neg_to_pos_ratio: float | None = None,
 ) -> pd.DataFrame:
     """Compare majority-selection strategies at a single budget.
 
@@ -51,12 +52,23 @@ def compare_strategies(
         n_seeds: Repeats per strategy (drives error bars).
         scaffold_split: Use scaffold/grouped instead of random eval split.
         include_weighted: Also evaluate the class-weighting baseline (H4).
+            The weighted reference always keeps every minority example
+            (neg_to_pos_ratio is ignored for it): it tests weighting as a
+            substitute for majority *volume*, not for a smaller minority.
         split: Pre-built EvalSplit (e.g. cross-season) to evaluate on;
             when None a stratified split of dataset is used.
         seed: Base seed for the (fixed) train/test split and per-repeat seeds.
+        neg_to_pos_ratio: When set, each strategy's minority is subsampled to
+            round(len(selected majority) / neg_to_pos_ratio) instead of
+            keeping every minority example -- the "proportional" class-balance
+            regime from core.saturation.fix_ratio_vary_majority, extended
+            across selection strategies. None (default) keeps every minority
+            example (the "disproportional" regime this function has always
+            used).
 
     Returns:
-        Long-format DataFrame: [strategy, seed, budget, n_train, <metrics>].
+        Long-format DataFrame: [strategy, seed, budget, n_train, minority_size,
+        <metrics>].
     """
     # One fixed split so the test set is identical across every strategy.
     sp = resolve_split(dataset, split, scaffold=scaffold_split, seed=seed)
@@ -65,13 +77,20 @@ def compare_strategies(
 
     minority_idx = np.where(train_ds.minority_mask())[0]
     n_majority = int(train_ds.majority_mask().sum())
+    n_minority = len(minority_idx)
 
     rows = []
     for name in strategies:
         strategy = STRATEGIES[name]
         for s in range(n_seeds):
             selected = strategy(train_ds, budget, seed=seed + s)
-            train_rows = np.concatenate([minority_idx, selected])
+            if neg_to_pos_ratio is None:
+                minority_rows = minority_idx
+            else:
+                min_count = clamp(round(len(selected) / neg_to_pos_ratio), n_minority)
+                rng = np.random.default_rng(seed + s)
+                minority_rows = rng.choice(minority_idx, size=min_count, replace=False)
+            train_rows = np.concatenate([minority_rows, selected])
             metrics = fit_score(train_ds, train_rows, X_test, y_test, model_factory)
             rows.append(
                 {
@@ -79,6 +98,7 @@ def compare_strategies(
                     "seed": s,
                     "budget": int(min(budget, n_majority)),
                     "n_train": int(len(train_rows)),
+                    "minority_size": int(len(minority_rows)),
                     **metrics,
                 }
             )
@@ -120,6 +140,7 @@ def budget_sweep(
     include_weighted: bool = True,
     split: EvalSplit | None = None,
     seed: int = RANDOM_SEED,
+    neg_to_pos_ratio: float | None = None,
 ) -> pd.DataFrame:
     """Run compare_strategies across several budgets.
 
@@ -141,9 +162,13 @@ def budget_sweep(
             compare_strategies call so the test set is identical across
             budgets; when None a stratified split of dataset is used.
         seed: Base random seed for the splits and selection.
+        neg_to_pos_ratio: Forwarded to every compare_strategies call (see
+            there); None (default) keeps every minority example at every
+            budget, otherwise the minority is subsampled to track this ratio.
 
     Returns:
-        Long-format DataFrame: [strategy, seed, budget, n_train, <metrics>].
+        Long-format DataFrame: [strategy, seed, budget, n_train, minority_size,
+        <metrics>].
     """
     # Resolved once and reused across every budget: it does not depend on
     # budget, so re-resolving it per iteration would rebuild the same
@@ -163,6 +188,7 @@ def budget_sweep(
                 include_weighted=False,
                 split=resolved_split,
                 seed=seed,
+                neg_to_pos_ratio=neg_to_pos_ratio,
             )
         )
 
@@ -173,6 +199,7 @@ def budget_sweep(
         budget=dataset.n_samples,  # clamped to the available majority internally
         strategies=("as_is",),
         n_seeds=n_seeds,
+        neg_to_pos_ratio=neg_to_pos_ratio,
         scaffold_split=scaffold_split,
         include_weighted=include_weighted,
         split=resolved_split,

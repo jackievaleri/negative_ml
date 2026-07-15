@@ -88,6 +88,33 @@ AL_NEG_COMPOSITIONS: tuple[str, ...] = ("as_is", "random", "hard", "diversity")
 # Acquisition strategy names (two substantive + random baseline).
 AL_ACQUISITIONS: tuple[str, ...] = ("ucb", "gp_ei", "random")
 
+# Cold-start active learning experiment: an initial labeled bolus (whose
+# negatives are sub-selected from a large starting pool by one of
+# COLD_START_NEG_STRATEGIES) followed by unfiltered acquisition rounds that
+# mirror a normal AL workflow (no further negative curation once the bolus is
+# fixed). Positives seeded into the initial bolus.
+COLD_START_N_POS = 1_000
+# Negatives seeded into the initial bolus, sub-selected from the pool below.
+COLD_START_N_NEG = 1_000
+# Candidate pool of negatives the bolus negatives are drawn from before the
+# neg-selection strategy sub-selects COLD_START_N_NEG of them.
+COLD_START_NEG_POOL_SIZE = 10_000
+# Negative sub-selection strategies compared for the initial bolus only;
+# STRATEGIES keys ("hard" is labeled "decoys" throughout the study).
+COLD_START_NEG_STRATEGIES: tuple[str, ...] = (
+    "random",
+    "hard",
+    "diversity",
+    "density_diversity",
+)
+# Acquisition strategies for the post-bolus workflow rounds.
+COLD_START_ACQUISITIONS: tuple[str, ...] = ("random", "ucb")
+# Post-bolus batch size and number of rounds (a typical AL workflow cadence).
+COLD_START_BATCH_SIZE = 100
+COLD_START_N_BATCHES = 5
+# Seeds per (bolus neg strategy, acquisition) condition.
+COLD_START_N_SEEDS = 3
+
 # Resolution (dots per inch) for every saved figure.
 FIGURE_DPI = 300
 # Approximate cap on plotted points per dense series in scatter plots.

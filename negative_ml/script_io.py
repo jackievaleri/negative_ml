@@ -208,13 +208,13 @@ def plot_saturation_panels(
     """
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     viz.plot_saturation_curve(
-        satm, metric, axes[0], color=DARK2[0], label="fix minority"
+        satm, metric, axes[0], color=DARK2[0], label="fix minority", domain=domain
     )
     axes[0].set_xscale("log")
     axes[0].set_title("Fix minority, vary majority")
     axes[0].legend(loc="best")
     viz.plot_saturation_curve(
-        satp, metric, axes[1], color=DARK2[1], label="proportional"
+        satp, metric, axes[1], color=DARK2[1], label="proportional", domain=domain
     )
     axes[1].set_xscale("log")
     axes[1].set_title("Scale total proportionally")
@@ -508,7 +508,7 @@ def plot_downselection_split_figures(
             fname_body = split_name
 
         logger.info(f"  [{split_name}] selection grid + saturation panels")
-        fig = viz.plot_selection_grid(sel_s, metrics=metrics)
+        fig = viz.plot_selection_grid(sel_s, metrics=metrics, domain=domain)
         fig.suptitle(f"Majority-class selection — {title_suffix}", fontsize=14)
         save_figure(
             fig, "downselection", f"downselection_grid_{fname_body}.png", domain
@@ -516,7 +516,7 @@ def plot_downselection_split_figures(
 
         if no_dd_fname_suffix is not None:
             sel_no_dd = sel_s[sel_s["strategy"] != "density_diversity"]
-            fig = viz.plot_selection_grid(sel_no_dd, metrics=metrics)
+            fig = viz.plot_selection_grid(sel_no_dd, metrics=metrics, domain=domain)
             fig.suptitle(
                 f"Majority-class selection — {title_suffix}{no_dd_title_suffix}",
                 fontsize=14,
@@ -570,6 +570,7 @@ def plot_proportional_saturation_overlay(
                 ax,
                 color=viz.SPLIT_COLOR[split_name],
                 label=viz.SPLIT_LABEL[split_name],
+                domain=domain,
             )
     ax.set_xscale("log")
     ax.set_title(title)

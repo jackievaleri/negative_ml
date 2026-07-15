@@ -101,30 +101,42 @@ def test_score_pairs_margin_equals_difference():
 
 
 def test_mmp_metrics_all_correct():
-    """All-correct pairs give concordance=1 and positive mean_margin."""
-    scored = pd.DataFrame({"correct": [True, True, True], "margin": [0.3, 0.5, 0.2]})
+    """All-correct pairs give pair_auroc=1 and positive mean_margin."""
+    scored = pd.DataFrame(
+        {
+            "score_pos": [0.9, 0.8, 0.7],
+            "score_neg": [0.1, 0.2, 0.3],
+            "margin": [0.8, 0.6, 0.4],
+        }
+    )
     m = mmp_metrics(scored)
-    assert m["concordance"] == pytest.approx(1.0)
+    assert m["pair_auroc"] == pytest.approx(1.0)
     assert m["mean_margin"] > 0
 
 
 def test_mmp_metrics_all_wrong():
-    """All-incorrect pairs give concordance=0 and negative mean_margin."""
-    scored = pd.DataFrame({"correct": [False, False], "margin": [-0.2, -0.4]})
+    """All-incorrect pairs give pair_auroc=0 and negative mean_margin."""
+    scored = pd.DataFrame(
+        {
+            "score_pos": [0.1, 0.2],
+            "score_neg": [0.9, 0.8],
+            "margin": [-0.8, -0.6],
+        }
+    )
     m = mmp_metrics(scored)
-    assert m["concordance"] == pytest.approx(0.0)
+    assert m["pair_auroc"] == pytest.approx(0.0)
     assert m["mean_margin"] < 0
 
 
 def test_mmp_metrics_empty_returns_nan():
     """Empty input returns NaN for both metrics rather than raising."""
-    m = mmp_metrics(pd.DataFrame(columns=["correct", "margin"]))
-    assert np.isnan(m["concordance"])
+    m = mmp_metrics(pd.DataFrame(columns=["score_pos", "score_neg", "margin"]))
+    assert np.isnan(m["pair_auroc"])
     assert np.isnan(m["mean_margin"])
 
 
 def test_mmp_metrics_keys():
     """mmp_metrics returns exactly the two documented keys."""
-    scored = pd.DataFrame({"correct": [True], "margin": [0.1]})
+    scored = pd.DataFrame({"score_pos": [0.6], "score_neg": [0.4], "margin": [0.2]})
     m = mmp_metrics(scored)
-    assert set(m) == {"concordance", "mean_margin"}
+    assert set(m) == {"pair_auroc", "mean_margin"}

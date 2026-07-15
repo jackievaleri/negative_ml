@@ -25,7 +25,13 @@ import pandas as pd
 from matplotlib.lines import Line2D
 from matplotlib.ticker import FixedLocator, ScalarFormatter
 
-from negative_ml.viz.selection_results import METRIC_LABELS, aggregate
+from negative_ml.viz.selection_results import (
+    METRIC_LABELS,
+    aggregate,
+    apply_metric_ylim,
+    plot_saturation_curve,
+    plot_strategy_curves,
+)
 from negative_ml.viz.style import DARK2, INK, style_axes
 
 #: Stable color + marker + label per selection strategy, so a method looks the
@@ -56,10 +62,13 @@ TEST_SET_LABEL = {
     "restricted_similarity": "restricted-similarity",
 }
 
-#: Full [0, 1] y-range for every metric here. Unlike the shared METRIC_YLIM (which
-#: floors AUROC at chance, 0.5), these curves legitimately dip below 0.5 -- e.g.
-#: diverse selection is sub-chance at small negative counts on the easy holdout --
-#: and clipping that axis would hide a real result. A chance line is drawn instead.
+#: Full [0, 1] y-range for every metric here, passed as an explicit override to
+#: negative_ml.viz.selection_results.apply_metric_ylim rather than looked up by
+#: domain. Unlike the shared METRIC_YLIM (which floors AUROC at chance, 0.5) or
+#: AUPRC_YLIM_BY_DOMAIN's tighter molecules band (meant for the downselection
+#: strategy curves), these GNN curves legitimately dip below 0.5 -- e.g. diverse
+#: selection is sub-chance at small negative counts on the easy holdout -- and
+#: clipping that axis would hide a real result. A chance line is drawn instead.
 GNN_YLIM = (0.0, 1.0)
 
 
@@ -145,7 +154,7 @@ def plot_selection_saturation(
         ax.minorticks_off()
     ax.set_xticks(ticks)
     ax.set_xticklabels([str(t) for t in ticks], rotation=45, ha="right")
-    ax.set_ylim(*GNN_YLIM)
+    apply_metric_ylim(ax, metric, ylim=GNN_YLIM)
     ax.set_xlabel("number of negative examples used for training")
     ax.set_ylabel(METRIC_LABELS.get(metric, metric))
     return style_axes(ax)
@@ -245,4 +254,106 @@ def plot_test_set_contrast(df: pd.DataFrame, metric: str = "auroc") -> plt.Figur
         fontsize=13,
     )
     fig.tight_layout(rect=(0, 0, 0.98, 0.97))
+    return fig
+
+
+#: Legend labels for the XGBoost class-balance regimes (core.saturation's
+#: fix_minority_vary_majority / fix_ratio_vary_majority). Distinct from
+#: CLASS_BALANCE_LABEL above, which hardcodes the GNN study's N=1,017
+#: positives -- a figure that does not apply to the XGBoost sweep.
+XGB_CLASS_BALANCE_LABEL = {
+    "disproportional": "class imbalanced: all positives used",
+    "proportional": "class balanced: positives held to ~3%",
+}
+
+#: Stable color per XGBoost class-balance regime, reusing the repo's Dark2
+#: ordering.
+XGB_CLASS_BALANCE_COLOR = {
+    "disproportional": DARK2[0],
+    "proportional": DARK2[1],
+}
+
+
+def plot_class_balance_saturation(
+    df: pd.DataFrame, metric: str = "auprc", title: str | None = None
+) -> plt.Figure:
+    """Overlay the XGBoost class-balance regimes on one shared negative-count axis.
+
+    Both regimes (core.saturation.fix_minority_vary_majority and
+    fix_ratio_vary_majority) are swept over the same majority_size values and,
+    at a matched (seed, majority_size), trained on the identical negative
+    examples -- so a single pair of overlaid curves isolates the effect of the
+    positive-count choice. This differs from plot_saturation_panels above,
+    which panels the GNN regimes side by side because that figure also facets
+    by selection strategy within each regime.
+
+    Args:
+        df: Combined long-format frame for one (featurization, split) slice,
+            with a class_balance column ("proportional" / "disproportional"),
+            majority_size, seed, and metric.
+        metric: Metric column to plot on the y-axis ("auprc" by default).
+        title: Figure suptitle, if any; set before the layout pass so it
+            never overlaps the axes.
+
+    Returns:
+        The created Figure (caller saves it).
+    """
+    fig, ax = plt.subplots(figsize=(7, 5.5))
+    for regime in ("disproportional", "proportional"):
+        sub = df[df["class_balance"] == regime]
+        if sub.empty:
+            continue
+        plot_saturation_curve(
+            sub,
+            metric,
+            ax,
+            x="majority_size",
+            label=XGB_CLASS_BALANCE_LABEL[regime],
+            color=XGB_CLASS_BALANCE_COLOR[regime],
+            domain="molecules",
+        )
+    ax.set_xscale("log")
+    ax.set_xlabel("number of negative examples used for training")
+    ax.legend(loc="best")
+    if title:
+        fig.suptitle(title, fontsize=13)
+    fig.tight_layout()
+    return fig
+
+
+def plot_class_balance_selection(
+    df: pd.DataFrame, metric: str = "auprc", title: str | None = None
+) -> plt.Figure:
+    """Two-panel XGBoost equivalent of the GNN class-balance selection figure.
+
+    Panels the two class-balance regimes (disproportional | proportional) side
+    by side -- like plot_saturation_panels above for the GNN study -- but each
+    panel shows one curve per this repo's own majority-selection strategy
+    (core.selection.BUDGET_VARYING: random, hard, diversity, density_diversity)
+    against the number of negative examples, built from
+    core.sweep.compare_strategies / budget_sweep's neg_to_pos_ratio regime
+    rather than the offline GNN study's own strategy set.
+
+    Args:
+        df: Combined long-format frame for one (featurization, split) slice,
+            with a class_balance column ("proportional" / "disproportional"),
+            strategy, seed, budget, and metric.
+        metric: Metric column to plot ("auprc" by default).
+        title: Figure suptitle, if any; set before the layout pass so it
+            never overlaps the axes.
+
+    Returns:
+        The created Figure (caller saves it).
+    """
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5), sharey=True)
+    for ax, regime in zip(axes, ("disproportional", "proportional")):
+        sub = df[df["class_balance"] == regime]
+        plot_strategy_curves(sub, metric, ax, x="budget", logx=True, domain="molecules")
+        ax.set_xlabel("number of negative examples used for training")
+        ax.set_title(XGB_CLASS_BALANCE_LABEL.get(regime, regime))
+        ax.legend(loc="best")
+    axes[1].set_ylabel("")
+    if title:
+        fig.suptitle(title, fontsize=13)
+    fig.tight_layout()
     return fig

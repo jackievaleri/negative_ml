@@ -199,7 +199,7 @@ def plot_baseball() -> None:
         )
 
         fig, ax = plt.subplots(figsize=(8.5, 5.5))
-        rviz.plot_split_overlay(sel_t, "auprc", ax, logx=True)
+        rviz.plot_split_overlay(sel_t, "auprc", ax, logx=True, domain=BBALL_DOMAIN)
         ax.set_title(f"AUPRC vs. size — across splits ({target})")
         save_figure(
             fig, "downselection", f"downselection_overlay_{target}.png", BBALL_DOMAIN
@@ -207,7 +207,11 @@ def plot_baseball() -> None:
 
         fig, ax = plt.subplots(figsize=(8.5, 5.5))
         rviz.plot_split_overlay(
-            sel_t[sel_t["split"] == "random"], "auprc", ax, logx=True
+            sel_t[sel_t["split"] == "random"],
+            "auprc",
+            ax,
+            logx=True,
+            domain=BBALL_DOMAIN,
         )
         ax.set_title(f"AUPRC vs. size — random split ({target})")
         save_figure(
@@ -381,7 +385,9 @@ def plot_sandwich() -> None:
                 squeeze=False,
             )
             for ax, metric in zip(axes.ravel(), plot_metrics):
-                rviz.plot_split_overlay(overlay_df, metric, ax, logx=True)
+                rviz.plot_split_overlay(
+                    overlay_df, metric, ax, logx=True, domain=SANDWICH_DOMAIN
+                )
                 ax.set_title(f"{rviz.METRIC_LABELS.get(metric, metric)}: across splits")
             fig.suptitle(
                 f"Selection strategies — random vs. season{title_label}", fontsize=14
@@ -402,7 +408,9 @@ def plot_sandwich() -> None:
                 squeeze=False,
             )
             for ax, metric in zip(axes.ravel(), plot_metrics):
-                rviz.plot_split_overlay(overlay_no_dd, metric, ax, logx=True)
+                rviz.plot_split_overlay(
+                    overlay_no_dd, metric, ax, logx=True, domain=SANDWICH_DOMAIN
+                )
                 ax.set_title(f"{rviz.METRIC_LABELS.get(metric, metric)}: across splits")
             fig.suptitle(
                 f"Selection strategies — random vs. season (no density-diversity)"

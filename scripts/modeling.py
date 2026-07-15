@@ -7,9 +7,12 @@ instead).
 
 Molecules (antibiotics) section: full-data XGBoost benchmark plus majority-
 class downselection and saturation sweeps under three featurizations (rdkit,
-morgan, both) and two splits (random, time), and the GNN saturation panels
-(tidies the offline GNN result files and plots how AUROC/AUPRC move as
-negative budget grows, by selection strategy and class-balance regime).
+morgan, both) and two splits (random, time); a class-balance sweep comparing
+all-positives ("disproportional") against positives held to the training
+pool's natural ~3% active rate ("proportional") on the same negative-count
+axis; and the GNN saturation panels (tidies the offline GNN result files and
+plots how AUROC/AUPRC move as negative budget grows, by selection strategy
+and class-balance regime).
 
 Usage::
 
@@ -38,6 +41,7 @@ from sklearn.metrics import confusion_matrix, f1_score, roc_curve
 from sklearn.model_selection import StratifiedKFold
 
 from negative_ml.core import eval as ev
+from negative_ml.core import saturation, sweep
 from negative_ml.core.config import RANDOM_SEED, REPO_ROOT
 from negative_ml.core.experiment import fit_score, positive_scores
 from negative_ml.models import feature_selected_ridge_classifier, model_factory
@@ -90,11 +94,16 @@ MODELS = {
 
 MOLECULES_DOMAIN = "molecules"
 FEATURIZATIONS = ["rdkit"]
-BUDGETS = [250, 500, 1000, 2000, 4000, 8000]
+BUDGETS = [250, 500, 1000, 2000, 4000, 8000, 16000, 29949]
 FRACTIONS = [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]
 N_SEEDS = 3
 XGB_N_ESTIMATORS = 100
 METRICS = ["auroc", "auprc", "f1", "precision_at_k"]
+#: Metrics sharing the zero-baseline bar chart in plot_benchmark. AUPRC is
+#: plotted separately (plot_benchmark_auprc) since its axis uses the
+#: non-zero AUPRC_YLIM_BY_DOMAIN override, which would misrepresent bar
+#: heights if shared with these zero-based metrics on one axis.
+BENCHMARK_BAR_METRICS = ["auroc", "f1", "precision_at_k"]
 SPLITS = ["random", "time"]
 
 GNN_EXPERIMENT = "gnn_saturation"
@@ -281,7 +290,7 @@ def plot_sandwich() -> None:
 
 
 def generate_xgboost() -> None:
-    """Run benchmark + selection + saturation sweeps; save result frames."""
+    """Run benchmark + selection + saturation + class-balance sweeps; save frames."""
     _base_factory = model_factory("classification")
 
     def classifier_factory(**kw: object) -> object:
@@ -290,6 +299,8 @@ def generate_xgboost() -> None:
 
     benchmark_rows = []
     selection_frames, sat_frames, sat_prop_frames = [], [], []
+    class_balance_frames = []
+    selection_class_balance_frames = []
 
     for featurization in FEATURIZATIONS:
         logger.info(f"=== featurization: {featurization} ===")
@@ -325,10 +336,88 @@ def generate_xgboost() -> None:
         sat_frames.extend(sat_fs)
         sat_prop_frames.extend(satp_fs)
 
+        # Class-balance regime sweep: reuse the just-computed sat_fs (all
+        # positives kept, "disproportional") on the same majority-size axis,
+        # and add the "proportional" regime (positives subsampled to hold the
+        # training pool's natural ~3% active rate as negatives grow).
+        disproportional_by_split = {
+            f["split"].iloc[0]: f for f in sat_fs if not f.empty
+        }
+        for split_name, sp in splits.items():
+            disproportional = disproportional_by_split.get(split_name)
+            if disproportional is None:
+                continue  # skipped upstream (single-class test set)
+            majority_sizes = sorted(
+                int(v) for v in disproportional["majority_size"].unique()
+            )
+            proportional = saturation.fix_ratio_vary_majority(
+                ds_train,
+                classifier_factory,
+                majority_sizes=majority_sizes,
+                n_seeds=N_SEEDS,
+                split=sp,
+            ).assign(
+                class_balance="proportional",
+                featurization=featurization,
+                split=split_name,
+            )
+            class_balance_frames.append(
+                disproportional.assign(class_balance="disproportional")
+            )
+            class_balance_frames.append(proportional)
+
+        # Same class-balance comparison, but per selection strategy (random,
+        # hard, diversity, density_diversity) instead of random undersampling
+        # only -- the XGBoost equivalent of the GNN study's per-strategy
+        # class-balance figure (molecules_viz.plot_saturation_panels).
+        selection_by_split = {f["split"].iloc[0]: f for f in sel_fs if not f.empty}
+        for split_name, sp in splits.items():
+            disproportional_sel = selection_by_split.get(split_name)
+            if disproportional_sel is None:
+                continue  # skipped upstream (single-class test set)
+            strategy_budgets = sorted(
+                int(v)
+                for v in disproportional_sel.loc[
+                    ~disproportional_sel["strategy"].isin(("as_is", "weighted")),
+                    "budget",
+                ].unique()
+            )
+            if not strategy_budgets:
+                continue
+            n_majority = int(sp.train_ds.majority_mask().sum())
+            n_minority = int(sp.train_ds.minority_mask().sum())
+            proportional_sel = sweep.budget_sweep(
+                ds_train,
+                classifier_factory,
+                budgets=strategy_budgets,
+                n_seeds=N_SEEDS,
+                include_weighted=False,
+                split=sp,
+                neg_to_pos_ratio=n_majority / n_minority,
+            ).assign(
+                class_balance="proportional",
+                featurization=featurization,
+                split=split_name,
+            )
+            selection_class_balance_frames.append(
+                disproportional_sel.assign(class_balance="disproportional")
+            )
+            selection_class_balance_frames.append(proportional_sel)
+
     benchmark_df = pd.DataFrame(benchmark_rows)
     save_frame(benchmark_df, "xgboost_benchmark", MOLECULES_DOMAIN)
     selection_df = save_sweep_frames(
         selection_frames, sat_frames, sat_prop_frames, MOLECULES_DOMAIN
+    )
+    save_frame(
+        pd.concat(class_balance_frames, ignore_index=True),
+        "saturation_class_balance",
+        MOLECULES_DOMAIN,
+    )
+    save_frame(
+        pd.concat(selection_class_balance_frames, ignore_index=True),
+        "selection_class_balance",
+        MOLECULES_DOMAIN,
     )
 
     logger.info("Full-data XGBoost benchmark (featurization x split):")
@@ -340,11 +429,15 @@ def generate_xgboost() -> None:
 
 
 def plot_benchmark(benchmark_df: pd.DataFrame) -> None:
-    """Grouped-bar benchmark: metric by featurization, one panel per split."""
+    """Grouped-bar benchmark: metric by featurization, one panel per split.
+
+    AUPRC is excluded here and plotted separately by plot_benchmark_auprc (see
+    BENCHMARK_BAR_METRICS).
+    """
     feats = [f for f in FEATURIZATIONS if f in set(benchmark_df["featurization"])]
     splits = [s for s in SPLITS if s in set(benchmark_df["split"])]
     xpos = np.arange(len(feats))
-    width = 0.8 / max(len(METRICS), 1)
+    width = 0.8 / max(len(BENCHMARK_BAR_METRICS), 1)
 
     fig, axes = plt.subplots(
         1, len(splits), figsize=(6.5 * len(splits), 4.8), squeeze=False
@@ -353,16 +446,19 @@ def plot_benchmark(benchmark_df: pd.DataFrame) -> None:
         sub = benchmark_df[benchmark_df["split"] == split_name].set_index(
             "featurization"
         )
-        for j, metric in enumerate(METRICS):
+        for j, metric in enumerate(BENCHMARK_BAR_METRICS):
             vals = [
                 float(sub.loc[f, metric]) if f in sub.index else np.nan for f in feats
             ]
-            offsets = xpos + (j - (len(METRICS) - 1) / 2) * width
+            offsets = xpos + (j - (len(BENCHMARK_BAR_METRICS) - 1) / 2) * width
             ax.bar(
                 offsets,
                 vals,
                 width=width,
-                color=DARK2[j % len(DARK2)],
+                # Index into the full METRICS order so each metric keeps the
+                # same color as before AUPRC was split out (e.g. F1 stays
+                # purple rather than sliding into AUPRC's orange slot).
+                color=DARK2[METRICS.index(metric) % len(DARK2)],
                 label=rviz.METRIC_LABELS.get(metric, metric),
             )
         ax.set_xticks(xpos)
@@ -377,20 +473,69 @@ def plot_benchmark(benchmark_df: pd.DataFrame) -> None:
     save_figure(fig, "performance", "xgboost_benchmark.png", MOLECULES_DOMAIN)
 
 
+def plot_benchmark_auprc(benchmark_df: pd.DataFrame) -> None:
+    """AUPRC companion to plot_benchmark, on its own non-zero-baseline axis.
+
+    Kept separate from plot_benchmark because AUPRC uses the tighter
+    AUPRC_YLIM_BY_DOMAIN range instead of the [0, 1] zero baseline the other
+    metrics share there; mixing the two on one axis would misrepresent bar
+    heights.
+    """
+    feats = [f for f in FEATURIZATIONS if f in set(benchmark_df["featurization"])]
+    splits = [s for s in SPLITS if s in set(benchmark_df["split"])]
+    xpos = np.arange(len(feats))
+
+    fig, axes = plt.subplots(
+        1, len(splits), figsize=(4.0 * len(splits), 4.8), squeeze=False
+    )
+    for ax, split_name in zip(axes.ravel(), splits):
+        sub = benchmark_df[benchmark_df["split"] == split_name].set_index(
+            "featurization"
+        )
+        vals = [float(sub.loc[f, "auprc"]) if f in sub.index else np.nan for f in feats]
+        ax.bar(xpos, vals, width=0.6, color=DARK2[METRICS.index("auprc") % len(DARK2)])
+        ax.set_xticks(xpos)
+        ax.set_xticklabels(feats)
+        ax.set_ylabel(rviz.METRIC_LABELS.get("auprc", "auprc"))
+        ax.set_title(f"{rviz.SPLIT_LABEL.get(split_name, split_name)}")
+        rviz.apply_metric_ylim(ax, "auprc", domain=MOLECULES_DOMAIN)
+        style_axes(ax)
+    fig.suptitle("Full-data XGBoost AUPRC by featurization", fontsize=14)
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    save_figure(fig, "performance", "xgboost_benchmark_auprc.png", MOLECULES_DOMAIN)
+
+
 def plot_xgboost() -> None:
     """Rebuild every XGBoost figure from saved result frames."""
-    benchmark_df, selection_df, sat_majority, sat_proportional = read_result_frames(
-        ["xgboost_benchmark", "selection", "saturation", "saturation_proportional"],
+    (
+        benchmark_df,
+        selection_df,
+        sat_majority,
+        sat_proportional,
+        sat_class_balance,
+        sel_class_balance,
+    ) = read_result_frames(
+        [
+            "xgboost_benchmark",
+            "selection",
+            "saturation",
+            "saturation_proportional",
+            "saturation_class_balance",
+            "selection_class_balance",
+        ],
         MOLECULES_DOMAIN,
         "modeling.py --domain molecules",
     )
     plot_benchmark(benchmark_df)
+    plot_benchmark_auprc(benchmark_df)
 
     featurizations = list(dict.fromkeys(selection_df["featurization"]))
     for featurization in featurizations:
         sel_f = selection_df[selection_df["featurization"] == featurization]
         satm_f = sat_majority[sat_majority["featurization"] == featurization]
         satp_f = sat_proportional[sat_proportional["featurization"] == featurization]
+        satcb_f = sat_class_balance[sat_class_balance["featurization"] == featurization]
+        selcb_f = sel_class_balance[sel_class_balance["featurization"] == featurization]
 
         logger.info(f"Figures for featurization {featurization}:")
         plot_downselection_split_figures(
@@ -406,7 +551,7 @@ def plot_xgboost() -> None:
         )
 
         fig, ax = plt.subplots(figsize=(8.5, 5.5))
-        rviz.plot_split_overlay(sel_f, "auprc", ax, logx=True)
+        rviz.plot_split_overlay(sel_f, "auprc", ax, logx=True, domain=MOLECULES_DOMAIN)
         ax.set_title(f"AUPRC vs. size — across splits ({featurization})")
         save_figure(
             fig,
@@ -417,7 +562,9 @@ def plot_xgboost() -> None:
 
         fig, ax = plt.subplots(figsize=(8.5, 5.5))
         sel_f_no_dd = sel_f[sel_f["strategy"] != "density_diversity"]
-        rviz.plot_split_overlay(sel_f_no_dd, "auprc", ax, logx=True)
+        rviz.plot_split_overlay(
+            sel_f_no_dd, "auprc", ax, logx=True, domain=MOLECULES_DOMAIN
+        )
         ax.set_title(f"AUPRC vs. size — across splits ({featurization})")
         save_figure(
             fig,
@@ -433,6 +580,45 @@ def plot_xgboost() -> None:
             f"saturation_overlay_{featurization}.png",
             MOLECULES_DOMAIN,
         )
+
+        for split_name in SPLITS:
+            satcb_s = satcb_f[satcb_f["split"] == split_name]
+            if satcb_s.empty:
+                continue
+            fig = mviz.plot_class_balance_saturation(
+                satcb_s,
+                metric="auprc",
+                title=f"Class balance — {featurization} ({split_name} split)",
+            )
+            save_figure(
+                fig,
+                "saturation",
+                f"{featurization}_{split_name}_class_balance.png",
+                MOLECULES_DOMAIN,
+            )
+
+        # Per-strategy class-balance comparison: the XGBoost/rdkit analog of
+        # the GNN study's gnn_selection_{test_set}_auprc.png (this repo's
+        # "random"/"time" splits are the same random-holdout / restricted-
+        # similarity test files the GNN study uses; see molecules/split.py).
+        for split_name in SPLITS:
+            selcb_s = selcb_f[selcb_f["split"] == split_name]
+            if selcb_s.empty:
+                continue
+            fig = mviz.plot_class_balance_selection(
+                selcb_s,
+                metric="auprc",
+                title=(
+                    f"XGBoost negative-set saturation — AUPRC — "
+                    f"{featurization} ({split_name} split)"
+                ),
+            )
+            save_figure(
+                fig,
+                "saturation",
+                f"{featurization}_{split_name}_selection_class_balance.png",
+                MOLECULES_DOMAIN,
+            )
 
 
 def generate_gnn() -> None:

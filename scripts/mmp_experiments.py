@@ -2,8 +2,8 @@
 
 Trains classifiers using each of the four negative-selection strategies at a
 fixed budget, then evaluates them on matched pairs — two examples close in
-feature space with opposite labels. Concordance (fraction of pairs where the
-model correctly ranks the positive above the negative) reveals whether a
+feature space with opposite labels. Pairwise AUROC (AUROC computed over the
+matched-pair scores, rather than the whole test set) reveals whether a
 selection strategy teaches fine-grained decision-boundary discrimination.
 
 Supports three domains:
@@ -230,8 +230,8 @@ def generate(cfg: MmpConfig) -> tuple[EvalSplit, Any]:
     save_frame(results, "mmps", cfg.domain)
     save_frame(pairs_examples.head(cfg.n_examples), "mmp_examples", cfg.domain)
     logger.info(
-        "\nMean concordance by strategy:\n"
-        + results.groupby("strategy")["concordance"].mean().to_string()
+        "\nMean pairwise AUROC by strategy:\n"
+        + results.groupby("strategy")["pair_auroc"].mean().to_string()
     )
     return split, extra_ds
 

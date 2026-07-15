@@ -69,6 +69,67 @@ def test_budget_sweep_includes_references_once():
     assert (df["strategy"] == "as_is").sum() == 1
 
 
+def test_compare_strategies_default_keeps_full_minority():
+    """neg_to_pos_ratio=None (default) keeps every minority example, as before."""
+    train = make_dataset()
+    test = make_dataset(n=100)
+    sp = cross_dataset_split(train, test)
+    n_minority = int(train.minority_mask().sum())
+    df = selection.compare_strategies(
+        train, make_factory(), budget=40, strategies=("random",), n_seeds=2, split=sp
+    )
+    assert (df["minority_size"] == n_minority).all()
+
+
+def test_compare_strategies_neg_to_pos_ratio_scales_minority():
+    """neg_to_pos_ratio subsamples the minority in step with the selected majority."""
+    train = make_dataset(n=400, pos_rate=0.15)
+    test = make_dataset(n=100)
+    sp = cross_dataset_split(train, test)
+    n_minority = int(train.minority_mask().sum())
+    n_majority = int(train.majority_mask().sum())
+    ratio = n_majority / n_minority
+
+    df = selection.compare_strategies(
+        train,
+        make_factory(),
+        budget=40,
+        strategies=("random", "hard"),
+        n_seeds=2,
+        split=sp,
+        neg_to_pos_ratio=ratio,
+    )
+    assert (df["minority_size"] == round(40 * n_minority / n_majority)).all()
+    assert (df["n_train"] == df["budget"] + df["minority_size"]).all()
+
+
+def test_budget_sweep_neg_to_pos_ratio_forwarded():
+    """budget_sweep forwards neg_to_pos_ratio so minority_size grows with budget."""
+    train = make_dataset(n=400, pos_rate=0.15)
+    test = make_dataset(n=100)
+    sp = cross_dataset_split(train, test)
+    n_minority = int(train.minority_mask().sum())
+    n_majority = int(train.majority_mask().sum())
+    ratio = n_majority / n_minority
+
+    df = selection.budget_sweep(
+        train,
+        make_factory(),
+        budgets=[20, 40],
+        strategies=("random",),
+        n_seeds=1,
+        include_weighted=False,
+        split=sp,
+        neg_to_pos_ratio=ratio,
+    )
+    strategy_rows = df[df["strategy"] == "random"]
+    means = strategy_rows.groupby("budget")["minority_size"].mean()
+    assert means.loc[40] > means.loc[20]
+    # The as_is reference (full majority) converges to the full minority too.
+    as_is_row = df[df["strategy"] == "as_is"].iloc[0]
+    assert as_is_row["minority_size"] == n_minority
+
+
 def test_fix_minority_vary_majority_columns():
     """Saturation A returns one row per size x seed with metrics."""
     ds = make_dataset()
@@ -92,6 +153,29 @@ def test_scale_total_proportional_columns():
     # Larger fractions should use more training rows.
     means = df.groupby("fraction")["n_train"].mean()
     assert means.loc[0.5] > means.loc[0.25]
+
+
+def test_fix_ratio_vary_majority_columns():
+    """Saturation C returns one row per size x seed, minority scaled to the ratio."""
+    train = make_dataset(n=400, pos_rate=0.15)
+    test = make_dataset(n=100)
+    # cross_dataset_split uses train entirely as the training pool (no internal
+    # split), so its class ratio is exactly train's -- avoiding any rounding
+    # ambiguity a stratified train/test split would introduce.
+    sp = cross_dataset_split(train, test)
+    df = saturation.fix_ratio_vary_majority(
+        train, make_factory(), majority_sizes=[40, 80], n_seeds=2, split=sp
+    )
+    assert len(df) == 4
+    assert {"majority_size", "minority_size", "seed", "n_train"}.issubset(df.columns)
+    assert METRIC_COLS.issubset(df.columns)
+    # minority_size should grow with majority_size, tracking the pool's ratio.
+    means = df.groupby("majority_size")["minority_size"].mean()
+    assert means.loc[80] > means.loc[40]
+    n_minority = int(train.minority_mask().sum())
+    n_majority = int(train.majority_mask().sum())
+    for majority_size, minority_size in zip(df["majority_size"], df["minority_size"]):
+        assert minority_size == round(majority_size * n_minority / n_majority)
 
 
 def test_fit_score_regression_task_uses_spearman_not_auroc():
