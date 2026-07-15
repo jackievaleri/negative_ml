@@ -215,7 +215,8 @@ def make_performance_figures() -> None:
         grid_path = data_path(DOMAIN, "grids", f"probability_grid_{target}", ".npz")
         require_artifacts("bball_eda.py", imp_path, grid_path)
         importances = pd.read_csv(imp_path)
-        grid = np.load(grid_path)
+        with np.load(grid_path) as grid:
+            ev_lin, la_lin, proba = grid["ev_lin"], grid["la_lin"], grid["proba"]
 
         fig, ax = plt.subplots(figsize=(6, 4))
         viz.plot_feature_importance_values(
@@ -224,9 +225,7 @@ def make_performance_figures() -> None:
         save_figure(fig, "performance", f"perf_feature_importance_{target}.png", DOMAIN)
 
         fig, ax = plt.subplots(figsize=(8, 6))
-        viz.plot_probability_surface(
-            grid["ev_lin"], grid["la_lin"], grid["proba"], ax, label=label
-        )
+        viz.plot_probability_surface(ev_lin, la_lin, proba, ax, label=label)
         save_figure(
             fig, "performance", f"perf_probability_heatmap_{target}.png", DOMAIN
         )

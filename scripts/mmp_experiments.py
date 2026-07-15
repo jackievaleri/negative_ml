@@ -37,7 +37,6 @@ import pandas as pd
 from loguru import logger
 
 from negative_ml.baseball import io as baseball
-from negative_ml.core.config import RANDOM_SEED
 from negative_ml.core.dataset import Dataset
 from negative_ml.core.experiment import (
     EvalSplit,
@@ -49,13 +48,16 @@ from negative_ml.core.mmp import (
     rescore_examples,
     run_mmp_evaluation,
 )
-from negative_ml.core.splitting import random_split
-from negative_ml.models import feature_selected_ridge_classifier, model_factory
+from negative_ml.models import model_factory
 from negative_ml.molecules import io as molecules
 from negative_ml.runner import metrics_path
 from negative_ml.sandwich import io as sandwiches
-from negative_ml.sandwich.config import SANDWICH_CLF_TOP_FEATURES, SANDWICH_RIDGE_ALPHA
-from negative_ml.script_io import read_result_frames, save_figure, save_frame
+from negative_ml.script_io import (
+    read_result_frames,
+    sandwich_classifier_factory,
+    save_figure,
+    save_frame,
+)
 from negative_ml.viz.mmp import (
     baseball_describe,
     molecules_describe,
@@ -92,7 +94,7 @@ def molecules_load() -> tuple[EvalSplit, Dataset]:
 
 def molecules_viz_dataset(split: EvalSplit, ds: Dataset) -> Dataset:
     """Reconstruct the test Dataset with correct groups and meta for visualization."""
-    _, test_idx = random_split(ds, seed=RANDOM_SEED)
+    test_idx = split.test_idx
     return Dataset(
         X=split.X_test,
         y=split.y_test,
@@ -119,13 +121,6 @@ MOLECULES = MmpConfig(
 )
 
 
-def sandwiches_classifier_factory():
-    """Return a fresh feature-selected Ridge classifier for the sandwich domain."""
-    return feature_selected_ridge_classifier(
-        k=SANDWICH_CLF_TOP_FEATURES, alpha=SANDWICH_RIDGE_ALPHA
-    )
-
-
 def sandwiches_load() -> tuple[EvalSplit, Dataset]:
     """Load the sandwich dataset (classification view) with a random 80/20 split."""
     ds_reg = sandwiches.load()
@@ -140,7 +135,7 @@ SANDWICHES = MmpConfig(
     n_seeds=3,
     n_examples=8,
     max_pairs=200,
-    classifier_factory=sandwiches_classifier_factory,
+    classifier_factory=sandwich_classifier_factory,
     describe=sandwiches_describe,
     load=sandwiches_load,
     build_rescore_inputs=lambda split, cds: (cds, cds.X),

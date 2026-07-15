@@ -8,8 +8,8 @@ from __future__ import annotations
 # Good-vs-bad classification cut: a sandwich is "good" at or above this rating and
 # "bad" below it. Good sandwiches are the rare high-value minority and the
 # positive (label 1) class whose AUROC / AUPRC / F1 the study reports. A rating of
-# exactly 9 counts as good.
-SANDWICH_GOOD_RATING_THRESHOLD = 9.0
+# exactly 8.5 counts as good.
+SANDWICH_GOOD_RATING_THRESHOLD = 8.5
 
 # Candidate thresholds swept by sandwiches_downselection.py to evaluate sensitivity
 # of the downselection results to the good/bad boundary. Lower thresholds admit more

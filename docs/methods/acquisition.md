@@ -94,9 +94,12 @@ either extreme. random mirrors the bulk of the data (mostly ordinary outs
 at unremarkable distances).
 
 The same pattern shows up on the sandwich domain (good sandwich = rating
->= 9), where decoys and density_diversity both surface sandwiches that sit
+>= 8.5), where decoys and density_diversity both surface sandwiches that sit
 right at the edge of the good/bad boundary — for example a 6.7-rated
 peanut-butter-and-provolone sandwich whose nearest good-rated neighbor is
 only one ingredient swap away — while diversity and random pull from across
 the full range of ratings and ingredient combinations rather than
 clustering near that boundary.
+<!-- TODO: SANDWICH_GOOD_RATING_THRESHOLD moved from 9.0 to 8.5; confirm the
+     example sandwich above (and its nearest good-rated neighbor) still
+     holds at the new threshold, or replace it with a current example. -->

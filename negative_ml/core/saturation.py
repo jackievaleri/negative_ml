@@ -184,7 +184,7 @@ def fix_ratio_vary_majority(
     # hardcoded target -- mirrors how the reference negative-dataset study
     # computes neg_to_pos_ratio from the source dataframe once and reuses it
     # for every size.
-    neg_to_pos_ratio = n_majority / n_minority
+    neg_to_pos_ratio = max(n_majority, 1) / max(n_minority, 1)
 
     rows = []
     for size in majority_sizes:

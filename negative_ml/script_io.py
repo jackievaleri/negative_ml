@@ -16,13 +16,67 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
+from negative_ml.baseball import io as baseball
 from negative_ml.core import saturation as sat
 from negative_ml.core import sweep as sel
 from negative_ml.core.config import REPO_ROOT
+from negative_ml.core.dataset import Dataset
+from negative_ml.core.experiment import split_from_dataset
+from negative_ml.models.linear import feature_selected_ridge_classifier
+from negative_ml.molecules import io as molecules
+from negative_ml.molecules.config import MOLECULE_TEST_RANDOM_STEM, MOLECULE_TRAIN_STEM
 from negative_ml.runner import figure_path, metrics_path
+from negative_ml.sandwich import io as sandwiches
+from negative_ml.sandwich.config import SANDWICH_CLF_TOP_FEATURES, SANDWICH_RIDGE_ALPHA
 from negative_ml.viz import diagnostics as diag
 from negative_ml.viz import selection_results as viz
 from negative_ml.viz.style import DARK2, save_fig
+
+
+def build_molecules_pool() -> tuple[Dataset, np.ndarray, np.ndarray]:
+    """Load the molecules pool (train file) and held-out test set.
+
+    Shared by the active-learning scripts (scripts/active_learning_experiments.py,
+    scripts/cold_start_active_learning.py), which both need the same pool/test
+    split for the molecules domain.
+    """
+    train_pool_ds = molecules.load_screen(MOLECULE_TRAIN_STEM, featurization="rdkit")
+    test_ds = molecules.load_screen(MOLECULE_TEST_RANDOM_STEM, featurization="rdkit")
+    return train_pool_ds, test_ds.X, test_ds.y
+
+
+def build_baseball_pool() -> tuple[Dataset, np.ndarray, np.ndarray]:
+    """Load the 2023 baseball season as pool and 2024 as the cross-season test.
+
+    Shared by the active-learning scripts (scripts/active_learning_experiments.py,
+    scripts/cold_start_active_learning.py), which both need the same pool/test
+    split for the baseball domain.
+    """
+    train_pool_ds = baseball.load_season(2023, target="home_run")
+    test_ds = baseball.load_season(2024, target="home_run")
+    return train_pool_ds, test_ds.X, test_ds.y
+
+
+def build_sandwiches_pool() -> tuple[Dataset, np.ndarray, np.ndarray]:
+    """Load and split the sandwich dataset (random 80/20 within the menu).
+
+    Shared by scripts/active_learning_experiments.py, which needs the same
+    pool/test split shape as its molecules/baseball siblings above.
+    """
+    full_ds = sandwiches.to_classification(sandwiches.load())
+    sp = split_from_dataset(full_ds, name="random")
+    return sp.train_ds, sp.X_test, sp.y_test
+
+
+def sandwich_classifier_factory() -> object:
+    """Build a fresh feature-selected ridge classifier for the sandwich domain.
+
+    Shared by scripts/active_learning_experiments.py and
+    scripts/mmp_experiments.py, which both need the same sandwich classifier.
+    """
+    return feature_selected_ridge_classifier(
+        k=SANDWICH_CLF_TOP_FEATURES, alpha=SANDWICH_RIDGE_ALPHA
+    )
 
 
 def save_figure(fig: plt.Figure, category: str, name: str, domain: str) -> None:
@@ -282,6 +336,55 @@ def run_sectioned_script(
         gen_fn()
     if not args.generate_only:
         plot_fn()
+
+
+def run_domain_script(
+    doc: str,
+    domains: Sequence[str],
+    configs: dict[str, object],
+    generate: Callable[[object], None],
+    plot: Callable[[object], None],
+    domain_help: str = "Run only this domain (default: all domains).",
+) -> None:
+    """Parse --domain / --plot-only / --generate-only flags and dispatch.
+
+    Shared CLI scaffold for scripts that run the same generate/plot pair once
+    per domain, each domain configured by its own entry in configs (e.g.
+    scripts/active_learning_experiments.py, scripts/cold_start_active_learning.py)
+    -- as opposed to run_sectioned_script's single-selection --section flag.
+
+    Args:
+        doc: Module docstring (or a short description) for the argparse description.
+        domains: Valid domain names, in the order to run when --domain is omitted.
+        configs: {domain: config} mapping; each config is passed to generate/plot.
+        generate: Called with the domain's config to run experiments and save frames.
+        plot: Called with the domain's config to rebuild figures from saved frames.
+        domain_help: Help text for the --domain flag.
+    """
+    parser = argparse.ArgumentParser(description=doc)
+    parser.add_argument(
+        "--domain", choices=list(domains), default=None, help=domain_help
+    )
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--generate-only",
+        action="store_true",
+        help="Run sweeps but skip figure generation.",
+    )
+    group.add_argument(
+        "--plot-only",
+        action="store_true",
+        help="Rebuild figures from saved CSVs; skip generation.",
+    )
+    args = parser.parse_args()
+
+    selected = [args.domain] if args.domain else list(domains)
+    for domain in selected:
+        cfg = configs[domain]
+        if not args.plot_only:
+            generate(cfg)
+        if not args.generate_only:
+            plot(cfg)
 
 
 def run_downselection_sweeps(

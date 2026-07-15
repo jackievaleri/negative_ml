@@ -42,7 +42,7 @@ from sklearn.model_selection import StratifiedKFold
 
 from negative_ml.core import eval as ev
 from negative_ml.core import saturation, sweep
-from negative_ml.core.config import RANDOM_SEED, REPO_ROOT
+from negative_ml.core.config import MOLECULES_XGB_N_ESTIMATORS, RANDOM_SEED, REPO_ROOT
 from negative_ml.core.experiment import fit_score, positive_scores
 from negative_ml.models import feature_selected_ridge_classifier, model_factory
 from negative_ml.models.xgboost import xgb_classifier
@@ -97,7 +97,6 @@ FEATURIZATIONS = ["rdkit"]
 BUDGETS = [250, 500, 1000, 2000, 4000, 8000, 16000, 29949]
 FRACTIONS = [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]
 N_SEEDS = 3
-XGB_N_ESTIMATORS = 100
 METRICS = ["auroc", "auprc", "f1", "precision_at_k"]
 #: Metrics sharing the zero-baseline bar chart in plot_benchmark. AUPRC is
 #: plotted separately (plot_benchmark_auprc) since its axis uses the
@@ -295,7 +294,7 @@ def generate_xgboost() -> None:
 
     def classifier_factory(**kw: object) -> object:
         """Return an XGBoost classifier with the configured number of estimators."""
-        return _base_factory(n_estimators=XGB_N_ESTIMATORS, **kw)
+        return _base_factory(n_estimators=MOLECULES_XGB_N_ESTIMATORS, **kw)
 
     benchmark_rows = []
     selection_frames, sat_frames, sat_prop_frames = [], [], []
@@ -393,7 +392,7 @@ def generate_xgboost() -> None:
                 n_seeds=N_SEEDS,
                 include_weighted=False,
                 split=sp,
-                neg_to_pos_ratio=n_majority / n_minority,
+                neg_to_pos_ratio=max(n_majority, 1) / max(n_minority, 1),
             ).assign(
                 class_balance="proportional",
                 featurization=featurization,
@@ -434,7 +433,8 @@ def plot_benchmark(benchmark_df: pd.DataFrame) -> None:
     AUPRC is excluded here and plotted separately by plot_benchmark_auprc (see
     BENCHMARK_BAR_METRICS).
     """
-    feats = [f for f in FEATURIZATIONS if f in set(benchmark_df["featurization"])]
+    present = dict.fromkeys(benchmark_df["featurization"])
+    feats = [f for f in present if f in FEATURIZATIONS]
     splits = [s for s in SPLITS if s in set(benchmark_df["split"])]
     xpos = np.arange(len(feats))
     width = 0.8 / max(len(BENCHMARK_BAR_METRICS), 1)
@@ -481,7 +481,8 @@ def plot_benchmark_auprc(benchmark_df: pd.DataFrame) -> None:
     metrics share there; mixing the two on one axis would misrepresent bar
     heights.
     """
-    feats = [f for f in FEATURIZATIONS if f in set(benchmark_df["featurization"])]
+    present = dict.fromkeys(benchmark_df["featurization"])
+    feats = [f for f in present if f in FEATURIZATIONS]
     splits = [s for s in SPLITS if s in set(benchmark_df["split"])]
     xpos = np.arange(len(feats))
 

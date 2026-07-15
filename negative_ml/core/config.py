@@ -54,6 +54,12 @@ XGB_DEFAULTS: dict[str, Any] = {
     "n_jobs": -1,
 }
 
+# n_estimators override for the molecules rdkit XGBoost model. Shared by
+# scripts/modeling.py's molecules benchmark/selection/saturation sweeps and
+# scripts/shap_importance.py's molecules SHAP model, which is documented to
+# match that benchmark model.
+MOLECULES_XGB_N_ESTIMATORS = 100
+
 # Number of query batches per active-learning simulation run.
 AL_N_BATCHES = 5
 # Number of seeds (initial labeled set draws) per (acquisition, neg_composition).
@@ -109,8 +115,12 @@ COLD_START_NEG_STRATEGIES: tuple[str, ...] = (
 )
 # Acquisition strategies for the post-bolus workflow rounds.
 COLD_START_ACQUISITIONS: tuple[str, ...] = ("random", "ucb")
-# Post-bolus batch size and number of rounds (a typical AL workflow cadence).
-COLD_START_BATCH_SIZE = 100
+# Post-bolus batch size per domain, and number of rounds (a typical AL
+# workflow cadence).
+COLD_START_BATCH_SIZE: dict[str, int] = {
+    "molecules": 500,
+    "baseball": 100,
+}
 COLD_START_N_BATCHES = 5
 # Seeds per (bolus neg strategy, acquisition) condition.
 COLD_START_N_SEEDS = 3

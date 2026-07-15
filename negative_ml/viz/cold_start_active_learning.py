@@ -47,7 +47,7 @@ ACQUISITION_LABELS: dict[str, str] = {
 }
 
 #: Legend title shared by both figures below.
-LEGEND_TITLE = "Bolus negative strategy"
+LEGEND_TITLE = "Time zero negative strategy"
 
 #: fig.tight_layout(rect=...) margin reserved for the figure-level legend below
 #: the panels (see negative_ml.viz.faceted_curves.place_outside_legend).

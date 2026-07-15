@@ -70,7 +70,7 @@ def make_eda_figures() -> None:
     logger.info("EDA figures:")
     raw = sandwiches.read_ratings()
     ds = sandwiches.featurize(raw)
-    frame = sandwiches.clean_ratings(raw)
+    frame = ds.meta
 
     fig, ax = plt.subplots(figsize=(6, 4))
     viz.plot_rating_distribution(ds.y, ax)

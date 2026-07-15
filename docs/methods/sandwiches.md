@@ -67,7 +67,7 @@ featurization is designed to avoid.
 The dataset is natively a regression problem (y is the continuous 0-10
 rating). sandwich.io.to_classification recasts it as good-vs-bad
 classification: a sandwich is "good" (y=1) when its rating is at or above
-SANDWICH_GOOD_RATING_THRESHOLD (9.0) and "bad" (y=0) otherwise. This is what
+SANDWICH_GOOD_RATING_THRESHOLD (8.5) and "bad" (y=0) otherwise. This is what
 lets the sandwich domain plug into the same majority-selection and
 saturation experiments as the (natively classification) molecules and
 baseball domains.
@@ -88,9 +88,9 @@ sandwich.split.build_splits defines three evaluation regimes:
 
 The rating distribution is skewed high overall, but the exact "good" rate
 depends on where the good/bad line is drawn. At the threshold actually used
-throughout the study (rating >= 9.0):
+throughout the study (rating >= 8.5):
 
-- 52 of 239 sandwiches (21.8%) are "good."
+- 80 of 239 sandwiches (33.5%) are "good."
 - 131 of 239 (54.8%) score at or above 7.
 - 25 of 239 (10.5%) score below 3.
 
@@ -123,9 +123,9 @@ SANDWICH_CV_FOLDS-fold (5) stratified k-fold, refitting the model from
 scratch in every fold.
 
 Comparing the ridge classifier against a full-feature XGBoost baseline on
-this cross-validation protocol gives AUROC 0.544 +/- 0.022 for the ridge
-classifier and AUROC 0.603 +/- 0.027 for XGBoost, against a chance AUROC of
-0.5 and a base rate (chance AUPRC) of about 0.218. The top ingredients
-selected by the F-test (e.g. Sauce=Kewpie mayo, Wild Magic=Bacon,
-Cheese=Horseradish Cheddar) are the ones most linearly associated with a
-good rating.
+this cross-validation protocol gives AUROC 0.558 +/- 0.020 for the ridge
+classifier and AUROC 0.600 +/- 0.031 for XGBoost, against a chance AUROC of
+0.5 and a base rate (chance AUPRC) of about 0.335. The top ingredients
+selected by the F-test (e.g. Wild Magic=Bacon, Wild Magic=Extra roughage,
+Sauce=Kewpie mayo) are the ones most linearly associated with a good
+rating.
