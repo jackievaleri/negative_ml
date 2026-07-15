@@ -42,12 +42,20 @@ class EvalSplit:
         y_test: The held-out evaluation labels.
         name: Label for the split regime, carried into result frames as the
             split column by the scripts (e.g. "random" or "hard").
+        test_idx: Row indices into the source dataset that produced X_test/
+            y_test, when the split was drawn from a single dataset (None for
+            cross-dataset splits, where the test set is a whole separate
+            Dataset with no shared row indexing). Lets callers that need
+            dataset-aligned columns not carried on Dataset itself (e.g.
+            groups, meta) slice them consistently with X_test/y_test instead
+            of re-deriving the split.
     """
 
     train_ds: Dataset
     X_test: np.ndarray
     y_test: np.ndarray
     name: str = "random"
+    test_idx: np.ndarray | None = None
 
 
 def make_split(
@@ -96,6 +104,7 @@ def split_from_dataset(
         X_test=dataset.X[test_idx],
         y_test=dataset.y[test_idx],
         name=name,
+        test_idx=test_idx,
     )
 
 

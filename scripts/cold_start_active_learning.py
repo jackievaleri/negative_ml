@@ -36,7 +36,6 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from negative_ml.baseball import io as baseball
 from negative_ml.core.active_learning import (
     ACQUISITION_FNS,
     make_cold_start_labeled,
@@ -55,10 +54,13 @@ from negative_ml.core.config import (
 )
 from negative_ml.core.dataset import Dataset
 from negative_ml.models.xgboost import xgb_classifier
-from negative_ml.molecules import io as molecules
-from negative_ml.molecules.config import MOLECULE_TEST_RANDOM_STEM, MOLECULE_TRAIN_STEM
 from negative_ml.runner import metrics_path
-from negative_ml.script_io import save_figure, save_frame
+from negative_ml.script_io import (
+    build_baseball_pool,
+    build_molecules_pool,
+    save_figure,
+    save_frame,
+)
 from negative_ml.viz import cold_start_active_learning as viz_cs
 
 EXPERIMENT = "cold_start_active_learning"
@@ -72,20 +74,6 @@ class ColdStartConfig:
     domain: str
     build_pool: Callable[[], tuple[Dataset, np.ndarray, np.ndarray]]
     classifier_factory: Callable[[], object]
-
-
-def build_molecules_pool() -> tuple[Dataset, np.ndarray, np.ndarray]:
-    """Load the molecules pool (train file) and held-out test set."""
-    train_pool_ds = molecules.load_screen(MOLECULE_TRAIN_STEM, featurization="rdkit")
-    test_ds = molecules.load_screen(MOLECULE_TEST_RANDOM_STEM, featurization="rdkit")
-    return train_pool_ds, test_ds.X, test_ds.y
-
-
-def build_baseball_pool() -> tuple[Dataset, np.ndarray, np.ndarray]:
-    """Load the 2023 baseball season as pool and 2024 as the cross-season test."""
-    train_pool_ds = baseball.load_season(2023, target="home_run")
-    test_ds = baseball.load_season(2024, target="home_run")
-    return train_pool_ds, test_ds.X, test_ds.y
 
 
 CONFIGS: dict[str, ColdStartConfig] = {
@@ -203,12 +191,13 @@ def main() -> None:
         default=None,
         help="Run only this domain (default: both domains).",
     )
-    parser.add_argument(
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
         "--generate-only",
         action="store_true",
         help="Run sweeps but skip figure generation.",
     )
-    parser.add_argument(
+    group.add_argument(
         "--plot-only",
         action="store_true",
         help="Rebuild figures from saved CSVs; skip generation.",

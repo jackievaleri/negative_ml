@@ -36,7 +36,7 @@ from negative_ml.core.dataset import Dataset
 from negative_ml.core.selection import BUDGET_VARYING
 from negative_ml.models import model_factory
 from negative_ml.models.xgboost import xgb_classifier, xgb_regressor
-from negative_ml.runner import metrics_path
+from negative_ml.runner import DEFAULT_BUDGETS, metrics_path
 from negative_ml.sandwich import io as sandwiches
 from negative_ml.sandwich import split as sandwich_split
 from negative_ml.sandwich.config import SANDWICH_GOOD_RATING_THRESHOLDS
@@ -61,7 +61,7 @@ ALL_DOMAINS = ("baseball", "sandwiches")
 BBALL_DOMAIN = "baseball"
 BBALL_TARGETS = ["home_run", "triple"]
 BBALL_TRAIN_YEAR, BBALL_TEST_YEAR = 2023, 2024
-BBALL_BUDGETS = [250, 500, 1000, 2000, 4000, 8000, 16000]
+BBALL_BUDGETS = DEFAULT_BUDGETS["baseball"]
 BBALL_FRACTIONS = [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]
 BBALL_N_SEEDS = 3
 BBALL_METRICS = ["auroc", "auprc", "precision_at_k", "enrichment_factor"]
@@ -70,7 +70,7 @@ BBALL_EXAMPLE_BUDGET = 12
 SANDWICH_DOMAIN = "sandwiches"
 SANDWICH_SPLITS = ("random", "scaffold", "season")
 SANDWICH_THRESHOLDS = SANDWICH_GOOD_RATING_THRESHOLDS
-SANDWICH_BUDGETS = [20, 40, 60, 80, 100, 120, 150]
+SANDWICH_BUDGETS = DEFAULT_BUDGETS["sandwiches"]
 SANDWICH_FRACTIONS = [0.1, 0.25, 0.5, 0.75, 1.0]
 SANDWICH_N_SEEDS = 5
 #: Classifier metrics are AUROC/AUPRC (a binary good-vs-bad ranking); the
@@ -343,13 +343,16 @@ def plot_sandwich() -> None:
     for threshold in thresholds:
         log_sandwich_example_tables(threshold)
         for model_type in model_types:
-            mask = (selection_df["threshold"] == threshold) & (
+            # np.isclose rather than == : threshold has round-tripped through a
+            # CSV write/read, so exact float equality is fragile to how it was
+            # serialized (see save_frame).
+            mask = np.isclose(selection_df["threshold"], threshold) & (
                 selection_df["model_type"] == model_type
             )
-            sat_mask = (sat_majority["threshold"] == threshold) & (
+            sat_mask = np.isclose(sat_majority["threshold"], threshold) & (
                 sat_majority["model_type"] == model_type
             )
-            satp_mask = (sat_proportional["threshold"] == threshold) & (
+            satp_mask = np.isclose(sat_proportional["threshold"], threshold) & (
                 sat_proportional["model_type"] == model_type
             )
 

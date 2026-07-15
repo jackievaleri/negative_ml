@@ -16,13 +16,54 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
+from negative_ml.baseball import io as baseball
 from negative_ml.core import saturation as sat
 from negative_ml.core import sweep as sel
 from negative_ml.core.config import REPO_ROOT
+from negative_ml.core.dataset import Dataset
+from negative_ml.models.linear import feature_selected_ridge_classifier
+from negative_ml.molecules import io as molecules
+from negative_ml.molecules.config import MOLECULE_TEST_RANDOM_STEM, MOLECULE_TRAIN_STEM
 from negative_ml.runner import figure_path, metrics_path
+from negative_ml.sandwich.config import SANDWICH_CLF_TOP_FEATURES, SANDWICH_RIDGE_ALPHA
 from negative_ml.viz import diagnostics as diag
 from negative_ml.viz import selection_results as viz
 from negative_ml.viz.style import DARK2, save_fig
+
+
+def build_molecules_pool() -> tuple[Dataset, np.ndarray, np.ndarray]:
+    """Load the molecules pool (train file) and held-out test set.
+
+    Shared by the active-learning scripts (scripts/active_learning_experiments.py,
+    scripts/cold_start_active_learning.py), which both need the same pool/test
+    split for the molecules domain.
+    """
+    train_pool_ds = molecules.load_screen(MOLECULE_TRAIN_STEM, featurization="rdkit")
+    test_ds = molecules.load_screen(MOLECULE_TEST_RANDOM_STEM, featurization="rdkit")
+    return train_pool_ds, test_ds.X, test_ds.y
+
+
+def build_baseball_pool() -> tuple[Dataset, np.ndarray, np.ndarray]:
+    """Load the 2023 baseball season as pool and 2024 as the cross-season test.
+
+    Shared by the active-learning scripts (scripts/active_learning_experiments.py,
+    scripts/cold_start_active_learning.py), which both need the same pool/test
+    split for the baseball domain.
+    """
+    train_pool_ds = baseball.load_season(2023, target="home_run")
+    test_ds = baseball.load_season(2024, target="home_run")
+    return train_pool_ds, test_ds.X, test_ds.y
+
+
+def sandwich_classifier_factory() -> object:
+    """Build a fresh feature-selected ridge classifier for the sandwich domain.
+
+    Shared by scripts/active_learning_experiments.py and
+    scripts/mmp_experiments.py, which both need the same sandwich classifier.
+    """
+    return feature_selected_ridge_classifier(
+        k=SANDWICH_CLF_TOP_FEATURES, alpha=SANDWICH_RIDGE_ALPHA
+    )
 
 
 def save_figure(fig: plt.Figure, category: str, name: str, domain: str) -> None:

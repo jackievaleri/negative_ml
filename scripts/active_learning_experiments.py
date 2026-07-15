@@ -38,7 +38,6 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from negative_ml.baseball import io as baseball
 from negative_ml.core.active_learning import (
     ACQUISITION_FNS,
     make_init_labeled,
@@ -57,14 +56,16 @@ from negative_ml.core.config import (
 )
 from negative_ml.core.dataset import Dataset
 from negative_ml.core.splitting import random_split
-from negative_ml.models.linear import feature_selected_ridge_classifier
 from negative_ml.models.xgboost import xgb_classifier
-from negative_ml.molecules import io as molecules
-from negative_ml.molecules.config import MOLECULE_TEST_RANDOM_STEM, MOLECULE_TRAIN_STEM
 from negative_ml.runner import metrics_path
 from negative_ml.sandwich import io as sandwiches
-from negative_ml.sandwich.config import SANDWICH_CLF_TOP_FEATURES, SANDWICH_RIDGE_ALPHA
-from negative_ml.script_io import save_figure, save_frame
+from negative_ml.script_io import (
+    build_baseball_pool,
+    build_molecules_pool,
+    sandwich_classifier_factory,
+    save_figure,
+    save_frame,
+)
 from negative_ml.viz import active_learning as viz_al
 
 EXPERIMENT = "active_learning"
@@ -80,33 +81,12 @@ class AlConfig:
     classifier_factory: Callable[[], object]
 
 
-def build_molecules_pool() -> tuple[Dataset, np.ndarray, np.ndarray]:
-    """Load the molecules pool (train file) and held-out test set."""
-    train_pool_ds = molecules.load_screen(MOLECULE_TRAIN_STEM, featurization="rdkit")
-    test_ds = molecules.load_screen(MOLECULE_TEST_RANDOM_STEM, featurization="rdkit")
-    return train_pool_ds, test_ds.X, test_ds.y
-
-
-def build_baseball_pool() -> tuple[Dataset, np.ndarray, np.ndarray]:
-    """Load the 2023 baseball season as pool and 2024 as the cross-season test."""
-    train_pool_ds = baseball.load_season(2023, target="home_run")
-    test_ds = baseball.load_season(2024, target="home_run")
-    return train_pool_ds, test_ds.X, test_ds.y
-
-
 def build_sandwiches_pool() -> tuple[Dataset, np.ndarray, np.ndarray]:
     """Load and split the sandwich dataset (random 80/20 within the menu)."""
     full_ds = sandwiches.to_classification(sandwiches.load())
     train_idx, test_idx = random_split(full_ds, seed=RANDOM_SEED)
     train_pool_ds = full_ds.subset(train_idx)
     return train_pool_ds, full_ds.X[test_idx], full_ds.y[test_idx]
-
-
-def sandwich_factory() -> object:
-    """Build a fresh ridge classifier pipeline for the sandwich domain."""
-    return feature_selected_ridge_classifier(
-        k=SANDWICH_CLF_TOP_FEATURES, alpha=SANDWICH_RIDGE_ALPHA
-    )
 
 
 CONFIGS: dict[str, AlConfig] = {
@@ -123,7 +103,7 @@ CONFIGS: dict[str, AlConfig] = {
     "sandwiches": AlConfig(
         domain="sandwiches",
         build_pool=build_sandwiches_pool,
-        classifier_factory=sandwich_factory,
+        classifier_factory=sandwich_classifier_factory,
     ),
 }
 
@@ -216,12 +196,13 @@ def main() -> None:
         default=None,
         help="Run only this domain (default: all domains).",
     )
-    parser.add_argument(
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
         "--generate-only",
         action="store_true",
         help="Run sweeps but skip figure generation.",
     )
-    parser.add_argument(
+    group.add_argument(
         "--plot-only",
         action="store_true",
         help="Rebuild figures from saved CSVs; skip generation.",

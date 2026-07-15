@@ -54,6 +54,12 @@ XGB_DEFAULTS: dict[str, Any] = {
     "n_jobs": -1,
 }
 
+# n_estimators override for the molecules rdkit XGBoost model. Shared by
+# scripts/modeling.py's molecules benchmark/selection/saturation sweeps and
+# scripts/shap_importance.py's molecules SHAP model, which is documented to
+# match that benchmark model.
+MOLECULES_XGB_N_ESTIMATORS = 100
+
 # Number of query batches per active-learning simulation run.
 AL_N_BATCHES = 5
 # Number of seeds (initial labeled set draws) per (acquisition, neg_composition).

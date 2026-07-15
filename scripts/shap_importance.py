@@ -26,6 +26,7 @@ import pandas as pd
 
 from negative_ml.baseball import io as baseball
 from negative_ml.baseball import split as baseball_split
+from negative_ml.core.config import MOLECULES_XGB_N_ESTIMATORS
 from negative_ml.core.experiment import split_from_dataset
 from negative_ml.core.shap_importance import shap_feature_importance
 from negative_ml.models import model_factory
@@ -47,7 +48,6 @@ BASEBALL_EXPERIMENT = "shap_importance_home_run"
 
 MOLECULES_DOMAIN = "molecules"
 MOLECULES_FEATURIZATION = "rdkit"
-MOLECULES_XGB_N_ESTIMATORS = 100
 MOLECULES_EXPERIMENT = "shap_importance_rdkit"
 
 SANDWICH_DOMAIN = "sandwiches"
