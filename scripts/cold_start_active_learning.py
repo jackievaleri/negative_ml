@@ -137,7 +137,7 @@ def generate(cfg: ColdStartConfig) -> None:
                     X_test=X_test,
                     y_test=y_test,
                     model_factory=cfg.classifier_factory,
-                    batch_size=COLD_START_BATCH_SIZE,
+                    batch_size=COLD_START_BATCH_SIZE[domain],
                     n_batches=COLD_START_N_BATCHES,
                     acquisition_fn=acq_fn,
                     neg_composition="as_is",

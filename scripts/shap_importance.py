@@ -3,8 +3,10 @@
 Baseball: the home-run XGBoost classifier (random split, matching the split
 scripts/bball_eda.py uses for its gini feature-importance CSV). Molecules:
 the XGBoost classifier on the rdkit featurization (random split, matching
-scripts/modeling.py's molecules benchmark). Sandwiches: the XGBoost regressor
-on raw 0-10 ratings (not the good-vs-bad classifier reframing).
+scripts/modeling.py's molecules benchmark). Sandwiches: two variants --
+the XGBoost regressor on raw 0-10 ratings, and the XGBoost classifier on the
+good-vs-bad reframing (SANDWICH_GOOD_RATING_THRESHOLD), matching the
+"XGBoost" model in scripts/modeling.py's sandwich classifier comparison.
 
 Usage::
 
@@ -30,7 +32,7 @@ from negative_ml.core.config import MOLECULES_XGB_N_ESTIMATORS
 from negative_ml.core.experiment import split_from_dataset
 from negative_ml.core.shap_importance import shap_feature_importance
 from negative_ml.models import model_factory
-from negative_ml.models.xgboost import xgb_regressor
+from negative_ml.models.xgboost import xgb_classifier, xgb_regressor
 from negative_ml.molecules import io as molecules
 from negative_ml.molecules import split as molecules_split
 from negative_ml.molecules.config import MOLECULE_TRAIN_STEM
@@ -52,6 +54,7 @@ MOLECULES_EXPERIMENT = "shap_importance_rdkit"
 
 SANDWICH_DOMAIN = "sandwiches"
 SANDWICH_EXPERIMENT = "shap_importance"
+SANDWICH_CLF_EXPERIMENT = "shap_importance_clf"
 
 
 def generate_baseball() -> None:
@@ -101,7 +104,7 @@ def plot_molecules() -> None:
     save_figure(fig, "performance", "shap_importance_rdkit.png", MOLECULES_DOMAIN)
 
 
-def generate_sandwich() -> None:
+def generate_sandwich_regressor() -> None:
     """Fit the ratings XGBoost regressor and save its SHAP importances."""
     dataset = sandwiches.load()
     sp = split_from_dataset(dataset, name="random")
@@ -112,8 +115,8 @@ def generate_sandwich() -> None:
     save_frame(importance, SANDWICH_EXPERIMENT, SANDWICH_DOMAIN)
 
 
-def plot_sandwich() -> None:
-    """Rebuild the sandwich SHAP importance figure from the saved artifact."""
+def plot_sandwich_regressor() -> None:
+    """Rebuild the sandwich ratings SHAP importance figure from the saved artifact."""
     path = metrics_path(SANDWICH_EXPERIMENT, SANDWICH_DOMAIN)
     require_artifacts("shap_importance.py --domain sandwiches", path)
     importance = pd.read_csv(path)
@@ -122,6 +125,41 @@ def plot_sandwich() -> None:
     plot_shap_importance(importance["feature"], importance["mean_abs_shap"], ax)
     fig.tight_layout()
     save_figure(fig, "performance", "shap_importance.png", SANDWICH_DOMAIN)
+
+
+def generate_sandwich_classifier() -> None:
+    """Fit the good-vs-bad XGBoost classifier and save its SHAP importances."""
+    dataset = sandwiches.to_classification(sandwiches.load())
+    sp = split_from_dataset(dataset, name="random")
+
+    model = xgb_classifier()
+    model.fit(sp.train_ds.X, sp.train_ds.y)
+    importance = shap_feature_importance(model, sp.X_test, sp.train_ds.feature_names)
+    save_frame(importance, SANDWICH_CLF_EXPERIMENT, SANDWICH_DOMAIN)
+
+
+def plot_sandwich_classifier() -> None:
+    """Rebuild the sandwich good-vs-bad SHAP importance figure from the artifact."""
+    path = metrics_path(SANDWICH_CLF_EXPERIMENT, SANDWICH_DOMAIN)
+    require_artifacts("shap_importance.py --domain sandwiches", path)
+    importance = pd.read_csv(path)
+
+    fig, ax = plt.subplots(figsize=(7, 6))
+    plot_shap_importance(importance["feature"], importance["mean_abs_shap"], ax)
+    fig.tight_layout()
+    save_figure(fig, "performance", "shap_importance_clf.png", SANDWICH_DOMAIN)
+
+
+def generate_sandwich() -> None:
+    """Fit both sandwich SHAP models (ratings regressor, good-vs-bad classifier)."""
+    generate_sandwich_regressor()
+    generate_sandwich_classifier()
+
+
+def plot_sandwich() -> None:
+    """Rebuild both sandwich SHAP importance figures from their saved artifacts."""
+    plot_sandwich_regressor()
+    plot_sandwich_classifier()
 
 
 _GENERATE = {

@@ -115,8 +115,12 @@ COLD_START_NEG_STRATEGIES: tuple[str, ...] = (
 )
 # Acquisition strategies for the post-bolus workflow rounds.
 COLD_START_ACQUISITIONS: tuple[str, ...] = ("random", "ucb")
-# Post-bolus batch size and number of rounds (a typical AL workflow cadence).
-COLD_START_BATCH_SIZE = 100
+# Post-bolus batch size per domain, and number of rounds (a typical AL
+# workflow cadence).
+COLD_START_BATCH_SIZE: dict[str, int] = {
+    "molecules": 500,
+    "baseball": 100,
+}
 COLD_START_N_BATCHES = 5
 # Seeds per (bolus neg strategy, acquisition) condition.
 COLD_START_N_SEEDS = 3

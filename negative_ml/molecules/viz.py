@@ -104,6 +104,9 @@ def plot_selection_saturation(
     ax: plt.Axes,
     x: str = "n_negatives",
     logx: bool = True,
+    ylim: tuple[float | None, float | None] | None = GNN_YLIM,
+    domain: str | None = None,
+    xlim_right: float | None = None,
 ) -> plt.Axes:
     """One curve per selection strategy: metric vs. number of negatives.
 
@@ -113,11 +116,23 @@ def plot_selection_saturation(
 
     Args:
         df: Long-format frame for a single (class_balance, test_set) slice, with
-            columns strategy, seed, the x column, and the metric.
+            columns strategy, seed, the x column, and the metric. Rows are
+            plotted as-is, so any budget the caller wants excluded (e.g. a
+            largest budget only one strategy reaches) should be filtered out
+            beforehand -- that also drops its tick automatically, since ticks
+            are read off the data actually present.
         metric: Column to put on the y-axis ("auroc" or "auprc").
         ax: Target matplotlib axes.
         x: Column for the x-axis (the negative count by default).
         logx: Log-2 scale the x-axis.
+        ylim: Explicit y-limit override, passed straight through to
+            apply_metric_ylim; defaults to the full GNN_YLIM. Pass None (with
+            a domain) to fall back to the domain-specific AUPRC band instead,
+            for the test sets whose curves don't actually dip below it.
+        domain: Domain name for apply_metric_ylim's AUPRC_YLIM_BY_DOMAIN
+            lookup; only consulted when ylim is None.
+        xlim_right: Right x-limit override, for trimming the log-scale axis's
+            usual margin past the largest plotted budget.
 
     Returns:
         The styled ax.
@@ -154,7 +169,9 @@ def plot_selection_saturation(
         ax.minorticks_off()
     ax.set_xticks(ticks)
     ax.set_xticklabels([str(t) for t in ticks], rotation=45, ha="right")
-    apply_metric_ylim(ax, metric, ylim=GNN_YLIM)
+    if xlim_right is not None:
+        ax.set_xlim(right=xlim_right)
+    apply_metric_ylim(ax, metric, domain=domain, ylim=ylim)
     ax.set_xlabel("number of negative examples used for training")
     ax.set_ylabel(METRIC_LABELS.get(metric, metric))
     return style_axes(ax)
@@ -172,6 +189,15 @@ def plot_saturation_panels(
     held to ~3%, right panel all positives used -- with a shared y-axis and one
     legend for both panels.
 
+    The restricted-similarity test set's AUPRC never dips below ~0.43 (unlike
+    random_holdout, whose curves fall as low as ~0.02), so that one panel uses
+    the tighter, domain-specific AUPRC_YLIM_BY_DOMAIN["molecules"] band instead
+    of the full GNN_YLIM -- legible without clipping any real result. That
+    panel also drops the largest budget (29,950 negatives), which only the
+    "random" strategy actually reaches -- "diverse" and "similar" have no
+    point there, so keeping it would show one curve running on alone past
+    where the comparison is fair.
+
     Args:
         df: Combined long-format GNN results frame (both regimes and test sets).
         metric: Metric to plot ("auroc" or "auprc").
@@ -182,9 +208,19 @@ def plot_saturation_panels(
         The created Figure (caller saves / displays it).
     """
     sub = df[df["test_set"] == test_set]
+    use_domain_band = metric == "auprc" and test_set == "restricted_similarity"
+    if use_domain_band:
+        sub = sub[sub["n_negatives"] != 29950]
     fig, axes = plt.subplots(1, 2, figsize=(13, 5), sharey=True)
     for ax, regime in zip(axes, regimes):
-        plot_selection_saturation(sub[sub["class_balance"] == regime], metric, ax)
+        plot_selection_saturation(
+            sub[sub["class_balance"] == regime],
+            metric,
+            ax,
+            ylim=None if use_domain_band else GNN_YLIM,
+            domain="molecules" if use_domain_band else None,
+            xlim_right=17000 if use_domain_band else None,
+        )
         ax.set_title(CLASS_BALANCE_LABEL.get(regime, regime))
     axes[1].set_ylabel("")
 
