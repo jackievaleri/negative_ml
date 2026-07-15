@@ -25,6 +25,10 @@ import pandas as pd
 from matplotlib.lines import Line2D
 from matplotlib.ticker import FixedLocator, ScalarFormatter
 
+from negative_ml.molecules.config import (
+    MOLECULE_GNN_MAX_BUDGET_RANDOM_ONLY,
+    MOLECULE_GNN_RESTRICTED_SIMILARITY_XLIM_RIGHT,
+)
 from negative_ml.viz.selection_results import (
     METRIC_LABELS,
     aggregate,
@@ -193,10 +197,10 @@ def plot_saturation_panels(
     random_holdout, whose curves fall as low as ~0.02), so that one panel uses
     the tighter, domain-specific AUPRC_YLIM_BY_DOMAIN["molecules"] band instead
     of the full GNN_YLIM -- legible without clipping any real result. That
-    panel also drops the largest budget (29,950 negatives), which only the
-    "random" strategy actually reaches -- "diverse" and "similar" have no
-    point there, so keeping it would show one curve running on alone past
-    where the comparison is fair.
+    panel also drops the largest budget (MOLECULE_GNN_MAX_BUDGET_RANDOM_ONLY),
+    which only the "random" strategy actually reaches -- "diverse" and
+    "similar" have no point there, so keeping it would show one curve
+    running on alone past where the comparison is fair.
 
     Args:
         df: Combined long-format GNN results frame (both regimes and test sets).
@@ -210,7 +214,7 @@ def plot_saturation_panels(
     sub = df[df["test_set"] == test_set]
     use_domain_band = metric == "auprc" and test_set == "restricted_similarity"
     if use_domain_band:
-        sub = sub[sub["n_negatives"] != 29950]
+        sub = sub[sub["n_negatives"] != MOLECULE_GNN_MAX_BUDGET_RANDOM_ONLY]
     fig, axes = plt.subplots(1, 2, figsize=(13, 5), sharey=True)
     for ax, regime in zip(axes, regimes):
         plot_selection_saturation(
@@ -219,7 +223,11 @@ def plot_saturation_panels(
             ax,
             ylim=None if use_domain_band else GNN_YLIM,
             domain="molecules" if use_domain_band else None,
-            xlim_right=17000 if use_domain_band else None,
+            xlim_right=(
+                MOLECULE_GNN_RESTRICTED_SIMILARITY_XLIM_RIGHT
+                if use_domain_band
+                else None
+            ),
         )
         ax.set_title(CLASS_BALANCE_LABEL.get(regime, regime))
     axes[1].set_ylabel("")

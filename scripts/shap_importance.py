@@ -29,7 +29,8 @@ import pandas as pd
 from negative_ml.baseball import io as baseball
 from negative_ml.baseball import split as baseball_split
 from negative_ml.core.config import MOLECULES_XGB_N_ESTIMATORS
-from negative_ml.core.experiment import split_from_dataset
+from negative_ml.core.dataset import Dataset
+from negative_ml.core.experiment import EvalSplit, split_from_dataset
 from negative_ml.core.shap_importance import shap_feature_importance
 from negative_ml.models import model_factory
 from negative_ml.models.xgboost import xgb_classifier, xgb_regressor
@@ -57,103 +58,110 @@ SANDWICH_EXPERIMENT = "shap_importance"
 SANDWICH_CLF_EXPERIMENT = "shap_importance_clf"
 
 
-def generate_baseball() -> None:
-    """Fit the home-run XGBoost classifier and save its SHAP importances."""
-    ds_train = baseball.load_season(BASEBALL_TRAIN_YEAR, target=BASEBALL_TARGET)
-    ds_test = baseball.load_season(BASEBALL_TEST_YEAR, target=BASEBALL_TARGET)
-    sp = baseball_split.build_splits(ds_train, ds_test)["random"]
+def fit_and_save_shap(
+    model: object, sp: EvalSplit, experiment: str, domain: str
+) -> None:
+    """Fit model on the split's training data and save its SHAP importances.
 
-    model = model_factory("classification")()
+    Shared by every generate_* function below, which each differ only in how
+    the model and split are built.
+    """
     model.fit(sp.train_ds.X, sp.train_ds.y)
     importance = shap_feature_importance(model, sp.X_test, sp.train_ds.feature_names)
-    save_frame(importance, BASEBALL_EXPERIMENT, BASEBALL_DOMAIN)
+    save_frame(importance, experiment, domain)
 
 
-def plot_baseball() -> None:
-    """Rebuild the baseball SHAP importance figure from the saved artifact."""
-    path = metrics_path(BASEBALL_EXPERIMENT, BASEBALL_DOMAIN)
-    require_artifacts("shap_importance.py --domain baseball", path)
+def plot_shap_from_artifact(
+    experiment: str, domain: str, cli_domain: str, out_name: str
+) -> None:
+    """Rebuild a SHAP importance figure from its saved artifact.
+
+    Shared by every plot_* function below, which each differ only in which
+    experiment/domain artifact they rebuild and where the figure is saved.
+    """
+    path = metrics_path(experiment, domain)
+    require_artifacts(f"shap_importance.py --domain {cli_domain}", path)
     importance = pd.read_csv(path)
 
     fig, ax = plt.subplots(figsize=(7, 6))
     plot_shap_importance(importance["feature"], importance["mean_abs_shap"], ax)
     fig.tight_layout()
-    save_figure(fig, "performance", "shap_importance_home_run.png", BASEBALL_DOMAIN)
+    save_figure(fig, "performance", out_name, domain)
+
+
+def generate_baseball() -> None:
+    """Fit the home-run XGBoost classifier and save its SHAP importances."""
+    ds_train = baseball.load_season(BASEBALL_TRAIN_YEAR, target=BASEBALL_TARGET)
+    ds_test = baseball.load_season(BASEBALL_TEST_YEAR, target=BASEBALL_TARGET)
+    sp = baseball_split.build_splits(ds_train, ds_test)["random"]
+    fit_and_save_shap(
+        model_factory("classification")(), sp, BASEBALL_EXPERIMENT, BASEBALL_DOMAIN
+    )
+
+
+def plot_baseball() -> None:
+    """Rebuild the baseball SHAP importance figure from the saved artifact."""
+    plot_shap_from_artifact(
+        BASEBALL_EXPERIMENT,
+        BASEBALL_DOMAIN,
+        "baseball",
+        "shap_importance_home_run.png",
+    )
 
 
 def generate_molecules() -> None:
     """Fit the rdkit-featurized XGBoost classifier and save its SHAP importances."""
     ds_train = molecules.load_screen(MOLECULE_TRAIN_STEM, MOLECULES_FEATURIZATION)
     sp = molecules_split.build_splits(ds_train, MOLECULES_FEATURIZATION)["random"]
-
     model = model_factory("classification")(n_estimators=MOLECULES_XGB_N_ESTIMATORS)
-    model.fit(sp.train_ds.X, sp.train_ds.y)
-    importance = shap_feature_importance(model, sp.X_test, sp.train_ds.feature_names)
-    save_frame(importance, MOLECULES_EXPERIMENT, MOLECULES_DOMAIN)
+    fit_and_save_shap(model, sp, MOLECULES_EXPERIMENT, MOLECULES_DOMAIN)
 
 
 def plot_molecules() -> None:
     """Rebuild the molecules SHAP importance figure from the saved artifact."""
-    path = metrics_path(MOLECULES_EXPERIMENT, MOLECULES_DOMAIN)
-    require_artifacts("shap_importance.py --domain molecules", path)
-    importance = pd.read_csv(path)
-
-    fig, ax = plt.subplots(figsize=(7, 6))
-    plot_shap_importance(importance["feature"], importance["mean_abs_shap"], ax)
-    fig.tight_layout()
-    save_figure(fig, "performance", "shap_importance_rdkit.png", MOLECULES_DOMAIN)
+    plot_shap_from_artifact(
+        MOLECULES_EXPERIMENT, MOLECULES_DOMAIN, "molecules", "shap_importance_rdkit.png"
+    )
 
 
-def generate_sandwich_regressor() -> None:
+def generate_sandwich_regressor(dataset: Dataset) -> None:
     """Fit the ratings XGBoost regressor and save its SHAP importances."""
-    dataset = sandwiches.load()
     sp = split_from_dataset(dataset, name="random")
-
-    model = xgb_regressor()
-    model.fit(sp.train_ds.X, sp.train_ds.y)
-    importance = shap_feature_importance(model, sp.X_test, sp.train_ds.feature_names)
-    save_frame(importance, SANDWICH_EXPERIMENT, SANDWICH_DOMAIN)
+    fit_and_save_shap(xgb_regressor(), sp, SANDWICH_EXPERIMENT, SANDWICH_DOMAIN)
 
 
 def plot_sandwich_regressor() -> None:
     """Rebuild the sandwich ratings SHAP importance figure from the saved artifact."""
-    path = metrics_path(SANDWICH_EXPERIMENT, SANDWICH_DOMAIN)
-    require_artifacts("shap_importance.py --domain sandwiches", path)
-    importance = pd.read_csv(path)
-
-    fig, ax = plt.subplots(figsize=(7, 6))
-    plot_shap_importance(importance["feature"], importance["mean_abs_shap"], ax)
-    fig.tight_layout()
-    save_figure(fig, "performance", "shap_importance.png", SANDWICH_DOMAIN)
+    plot_shap_from_artifact(
+        SANDWICH_EXPERIMENT, SANDWICH_DOMAIN, "sandwiches", "shap_importance.png"
+    )
 
 
-def generate_sandwich_classifier() -> None:
+def generate_sandwich_classifier(dataset: Dataset) -> None:
     """Fit the good-vs-bad XGBoost classifier and save its SHAP importances."""
-    dataset = sandwiches.to_classification(sandwiches.load())
-    sp = split_from_dataset(dataset, name="random")
-
-    model = xgb_classifier()
-    model.fit(sp.train_ds.X, sp.train_ds.y)
-    importance = shap_feature_importance(model, sp.X_test, sp.train_ds.feature_names)
-    save_frame(importance, SANDWICH_CLF_EXPERIMENT, SANDWICH_DOMAIN)
+    sp = split_from_dataset(sandwiches.to_classification(dataset), name="random")
+    fit_and_save_shap(xgb_classifier(), sp, SANDWICH_CLF_EXPERIMENT, SANDWICH_DOMAIN)
 
 
 def plot_sandwich_classifier() -> None:
     """Rebuild the sandwich good-vs-bad SHAP importance figure from the artifact."""
-    path = metrics_path(SANDWICH_CLF_EXPERIMENT, SANDWICH_DOMAIN)
-    require_artifacts("shap_importance.py --domain sandwiches", path)
-    importance = pd.read_csv(path)
-
-    fig, ax = plt.subplots(figsize=(7, 6))
-    plot_shap_importance(importance["feature"], importance["mean_abs_shap"], ax)
-    fig.tight_layout()
-    save_figure(fig, "performance", "shap_importance_clf.png", SANDWICH_DOMAIN)
+    plot_shap_from_artifact(
+        SANDWICH_CLF_EXPERIMENT,
+        SANDWICH_DOMAIN,
+        "sandwiches",
+        "shap_importance_clf.png",
+    )
 
 
 def generate_sandwich() -> None:
-    """Fit both sandwich SHAP models (ratings regressor, good-vs-bad classifier)."""
-    generate_sandwich_regressor()
-    generate_sandwich_classifier()
+    """Fit both sandwich SHAP models (ratings regressor, good-vs-bad classifier).
+
+    Loads the sandwich dataset once and shares it between both fits, since
+    to_classification is a cheap relabeling of an already-loaded dataset.
+    """
+    dataset = sandwiches.load()
+    generate_sandwich_regressor(dataset)
+    generate_sandwich_classifier(dataset)
 
 
 def plot_sandwich() -> None:

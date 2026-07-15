@@ -25,7 +25,6 @@ Usage::
 
 from __future__ import annotations
 
-import argparse
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -58,6 +57,7 @@ from negative_ml.runner import metrics_path
 from negative_ml.script_io import (
     build_baseball_pool,
     build_molecules_pool,
+    run_domain_script,
     save_figure,
     save_frame,
 )
@@ -181,36 +181,15 @@ def plot(cfg: ColdStartConfig) -> None:
 
 def main() -> None:
     """Parse CLI flags and dispatch to generate / plot for each requested domain."""
-    parser = argparse.ArgumentParser(
-        description="Cold-start active learning: bolus negative selection "
-        "followed by workflow batches."
+    run_domain_script(
+        doc="Cold-start active learning: bolus negative selection "
+        "followed by workflow batches.",
+        domains=ALL_DOMAINS,
+        configs=CONFIGS,
+        generate=generate,
+        plot=plot,
+        domain_help="Run only this domain (default: both domains).",
     )
-    parser.add_argument(
-        "--domain",
-        choices=list(ALL_DOMAINS),
-        default=None,
-        help="Run only this domain (default: both domains).",
-    )
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument(
-        "--generate-only",
-        action="store_true",
-        help="Run sweeps but skip figure generation.",
-    )
-    group.add_argument(
-        "--plot-only",
-        action="store_true",
-        help="Rebuild figures from saved CSVs; skip generation.",
-    )
-    args = parser.parse_args()
-
-    domains = [args.domain] if args.domain else list(ALL_DOMAINS)
-    for domain in domains:
-        cfg = CONFIGS[domain]
-        if not args.plot_only:
-            generate(cfg)
-        if not args.generate_only:
-            plot(cfg)
 
 
 if __name__ == "__main__":

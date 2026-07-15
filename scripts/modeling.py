@@ -392,7 +392,7 @@ def generate_xgboost() -> None:
                 n_seeds=N_SEEDS,
                 include_weighted=False,
                 split=sp,
-                neg_to_pos_ratio=n_majority / max(n_minority, 1),
+                neg_to_pos_ratio=max(n_majority, 1) / max(n_minority, 1),
             ).assign(
                 class_balance="proportional",
                 featurization=featurization,
@@ -433,7 +433,8 @@ def plot_benchmark(benchmark_df: pd.DataFrame) -> None:
     AUPRC is excluded here and plotted separately by plot_benchmark_auprc (see
     BENCHMARK_BAR_METRICS).
     """
-    feats = list(dict.fromkeys(benchmark_df["featurization"]))
+    present = dict.fromkeys(benchmark_df["featurization"])
+    feats = [f for f in present if f in FEATURIZATIONS]
     splits = [s for s in SPLITS if s in set(benchmark_df["split"])]
     xpos = np.arange(len(feats))
     width = 0.8 / max(len(BENCHMARK_BAR_METRICS), 1)
@@ -480,7 +481,8 @@ def plot_benchmark_auprc(benchmark_df: pd.DataFrame) -> None:
     metrics share there; mixing the two on one axis would misrepresent bar
     heights.
     """
-    feats = list(dict.fromkeys(benchmark_df["featurization"]))
+    present = dict.fromkeys(benchmark_df["featurization"])
+    feats = [f for f in present if f in FEATURIZATIONS]
     splits = [s for s in SPLITS if s in set(benchmark_df["split"])]
     xpos = np.arange(len(feats))
 

@@ -91,7 +91,10 @@ Averaged across the four budget-varying strategies:
 - baseball (home run, 2023-train/2024-test): global AUROC ranges from 0.955
   (hard/decoys) to 0.991 (random, density_diversity), while pair_auroc
   ranges only from 0.686 (diversity) to 0.705 (hard/decoys).
-- sandwiches (good >= 9 rating, random split): global AUROC ranges from
+<!-- TODO: SANDWICH_GOOD_RATING_THRESHOLD moved from 9.0 to 8.5; the AUROC/
+     pair_auroc figures below were measured at the old >= 9 threshold and
+     need to be regenerated against the current split. -->
+- sandwiches (good >= 8.5 rating, random split): global AUROC ranges from
   0.528 (diversity) to 0.600 (random), while pair_auroc ranges from 0.714
   (diversity) to 0.762 (random).
 

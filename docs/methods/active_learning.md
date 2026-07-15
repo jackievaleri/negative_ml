@@ -39,7 +39,8 @@ measure against.
 
 Once the bolus is fixed, run_active_learning simulates COLD_START_N_BATCHES
 (5) rounds of ordinary active learning, each querying COLD_START_BATCH_SIZE
-(100) new examples with one of COLD_START_ACQUISITIONS (random or ucb).
+new examples (500 for molecules, 100 for baseball) with one of
+COLD_START_ACQUISITIONS (random or ucb).
 Every acquired example — positive or negative — is kept, and the negative
 composition for training is fixed to "as_is" for every round after the
 bolus: no further negative curation happens once the study is underway. Any

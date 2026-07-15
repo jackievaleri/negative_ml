@@ -27,7 +27,6 @@ Usage::
 
 from __future__ import annotations
 
-import argparse
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -55,13 +54,13 @@ from negative_ml.core.config import (
     RANDOM_SEED,
 )
 from negative_ml.core.dataset import Dataset
-from negative_ml.core.splitting import random_split
 from negative_ml.models.xgboost import xgb_classifier
 from negative_ml.runner import metrics_path
-from negative_ml.sandwich import io as sandwiches
 from negative_ml.script_io import (
     build_baseball_pool,
     build_molecules_pool,
+    build_sandwiches_pool,
+    run_domain_script,
     sandwich_classifier_factory,
     save_figure,
     save_frame,
@@ -79,14 +78,6 @@ class AlConfig:
     domain: str
     build_pool: Callable[[], tuple[Dataset, np.ndarray, np.ndarray]]
     classifier_factory: Callable[[], object]
-
-
-def build_sandwiches_pool() -> tuple[Dataset, np.ndarray, np.ndarray]:
-    """Load and split the sandwich dataset (random 80/20 within the menu)."""
-    full_ds = sandwiches.to_classification(sandwiches.load())
-    train_idx, test_idx = random_split(full_ds, seed=RANDOM_SEED)
-    train_pool_ds = full_ds.subset(train_idx)
-    return train_pool_ds, full_ds.X[test_idx], full_ds.y[test_idx]
 
 
 CONFIGS: dict[str, AlConfig] = {
@@ -187,35 +178,13 @@ def plot(cfg: AlConfig) -> None:
 
 def main() -> None:
     """Parse CLI flags and dispatch to generate / plot for each requested domain."""
-    parser = argparse.ArgumentParser(
-        description="Active learning experiments across domains."
+    run_domain_script(
+        doc="Active learning experiments across domains.",
+        domains=ALL_DOMAINS,
+        configs=CONFIGS,
+        generate=generate,
+        plot=plot,
     )
-    parser.add_argument(
-        "--domain",
-        choices=list(ALL_DOMAINS),
-        default=None,
-        help="Run only this domain (default: all domains).",
-    )
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument(
-        "--generate-only",
-        action="store_true",
-        help="Run sweeps but skip figure generation.",
-    )
-    group.add_argument(
-        "--plot-only",
-        action="store_true",
-        help="Rebuild figures from saved CSVs; skip generation.",
-    )
-    args = parser.parse_args()
-
-    domains = [args.domain] if args.domain else list(ALL_DOMAINS)
-    for domain in domains:
-        cfg = CONFIGS[domain]
-        if not args.plot_only:
-            generate(cfg)
-        if not args.generate_only:
-            plot(cfg)
 
 
 if __name__ == "__main__":

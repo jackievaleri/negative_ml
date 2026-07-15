@@ -291,14 +291,15 @@ def test_to_classification_labels_good_tier_positive():
     assert cds.minority_mask().tolist() == expected.astype(bool).tolist()
 
 
-def test_to_classification_good_bad_cut_at_nine():
-    """At the good/bad cut, ratings at or above 9 are good (positive), below are bad."""
+def test_to_classification_good_bad_cut_at_threshold():
+    """At the good/bad cut, ratings at or above the threshold are good, below bad."""
     ds = sandwiches.featurize(synthetic_sandwiches())
     cds = sandwiches.to_classification(ds, threshold=SANDWICH_GOOD_RATING_THRESHOLD)
-    # Surviving ratings are [9.5, 7.0, 2.0, 4.2, 4.6, 4.9]; only the >=9 ones are good.
+    # Surviving ratings are [9.5, 7.0, 2.0, 4.2, 4.6, 4.9]; only the ones at or
+    # above SANDWICH_GOOD_RATING_THRESHOLD are good.
     good = ds.y >= SANDWICH_GOOD_RATING_THRESHOLD
     assert cds.y.tolist() == good.astype(int).tolist()
-    assert cds.y.sum() == 1  # only 9.5 is good; the rest are bad.
+    assert cds.y.sum() == 1  # only 9.5 clears the threshold; the rest are bad.
 
 
 def test_prune_rare_features_keeps_well_sampled_columns():

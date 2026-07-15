@@ -21,6 +21,17 @@ MOLECULE_GNN_RESULT_FILES = {
 # included), so this recovers its total training size as negatives + positives.
 MOLECULE_GNN_N_POSITIVES = 1017
 
+# Largest negative-count budget in the GNN sweep. Only the "random" strategy
+# actually reaches it -- "diverse" and "similar" have no point there -- so the
+# restricted-similarity AUPRC panel excludes it (see
+# molecules.viz.plot_saturation_panels) rather than showing one curve running
+# on alone past where the comparison is fair.
+MOLECULE_GNN_MAX_BUDGET_RANDOM_ONLY = 29950
+
+# Right x-limit for the restricted-similarity AUPRC panel once the budget
+# above is excluded (see molecules.viz.plot_saturation_panels).
+MOLECULE_GNN_RESTRICTED_SIMILARITY_XLIM_RIGHT = 17000
+
 # Directory and file stems for the gonorrhea screen used by the XGBoost study.
 # Each stem has a paired <stem>.csv (Name/SMILES/hit) and <stem>.npz (the
 # precomputed RDKit descriptor matrix under the "features" key), row-aligned.

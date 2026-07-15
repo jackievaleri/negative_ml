@@ -93,9 +93,10 @@ audience.
 - Large space of possible combinations, sparsely explored
 
 The 0–10 ratings are recast as a **good-vs-bad classification** problem: a
-sandwich is "good" when its rating is at or above 9 and "bad" otherwise. The
-ratings skew high, but a 9-or-10 is uncommon, so the **good** sandwiches are the
-rare, high-value minority and the positive class of interest:
+sandwich is "good" when its rating is at or above 8.5 and "bad" otherwise. The
+ratings skew high, but an 8.5-or-above rating is still uncommon, so the
+**good** sandwiches are the rare, high-value minority and the positive class
+of interest:
 
 - Do we need many bad (majority) examples to learn to pick out the good ones?
 - Could active selection have reduced the number of sandwiches that had to be
@@ -270,7 +271,7 @@ Ingredient combinations (bread, meat, cheese, toppings) and a human rating from
 0–10. Roughly half of sandwiches score above 7, while very low scores are rare
 (only ~11% have scores < 3). The space of possible combinations is large and
 sparsely explored. The ratings are recast as good-vs-bad classification (good =
-rating ≥ 9), so the rare excellent sandwiches are the high-value minority, and the
+rating ≥ 8.5), so the rare excellent sandwiches are the high-value minority, and the
 question becomes whether many bad (majority) examples are necessary to learn to
 pick out the good ones.
 

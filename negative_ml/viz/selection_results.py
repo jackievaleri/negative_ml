@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
+from matplotlib.ticker import FixedLocator, ScalarFormatter
 
 from negative_ml.viz.style import DARK2, INK, PALETTE, style_axes
 
@@ -225,6 +226,16 @@ def plot_strategy_curves(
     if logx:
         ax.set_xscale("log")
         ax.set_xlim(right=x_hi_curve * 1.05)  # tight margin past the largest budget
+        # Restrict ticks to the plotted (varying-strategy) budgets rather than the
+        # default log locator's per-decade minor ticks, which crowd and overlap at
+        # this range -- and rather than x_all, which also holds unplotted full-data
+        # baseline rows that would otherwise add a stray distant tick.
+        ticks = sorted({int(v) for v in varying_x})
+        ax.xaxis.set_major_locator(FixedLocator(ticks))
+        ax.xaxis.set_major_formatter(ScalarFormatter())
+        ax.minorticks_off()
+        ax.set_xticks(ticks)
+        ax.set_xticklabels([str(t) for t in ticks], rotation=45, ha="right")
     else:
         ax.set_xlim(right=x_hi_curve + 0.02 * (x_hi_curve - x_lo))
     ax.set_xlabel(f"training set size ({x})")

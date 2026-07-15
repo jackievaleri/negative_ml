@@ -192,11 +192,11 @@ def plot_group_curves(
         if chance_line is not None:
             ax.axhline(chance_line, color=LIGHT_GRAY, linestyle="--", linewidth=0.8)
         ax.set_title(acquisition_labels.get(acq, acq), fontsize=9)
-        ax.set_xlabel("Batch", fontsize=plt.rcParams["xtick.labelsize"])
+        ax.set_xlabel("Batch", fontsize=8)
         ax.set_xticks(sorted(results["batch"].unique()))
         style_axes(ax)
 
-    axes[0].set_ylabel(ylabel, fontsize=plt.rcParams["ytick.labelsize"])
+    axes[0].set_ylabel(ylabel, fontsize=8)
     if y_floor is not None:
         axes[0].set_ylim(y_floor, 1.0)
 
