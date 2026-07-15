@@ -11,7 +11,7 @@ METRIC_COLS = {"auroc", "auprc", "f1", "precision_at_k", "enrichment_factor"}
 
 
 def interaction_dataset(n: int = 600, seed: int = 0) -> Dataset:
-    """A dataset where the label is an *interaction* of two features.
+    """A dataset where the label is an interaction of two features.
 
     The positive class is "features 0 and 1 share a sign", so neither feature is
     informative on its own (each marginal correlation ≈ 0) yet the pair is fully
