@@ -54,7 +54,7 @@ def compare_strategies(
         include_weighted: Also evaluate the class-weighting baseline (H4).
             The weighted reference always keeps every minority example
             (neg_to_pos_ratio is ignored for it): it tests weighting as a
-            substitute for majority *volume*, not for a smaller minority.
+            substitute for majority volume, not for a smaller minority.
         split: Pre-built EvalSplit (e.g. cross-season) to evaluate on;
             when None a stratified split of dataset is used.
         seed: Base seed for the (fixed) train/test split and per-repeat seeds.
