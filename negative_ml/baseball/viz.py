@@ -130,6 +130,47 @@ def plot_exit_velo_launch_angle(
     return style_axes(ax)
 
 
+def plot_outcome_rate_comparison(
+    rates: Any, ax: plt.Axes, group_col: str = "group"
+) -> plt.Axes:
+    """Grouped bar chart of outcome rate, one bar group per comparison group.
+
+    Compares the outcome-rate distribution across two or more groups (e.g. a
+    single park vs. the MLB average) on the same outcome axis, so a park's
+    skew (more doubles, fewer home runs) reads directly off the bar heights.
+
+    Args:
+        rates: Tidy frame with "outcome", "rate", and a group column (see
+            group_col), one row per (group, outcome) pair.
+        ax: Target matplotlib axes.
+        group_col: Name of the column identifying each bar group.
+
+    Returns:
+        The styled ax.
+    """
+    groups = list(dict.fromkeys(rates[group_col]))
+    x = np.arange(len(OUTCOME_ORDER))
+    width = 0.8 / len(groups)
+    left_offset = -0.4 + width / 2
+    for i, group in enumerate(groups):
+        sub = (
+            rates[rates[group_col] == group].set_index("outcome").reindex(OUTCOME_ORDER)
+        )
+        ax.bar(
+            x + left_offset + i * width,
+            sub["rate"].to_numpy(),
+            width=width,
+            label=group,
+            color=DARK2[i],
+        )
+    ax.set_xticks(x)
+    ax.set_xticklabels(OUTCOME_ORDER)
+    ax.set_ylabel("share of batted balls")
+    ax.set_title("Outcome rate by group")
+    ax.legend()
+    return style_axes(ax)
+
+
 def plot_spray_distribution(dataset: Dataset, ax: plt.Axes) -> plt.Axes:
     """Histogram of pull-positive spray angle (pull skew).
 
